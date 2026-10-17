@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-14).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-15).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -28,9 +28,10 @@ the maintainer.
 | The Android host opens the UI (eframe, wgpu) on the procedural demo library in internal storage (`files/{config,library,logs,inbox}`), the session opened on a worker behind an "Opening library…" frame, with a phone memory budget (MemTotal / 8, 256–768 MiB, also what Settings' "Automatic" means: `engine::memory::set_default_budget`), the device's RAM injected for export/merge fit checks (`engine::memory::set_total_ram`), the log file, the panic log and file/PNG writers | ✅ APK-11, compiled and linted for `aarch64-linux-android` (first run on a device or emulator: APK-16) |
 | The first start tells once that uninstalling or Clear data deletes the library (`Services::library_notice`, flag `UiState::library_notice_shown`); Object and Describe masks are off with "Needs a device with 8 GB of memory" below `Services::min_ram_for_sam` (7 GiB MemTotal, which is what an 8 GB phone reads); Try Again in the library problem window reopens the library on the loader's worker behind the "Opening library…" frame (`Services::reopen_library`); export's and merge's memory messages say "this device" on a phone (`memory::set_handheld`) | ✅ APK-11b (the device checks stay in the card, unticked) |
 | `cargo xtask android so [--abi arm64-v8a\|x86_64]…` links `liblightcraft_android.so` with the NDK's clang (no `cargo ndk`; the 16 KB page flag below NDK r28), copies it to `target/android/jniLibs/<abi>/` and checks `LOAD` alignment, the `android_main` / `ANativeActivity_onCreate` exports and system-only `NEEDED` libraries | ✅ APK-12, unit-tested on canned `llvm-readelf` output; no NDK here, so the first real link is the APK-16 workflow |
-| `packaging/android/AndroidManifest.xml` (NativeActivity, `hasCode=false`, `allowBackup=false`, `extractNativeLibs=false`, the Back opt-out, full `configChanges`, minSdk 30 / targetSdk 36) filled by `cargo xtask android manifest [--release]` (`.debug` application id suffix for debug); `version_code` from the workspace version (alpha < beta < rc < release) | ✅ APK-13, unit-tested; `aapt2` has not read it yet (APK-15, APK-16 `aapt2 dump badging`) |
-| Launcher and adaptive icons (`packaging/android/res/`: legacy, foreground and monochrome PNGs for mdpi to xxxhdpi, `mipmap-anydpi-v26/ic_launcher.xml`, background colour `#f2a516`) generated from `assets/app-icon/lightcraft.svg` by `packaging/android/icons.sh`; the manifest names them (`android:icon`, `android:roundIcon`) | ✅ APK-14, attributed; `aapt2` has not linked them yet (APK-15, APK-16 `application-icon-` check); the foreground's chest runs off the 72 dp viewport so no mask shows a cut, but the ear tuft tips reach 43.5 dp from the centre (measured), beyond the 33 dp safe circle; how it looks under real launcher masks and as a themed icon is a device check (APK-14 card) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-15 … APK-43 below |
+| `packaging/android/AndroidManifest.xml` (NativeActivity, `hasCode=false`, `allowBackup=false`, `extractNativeLibs=false`, the Back opt-out, full `configChanges`, minSdk 30 / targetSdk 36) filled by `cargo xtask android manifest [--release]` (`.debug` application id suffix for debug); `version_code` from the workspace version (alpha < beta < rc < release) | ✅ APK-13, unit-tested; `cargo xtask android apk` (APK-15) hands it to `aapt2 link`, which has not run here (no SDK): APK-16 `aapt2 dump badging` |
+| Launcher and adaptive icons (`packaging/android/res/`: legacy, foreground and monochrome PNGs for mdpi to xxxhdpi, `mipmap-anydpi-v26/ic_launcher.xml`, background colour `#f2a516`) generated from `assets/app-icon/lightcraft.svg` by `packaging/android/icons.sh`; the manifest names them (`android:icon`, `android:roundIcon`) | ✅ APK-14, attributed; `aapt2 compile` and `link` read them in `cargo xtask android apk` (APK-15), first run in the APK-16 workflow (`application-icon-` check); the foreground's chest runs off the 72 dp viewport so no mask shows a cut, but the ear tuft tips reach 43.5 dp from the centre (measured), beyond the 33 dp safe circle; how it looks under real launcher masks and as a themed icon is a device check (APK-14 card) |
+| `cargo xtask android apk`: `aapt2 compile`/`link --debug-mode`, aapt2's entries raw-copied and the `.so` appended Stored at 16 KB alignment (`zip_lib.rs`), `zipalign -P 16`, `apksigner` with the debug key made by `keytool` when missing (`signing.rs`), `zipalign -c`; `docs/android.md` (build, install, debugging, Device checklist) | ✅ APK-15, argument builders and the zip step unit-tested; no SDK here, so the first real packaging is the APK-16 workflow |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-16 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1544,3 +1545,19 @@ Agents use the default until the maintainer decides (execution-plan §7).
   the row for `packaging/android/res/`. The 512 px store icon stays with APK-42. Looked at the xxxhdpi foreground
   and legacy PNGs; the launcher masks and the themed icon on a device are unchecked (the card's device line, which
   APK-15 moves to the Device checklist).
+- 2026-10-17 (APK-15): `cargo xtask android apk` (`xtask/src/android/{apk,zip_lib,signing}.rs`): `aapt2 compile` and
+  `link --debug-mode` over `packaging/android/res/` and the filled manifest, aapt2's entries raw-copied with the `zip`
+  crate (already locked through candle-core; no features, so Cargo.lock gains only xtask's dependency line) and each
+  `.so` appended Stored with 16 KB alignment, then `zipalign -P 16 -f 4`, `apksigner sign` with the debug key and
+  `zipalign -c -P 16 -v 4`. `signing.rs` creates `~/.android/debug.keystore` with `keytool` when missing and builds the
+  signer arguments; no `--abi` packages every ABI that `so` built. Small changes outside the card's file list:
+  `manifest::write` (the part of `manifest::run` that writes, so `apk` can pick the output folder), `NdkVersion::parse`
+  and `so::LIB_FILE` visible to the android modules, `so::parse_abis_for` (the `--abi` parsing shared by `so` and
+  `apk`, with step-specific error text), the `apk` line in `xtask/src/main.rs`'s usage text, a doc-comment in `sdk.rs`,
+  build-tools lookup in `apk.rs` (newest 36 or later). `.gitignore` gets `/packaging/android/build/` instead of the
+  card's `build/`: no tracked `build/` folders exist, and the anchored pattern will not hide future ones. The
+  compiled resources go to `aapt2 link` as a positional input (not `-R`, which needs `--auto-add-overlay` to add new
+  resources). Neither
+  aapt2, zipalign nor apksigner exist here: only argument builders and the zip step are tested; the first real
+  packaging is the APK-16 workflow. `docs/android.md` (build, install, debugging) is new, with the Device checklist
+  holding APK-14's launcher-icon line and the first-packaging line, both unticked.

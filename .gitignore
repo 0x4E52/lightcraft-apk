@@ -14,3 +14,11 @@ plan/
 # model weights are never committed (SAM 3: docs/ai-masks.md)
 *.safetensors
 *.safetensors.part
+# Android signing material and local build state: never committed
+*.jks
+*.keystore
+*.p12
+keystore.properties
+local.properties
+.gradle/
+/packaging/android/build/

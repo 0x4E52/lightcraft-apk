@@ -11,7 +11,8 @@ pub const MIN_SDK: u32 = 30;
 /// docs/android-port.md: Play's rule for new apps and updates since 2026-08-31).
 pub const TARGET_SDK: u32 = 36;
 
-/// An NDK revision, `major.minor.patch` (a `-beta1` suffix is dropped).
+/// An NDK revision, `major.minor.patch` (a `-beta1` suffix is dropped); also reads the same shape
+/// for SDK build-tools folders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NdkVersion {
     pub major: u32,
@@ -21,7 +22,7 @@ pub struct NdkVersion {
 
 impl NdkVersion {
     /// `27.2.12479018` (also `r27`-less forms such as `29.0.13113456-beta1`).
-    fn parse(text: &str) -> Option<Self> {
+    pub(super) fn parse(text: &str) -> Option<Self> {
         let mut parts = text.trim().split('.');
         let major = parts.next()?.trim().parse().ok()?;
         let minor = parts.next()?.trim().parse().ok()?;

@@ -1,7 +1,7 @@
 //! The Android manifest: `packaging/android/AndroidManifest.xml` is a template, this module fills
 //! its `${...}` values and derives the version code (docs/android-port.md, APK-13).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::sdk::{MIN_SDK, TARGET_SDK};
 
@@ -122,6 +122,21 @@ pub fn fill(template: &str, version: &str, build: Build) -> Result<String, Strin
     Ok(out)
 }
 
+/// Fills `packaging/android/AndroidManifest.xml` for the workspace version and writes it to
+/// `<dir>/AndroidManifest.xml`; returns that path.
+pub fn write(build: Build, dir: &Path) -> Result<PathBuf, String> {
+    let root = crate::root();
+    let read = |path: &Path| std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()));
+    let template = read(&root.join("packaging/android/AndroidManifest.xml"))?;
+    let version = crate::version::read(&read(&root.join("Cargo.toml"))?)?;
+    let filled = fill(&template, &version, build)?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let out = dir.join("AndroidManifest.xml");
+    std::fs::write(&out, filled).map_err(|e| format!("write {}: {e}", out.display()))?;
+    println!("android manifest: {} ({}, version {version}, code {})", out.display(), build.application_id(), version_code(&version)?);
+    Ok(out)
+}
+
 /// `cargo xtask android manifest [--release]`: writes `target/android/AndroidManifest.xml`.
 pub fn run(args: &[&str]) -> Result<(), String> {
     let build = match args {
@@ -129,17 +144,7 @@ pub fn run(args: &[&str]) -> Result<(), String> {
         ["--release"] => Build::Release,
         other => return Err(format!("android manifest: unexpected arguments {other:?} (only --release)")),
     };
-    let root = crate::root();
-    let read = |path: &Path| std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()));
-    let template = read(&root.join("packaging/android/AndroidManifest.xml"))?;
-    let version = crate::version::read(&read(&root.join("Cargo.toml"))?)?;
-    let filled = fill(&template, &version, build)?;
-    let dir = root.join("target").join("android");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    let out = dir.join("AndroidManifest.xml");
-    std::fs::write(&out, filled).map_err(|e| format!("write {}: {e}", out.display()))?;
-    println!("android manifest: {} ({}, version {version}, code {})", out.display(), build.application_id(), version_code(&version)?);
-    Ok(())
+    write(build, &crate::root().join("target").join("android")).map(|_| ())
 }
 
 #[cfg(test)]

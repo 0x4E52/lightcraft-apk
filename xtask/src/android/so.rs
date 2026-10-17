@@ -11,7 +11,7 @@ use super::sdk::{self, MIN_SDK, Ndk, NdkVersion};
 const PACKAGE: &str = "lightcraft-android";
 
 /// File name of the library (the `[lib] name` of `lightcraft-android`).
-const LIB_FILE: &str = "liblightcraft_android.so";
+pub(super) const LIB_FILE: &str = "liblightcraft_android.so";
 
 /// First NDK whose linker defaults to 16 KB pages; older ones need the flag below.
 const NDK_DEFAULT_16K: u32 = 28;
@@ -57,13 +57,19 @@ impl Abi {
 /// `--abi <name>` (repeatable) → the ABIs to build, in order and without repeats; arm64-v8a alone
 /// when none is given.
 pub fn parse_abis(args: &[&str]) -> Result<Vec<Abi>, String> {
+    parse_abis_for("so", args)
+}
+
+/// [`parse_abis`] with errors that name the xtask step (`so`, `apk`) the arguments were given to.
+pub fn parse_abis_for(step: &str, args: &[&str]) -> Result<Vec<Abi>, String> {
     let mut abis: Vec<Abi> = Vec::new();
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         if *arg != "--abi" {
-            return Err(format!("android so: unknown argument `{arg}` (usage: cargo xtask android so [--abi arm64-v8a|x86_64]…)"));
+            return Err(format!("android {step}: unknown argument `{arg}` (usage: cargo xtask android {step} [--abi arm64-v8a|x86_64]…)"));
         }
-        let abi = Abi::parse(it.next().ok_or("android so: --abi needs a value (arm64-v8a or x86_64)")?)?;
+        let value = it.next().ok_or_else(|| format!("android {step}: --abi needs a value (arm64-v8a or x86_64)"))?;
+        let abi = Abi::parse(value)?;
         if !abis.contains(&abi) {
             abis.push(abi);
         }
@@ -160,6 +166,8 @@ mod tests {
         assert!(parse_abis(&["--abi", "armeabi-v7a"]).is_err());
         assert!(parse_abis(&["--abi"]).is_err());
         assert!(parse_abis(&["x86_64"]).is_err());
+        let apk = parse_abis_for("apk", &["--bogus"]).unwrap_err();
+        assert!(apk.starts_with("android apk:") && apk.contains("cargo xtask android apk"), "{apk}");
     }
 
     #[test]
