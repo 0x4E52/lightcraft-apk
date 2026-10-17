@@ -2,6 +2,8 @@
 //! profiles, face and denoise models).
 //!
 //! [`config_dir`] picks it, in order:
+//! 0. A folder the host handed over with [`use_dir`] (a host without a usable `HOME` or `XDG_*`, such as
+//!    the Android app, whose settings live in the app's private storage). Set once, before first use.
 //! 1. `$LIGHTCRAFT_CONFIG_DIR`, when set (tests, agents, custom setups).
 //! 2. **Portable mode** (issue #1200, as in PhotoCraft): a marker file ([`PORTABLE_MARKERS`]) beside the
 //!    executable puts everything in `<exe dir>/LightCraftData`, so a copy on a USB stick leaves nothing in
@@ -33,7 +35,36 @@ enum Platform {
     Other,
 }
 
-/// LightCraft's settings folder. A nonempty `$LIGHTCRAFT_CONFIG_DIR` overrides portable mode and the
+/// The folder a host chose with [`use_dir`]. Process-wide, set at most once.
+static INJECTED: OnceLock<PathBuf> = OnceLock::new();
+
+/// Make `path` the settings folder for this process, ahead of `$LIGHTCRAFT_CONFIG_DIR`, portable mode and
+/// the platform folder. For hosts where those name nothing usable (Android): environment variables can't be
+/// set from safe Rust (`std::env::set_var` is unsafe in edition 2024), so the host passes the folder here.
+/// Call it once at start-up, before anything asks for [`config_dir`]. The same path again is `Ok`; a
+/// different one is refused with `Err(the folder already in use)`, and the first one stays.
+pub fn use_dir(path: PathBuf) -> Result<(), PathBuf> {
+    use_dir_in(&INJECTED, path)
+}
+
+/// [`use_dir`] on a given cell (tests use a local one, never the global).
+fn use_dir_in(cell: &OnceLock<PathBuf>, path: PathBuf) -> Result<(), PathBuf> {
+    let current = cell.get_or_init(|| path.clone());
+    if *current == path { Ok(()) } else { Err(current.clone()) }
+}
+
+/// Where short-lived files go: `std::env::temp_dir()`, except for a host that gave a settings folder with
+/// [`use_dir`], whose `<settings>/cache` is used (Android's `temp_dir` is `/data/local/tmp`, which apps can't
+/// write). The folder may not exist yet: create it before writing.
+pub fn scratch_dir() -> PathBuf {
+    scratch_dir_in(INJECTED.get().map(PathBuf::as_path))
+}
+
+fn scratch_dir_in(injected: Option<&Path>) -> PathBuf {
+    injected.map_or_else(std::env::temp_dir, |d| d.join("cache"))
+}
+
+/// LightCraft's settings folder. A folder given to [`use_dir`] wins over everything else. Otherwise a nonempty `$LIGHTCRAFT_CONFIG_DIR` overrides portable mode and the
 /// platform default. The override is the complete directory; no application-name suffix is appended. An
 /// explicitly empty value disables the settings directory instead of falling back to a personal profile.
 pub fn config_dir() -> Option<PathBuf> {
@@ -44,11 +75,20 @@ pub fn config_dir() -> Option<PathBuf> {
     } else {
         Platform::Other
     };
-    config_dir_with(platform, |name| std::env::var_os(name), portable_dir)
+    config_dir_with(platform, |name| std::env::var_os(name), INJECTED.get().map(PathBuf::as_path), portable_dir)
 }
 
-/// `portable` is asked only without an override, so an isolated run never probes beside the executable.
-fn config_dir_with(platform: Platform, env: impl Fn(&str) -> Option<OsString>, portable: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
+/// `injected` (the host's folder) comes first. `portable` is asked only without an override, so an isolated
+/// run never probes beside the executable.
+fn config_dir_with(
+    platform: Platform,
+    env: impl Fn(&str) -> Option<OsString>,
+    injected: Option<&Path>,
+    portable: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(dir) = injected {
+        return Some(dir.to_path_buf());
+    }
     if let Some(dir) = env("LIGHTCRAFT_CONFIG_DIR") {
         return (!dir.is_empty()).then(|| PathBuf::from(dir));
     }
@@ -164,7 +204,7 @@ mod config_tests {
     use super::*;
 
     fn resolve(platform: Platform, vars: &[(&str, &str)]) -> Option<PathBuf> {
-        config_dir_with(platform, |name| vars.iter().find_map(|(key, value)| (*key == name).then(|| OsString::from(value))), || None)
+        config_dir_with(platform, |name| vars.iter().find_map(|(key, value)| (*key == name).then(|| OsString::from(value))), None, || None)
     }
 
     /// An override is used as is: portable mode is not even looked for.
@@ -192,7 +232,7 @@ mod config_tests {
             assert!(data.is_dir());
             assert_eq!(std::fs::read_dir(&data).unwrap().count(), 0, "the write probe is removed");
             let found = portable_dir_in(&exe).unwrap();
-            let actual = config_dir_with(Platform::Windows, |name| (name == "APPDATA").then(|| OsString::from("/roaming")), || found);
+            let actual = config_dir_with(Platform::Windows, |name| (name == "APPDATA").then(|| OsString::from("/roaming")), None, || found);
             assert_eq!(actual, Some(data));
             let _ = std::fs::remove_dir_all(&exe);
         }
@@ -218,6 +258,7 @@ mod config_tests {
                     assert_eq!(name, "LIGHTCRAFT_CONFIG_DIR");
                     Some(OsString::from("isolated/settings"))
                 },
+                None,
                 no_portable_probe,
             );
             assert_eq!(actual, Some(PathBuf::from("isolated/settings")));
@@ -234,6 +275,7 @@ mod config_tests {
                         assert_eq!(name, "LIGHTCRAFT_CONFIG_DIR");
                         Some(OsString::new())
                     },
+                    None,
                     no_portable_probe
                 ),
                 None
@@ -253,12 +295,46 @@ mod config_tests {
         }
     }
 
+    /// The host's folder is used at once, and the second, different one is refused (the first stays). A local
+    /// cell: the global must stay empty so no other engine test sees an injected folder.
+    #[test]
+    fn use_dir_in_same_path_ok_other_path_err() {
+        let cell = OnceLock::new();
+        assert_eq!(use_dir_in(&cell, PathBuf::from("/data/a")), Ok(()));
+        assert_eq!(use_dir_in(&cell, PathBuf::from("/data/a")), Ok(()), "the same folder again is fine");
+        assert_eq!(use_dir_in(&cell, PathBuf::from("/data/b")), Err(PathBuf::from("/data/a")), "a different one reports the one in use");
+        assert_eq!(cell.get(), Some(&PathBuf::from("/data/a")), "the first folder stays");
+        assert_eq!(INJECTED.get(), None, "the global was never touched");
+    }
+
+    /// An injected folder beats the environment override, portable mode and the platform folder, and no
+    /// portable probe happens.
+    #[test]
+    fn injected_dir_wins_over_env_portable_and_platform() {
+        let injected = Path::new("/data/user/0/app/files");
+        let vars = [("LIGHTCRAFT_CONFIG_DIR", "/env"), ("HOME", "/user"), ("APPDATA", "/roaming"), ("XDG_CONFIG_HOME", "/xdg")];
+        for platform in [Platform::Mac, Platform::Windows, Platform::Other] {
+            let env = |name: &str| vars.iter().find_map(|(key, value)| (*key == name).then(|| OsString::from(value)));
+            assert_eq!(config_dir_with(platform, env, Some(injected), no_portable_probe), Some(injected.to_path_buf()));
+            // with no environment at all (Android) it still resolves
+            assert_eq!(config_dir_with(platform, |_| None, Some(injected), no_portable_probe), Some(injected.to_path_buf()));
+        }
+        // and without it, the override and the platform folders are what they were
+        assert_eq!(resolve(Platform::Other, &vars), Some(PathBuf::from("/env")));
+    }
+
+    #[test]
+    fn scratch_dir_follows_the_injected_folder() {
+        assert_eq!(scratch_dir_in(None), std::env::temp_dir(), "desktop behaviour is unchanged");
+        assert_eq!(scratch_dir_in(Some(Path::new("/data/app/files"))), PathBuf::from("/data/app/files/cache"));
+    }
+
     #[cfg(unix)]
     #[test]
     fn config_override_preserves_non_unicode_paths() {
         use std::os::unix::ffi::OsStringExt as _;
         let value = OsString::from_vec(b"isolated/\xff".to_vec());
-        assert_eq!(config_dir_with(Platform::Mac, |_| Some(value.clone()), no_portable_probe), Some(PathBuf::from(value)));
+        assert_eq!(config_dir_with(Platform::Mac, |_| Some(value.clone()), None, no_portable_probe), Some(PathBuf::from(value)));
     }
 }
 

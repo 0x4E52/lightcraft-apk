@@ -804,17 +804,8 @@ fn local_now(app: &mut LightcraftApp, ui: &egui::Ui) -> Option<LocalNow> {
         return None;
     }
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
-    let mut builtin: Vec<(String, String)> = Vec::new();
-    if !home.is_empty() {
-        for (name, sub) in [("Pictures", "Pictures"), ("Desktop", "Desktop"), ("Downloads", "Downloads"), ("Home", "")] {
-            // joined with the platform's separator, like the paths browsing gives back
-            let p = if sub.is_empty() { home.clone() } else { std::path::Path::new(&home).join(sub).to_string_lossy().to_string() };
-            // (checked off the UI thread: a home folder can be on a network share)
-            if fs_cached(ui, "is-dir", &p, 5.0, |p| std::path::Path::new(p).is_dir()) == Some(true) {
-                builtin.push((crate::i18n::tr(name).to_string(), p));
-            }
-        }
-    }
+    // (checked off the UI thread: a home folder can be on a network share)
+    let builtin = builtin_places(&home, &app.services.local_roots, |p| fs_cached(ui, "is-dir", p, 5.0, |p| std::path::Path::new(p).is_dir()));
     let browsing = app.session.browse.clone().filter(|_| app.session.source == LibrarySource::Folder);
     let current = browsing.as_ref().map(|b| b.path.clone());
     let places = local_places(builtin, &app.ui.local_roots, current.as_deref(), app.ui.local_browse_root.as_deref(), &app.ui.hidden_locations);
@@ -822,6 +813,28 @@ fn local_now(app: &mut LightcraftApp, ui: &egui::Ui) -> Option<LocalNow> {
         app.ui.local_browse_root = places.browse_root.clone();
     }
     Some(LocalNow { places, current })
+}
+
+/// The places Local always lists, as `(label, path)`. The host's `roots` when it gave any; else Pictures,
+/// Desktop, Downloads and Home under `home` (none when `home` is empty). Only those `is_dir` confirms
+/// (`Some(true)`; `None` = not known yet) are listed.
+fn builtin_places(home: &str, roots: &[(String, std::path::PathBuf)], is_dir: impl Fn(&str) -> Option<bool>) -> Vec<(String, String)> {
+    let places: Vec<(String, String)> = if roots.is_empty() {
+        if home.is_empty() {
+            return Vec::new();
+        }
+        [("Pictures", "Pictures"), ("Desktop", "Desktop"), ("Downloads", "Downloads"), ("Home", "")]
+            .into_iter()
+            .map(|(name, sub)| {
+                // joined with the platform's separator, like the paths browsing gives back
+                let p = if sub.is_empty() { home.to_string() } else { std::path::Path::new(home).join(sub).to_string_lossy().to_string() };
+                (crate::i18n::tr(name).to_string(), p)
+            })
+            .collect()
+    } else {
+        roots.iter().map(|(label, path)| (label.clone(), path.to_string_lossy().to_string())).collect()
+    };
+    places.into_iter().filter(|(_, p)| is_dir(p) == Some(true)).collect()
 }
 
 /// Local's rows: each place as a folder tree, Browse Folder…, and the way back for hidden places.
@@ -2139,12 +2152,31 @@ fn keyword_row(app: &mut LightcraftApp, ui: &mut egui::Ui, n: &KeywordNode, id: 
 
 #[cfg(test)]
 mod tests {
-    use super::local_places;
+    use super::{builtin_places, local_places};
     use crate::widgets::elide_head;
 
     /// Width = characters, so a limit of 12 is "12 characters".
     fn fit(text: &str, max: usize) -> String {
         elide_head(text, max as f32, |s| s.chars().count() as f32)
+    }
+
+    #[test]
+    fn builtin_places_use_home_unless_the_host_names_roots() {
+        let all = |_: &str| Some(true);
+        let names = |v: Vec<(String, String)>| v.into_iter().map(|(_, p)| p).collect::<Vec<_>>();
+        let home = names(builtin_places("/h", &[], all));
+        assert_eq!(home.len(), 4);
+        assert!(home.iter().any(|p| p == "/h"), "{home:?}");
+        assert!(builtin_places("", &[], all).is_empty(), "no HOME, no roots: nothing");
+        // the host's roots replace the list, and need no HOME
+        let roots = vec![("Camera".to_string(), std::path::PathBuf::from("/sd/DCIM")), ("Pictures".to_string(), "/sd/Pictures".into())];
+        let got = builtin_places("/h", &roots, all);
+        assert_eq!(got, vec![("Camera".to_string(), "/sd/DCIM".to_string()), ("Pictures".to_string(), "/sd/Pictures".to_string())]);
+        assert_eq!(builtin_places("", &roots, all).len(), 2);
+        // only folders that exist (or are not known yet are left out)
+        let only_pictures = |p: &str| if p == "/sd/Pictures" { Some(true) } else { Some(false) };
+        assert_eq!(names(builtin_places("", &roots, only_pictures)), vec!["/sd/Pictures"]);
+        assert!(builtin_places("", &roots, |_| None).is_empty());
     }
 
     #[test]

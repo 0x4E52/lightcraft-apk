@@ -1277,6 +1277,42 @@ mod tests {
         assert_eq!(written.lock().unwrap().len(), n, "nothing written for a photo without a folder");
     }
 
+    /// An export with no folder goes to the host's default folder, and so does the Export dialog's first
+    /// Folder; a previous export's folder still wins, and without a host default nothing changes.
+    #[test]
+    fn export_without_folder_uses_service_default_dir() {
+        let mut app = app();
+        app.services.default_export_dir = Some("/lc-service-default".into());
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let w = written.clone();
+        app.services.write = Some(Box::new(move |p: &str, _: &[u8]| {
+            w.lock().unwrap().push(p.to_string());
+            Ok(())
+        }));
+        app.session.execute("export.savePreset", &json!({"name": "Tiny PNG", "params": {"format": "png", "width": 40}})).unwrap();
+        run_item(&mut app, "dialog.export", Value::Null).unwrap();
+        let Some(crate::state::Dialog::Export { dir, .. }) = &app.ui.dialog else { panic!("no export dialog") };
+        assert_eq!(dir, "/lc-service-default", "the dialog starts in the host's folder");
+        app.ui.dialog = None;
+        // no folder in the request, no previous export: the host's folder
+        app.session.last_export = None;
+        run_item(&mut app, "app.export", json!({"preset": "Tiny PNG"})).unwrap();
+        {
+            let w = written.lock().unwrap();
+            assert_eq!(w.len(), 1, "{w:?}");
+            assert!(w[0].starts_with("/lc-service-default/") && w[0].ends_with(".png"), "{}", w[0]);
+        }
+        // a folder named in the request wins over the host's
+        run_item(&mut app, "app.export", json!({"preset": "Tiny PNG", "dir": "/lc-named"})).unwrap();
+        assert!(written.lock().unwrap()[1].starts_with("/lc-named/"));
+        // a blank host folder counts as none; without HOME that is the "choose a folder" error
+        assert_eq!(
+            crate::control::export_dir_for(&crate::Services { default_export_dir: Some("  ".into()), ..Default::default() }),
+            crate::control::default_export_dir()
+        );
+        assert_eq!(crate::control::export_dir_for(&crate::Services::default()), crate::control::default_export_dir());
+    }
+
     #[test]
     fn select_by_submenu_and_text_prompt() {
         let mut app = app();

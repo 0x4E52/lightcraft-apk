@@ -301,6 +301,13 @@ pub struct Services {
     pub restore_library: Option<HostAction>,
     /// The system appearance for Appearance Mode ▸ Auto, ahead of egui's own report.
     pub system_theme: Option<SystemThemeFn>,
+    /// The export folder used when an export names none and none was used before, and the Export
+    /// dialog's first Folder. `None` = `~/Pictures/LightCraft Exports` from `HOME` (a host without a
+    /// usable `HOME`, such as Android, names one).
+    pub default_export_dir: Option<String>,
+    /// Folders for the Library sidebar's Local section, as `(label, path)`. Empty = Pictures, Desktop,
+    /// Downloads and Home under `HOME` (those that exist). Not empty = exactly these (those that exist).
+    pub local_roots: Vec<(String, std::path::PathBuf)>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

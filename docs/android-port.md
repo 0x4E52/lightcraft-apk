@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-5).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-6).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -20,7 +20,8 @@ the maintainer.
 | Container limits and agent CI access measured (disk need, network, targets, `gh`) | ✅ APK-4 ("Executing in this container"): no SDK/NDK download; agents read CI runs through `gh api`, starting one needs decision 0 |
 | Full `cargo xtask ci` on GitHub for every push (`.github/workflows/ci.yml`), fast gate per task here | ✅ maintainer decision 2026-10-17 |
 | `cargo xtask android check`: clippy `-D warnings` for every crate the APK links, for `aarch64-linux-android`, a step of `ci` (skipped, and reported as skipped, without the target) | ✅ APK-5 |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-6 … APK-43 below |
+| A host without `HOME` can place settings (`engine::config::use_dir`), the export folder (`Services::default_export_dir`) and the Local sidebar roots (`Services::local_roots`) | ✅ APK-6 |
+| Host crates, packaging, CI, touch UI, release | ⏳ APK-7 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1416,3 +1417,8 @@ Agents use the default until the maintainer decides (execution-plan §7).
 - 2026-10-17 (APK-5): `cargo xtask android check` (`xtask/src/android/`) lints the workspace crates the APK links (derived
   from `cargo metadata`, normal dependencies only) for `aarch64-linux-android` and runs in `ci` after `wasm`; `ci`
   steps return a `StepOutcome`, so a missing target shows as `skipped` with its reason in the report and summary.
+- 2026-10-17 (APK-6): `engine::config::use_dir` (set once, wins over `LIGHTCRAFT_CONFIG_DIR`, portable mode and the
+  platform folder) and `config::scratch_dir` (`<settings>/cache` for a host that injected a folder, else
+  `temp_dir()`); `Services::default_export_dir` and `Services::local_roots` replace the `HOME`-based export folder
+  and Local list when set. Audit: of the production `temp_dir()` uses only `profile.import`'s no-library copy was
+  reachable on Android (now `scratch_dir`); the MCP server's and the desktop panic log's stay.

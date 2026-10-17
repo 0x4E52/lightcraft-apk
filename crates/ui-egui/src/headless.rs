@@ -2827,6 +2827,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A host that names the Local folders (`Services::local_roots`, Android) gets exactly those, with its
+    /// own labels, and not the `HOME`-based Pictures / Desktop / Downloads / Home.
+    #[test]
+    fn local_section_uses_injected_roots() {
+        let base = std::env::temp_dir().join(format!("lc-ui-injected-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (camera, shots, gone) = (base.join("DCIM"), base.join("Shots"), base.join("NotThere"));
+        std::fs::create_dir_all(&camera).unwrap();
+        std::fs::create_dir_all(&shots).unwrap();
+        let s = |p: &std::path::Path| p.to_string_lossy().to_string();
+        let roots = vec![("Camera".to_string(), camera.clone()), ("Shots".to_string(), shots.clone()), ("Gone".to_string(), gone.clone())];
+        let services = crate::Services { png: None, local_roots: roots, ..Default::default() };
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo().with_fs(), services);
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+        let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"leftPanel": true}), t);
+        let (camera_row, shots_row) = (format!("source:local:{}", s(&camera)), format!("source:local:{}", s(&shots)));
+        assert!(
+            h.step_until(t, |h| {
+                let ids: Vec<&str> = h.app.widgets.iter().map(|(w, _)| w.as_str()).collect();
+                ids.contains(&camera_row.as_str()) && ids.contains(&shots_row.as_str())
+            }),
+            "the host's folders are listed"
+        );
+        h.settle(SETTLE);
+        let ids: Vec<String> = h.app.widgets.iter().map(|(w, _)| w.to_string()).collect();
+        assert!(!ids.contains(&format!("source:local:{}", s(&gone))), "a folder that doesn't exist is left out: {ids:?}");
+        let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
+        if !home.is_empty() {
+            assert!(!ids.contains(&format!("source:local:{home}")), "the HOME-based list is replaced, not extended: {ids:?}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     /// Local: a kept folder stays a root while its subfolders (and other locations) are
     /// browsed — the subfolder is highlighted inside its tree, its siblings stay listed — and
     /// the kept folders survive a save/load of the UI state (a restart).

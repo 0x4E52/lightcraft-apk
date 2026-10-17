@@ -125,8 +125,10 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
             }
             None => {
                 // no library on disk: remember the original (the in-memory session ends with the app)
-                let f = std::env::temp_dir().join(format!("lightcraft-{}.cube", id.trim_start_matches("lut:")));
-                std::fs::write(&f, &text).map_err(|e| bad(C, e.to_string()))?;
+                let scratch = crate::config::scratch_dir();
+                std::fs::create_dir_all(&scratch).map_err(|e| bad(C, format!("{}: {e}", scratch.display())))?;
+                let f = scratch.join(format!("lightcraft-{}.cube", id.trim_start_matches("lut:")));
+                std::fs::write(&f, &text).map_err(|e| bad(C, format!("{}: {e}", f.display())))?;
                 f.to_string_lossy().to_string()
             }
         };

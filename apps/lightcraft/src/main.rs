@@ -714,6 +714,9 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         backup_library: None,
         restore_library: None,
         system_theme: appearance::service(),
+        // the desktop's HOME-based defaults
+        default_export_dir: None,
+        local_roots: Vec::new(),
     }
 }
 

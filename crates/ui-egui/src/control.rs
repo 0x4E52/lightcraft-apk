@@ -478,6 +478,13 @@ pub fn default_export_dir() -> String {
         .unwrap_or_default()
 }
 
+/// The folder an export goes to when nothing else names one: the host's
+/// [`Services::default_export_dir`](crate::Services::default_export_dir) when it set a non-blank one,
+/// else [`default_export_dir`].
+pub fn export_dir_for(services: &crate::Services) -> String {
+    services.default_export_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()).map(str::to_string).unwrap_or_else(default_export_dir)
+}
+
 /// Export the selected photos (UI command `app.export`). Params: see
 /// [`lightcraft_engine::export::ExportOptions::from_json`], plus `dir` (output folder) or `path`
 /// (exact output file, single photo), `ids` (default: the selection, else the active photo).
@@ -515,7 +522,7 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
         None => {
             let last_dir =
                 app.session.last_export.as_ref().and_then(|l| l.get("dir")).and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty());
-            last_dir.map(str::to_string).unwrap_or_else(default_export_dir)
+            last_dir.map(str::to_string).unwrap_or_else(|| export_dir_for(&app.services))
         }
     };
     let own_folders = opts.destination_mode == lightcraft_engine::export::DestinationMode::SameAsOriginal;
