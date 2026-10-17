@@ -107,7 +107,19 @@ pub fn sync_dir(dir: &Path) {
     }
 }
 
-/// A new, empty temp file next to `path` (hidden, unique in this process and folder).
+/// The hidden temp name for write number `n` of this process. A target with an extension gets
+/// `.lightcraft-<pid>-<n>-tmp.<ext>`: Android's shared `Pictures/` folder (MediaProvider) refuses to
+/// create a file whose extension maps to a non-image MIME type, which a plain `.tmp` does. A target
+/// without an extension, with one that is not valid UTF-8 or with one longer than 16 bytes (so the name
+/// stays far below the 255-byte limit of a file name) gets `.lightcraft-<pid>-<n>.tmp`.
+fn temp_name(path: &Path, pid: u32, n: u64) -> String {
+    match path.extension().and_then(|e| e.to_str()).filter(|e| !e.is_empty() && e.len() <= 16) {
+        Some(ext) => format!(".lightcraft-{pid}-{n}-tmp.{ext}"),
+        None => format!(".lightcraft-{pid}-{n}.tmp"),
+    }
+}
+
+/// A new, empty temp file next to `path` (hidden, unique in this process and folder, same extension).
 fn create_temp(path: &Path) -> io::Result<(PathBuf, File)> {
     static N: AtomicU64 = AtomicU64::new(0);
     if path.file_name().is_none() {
@@ -115,7 +127,7 @@ fn create_temp(path: &Path) -> io::Result<(PathBuf, File)> {
     }
     let dir = parent_of(path);
     for _ in 0..1000 {
-        let tmp = dir.join(format!(".lightcraft-{}-{}.tmp", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let tmp = dir.join(temp_name(path, std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         match OpenOptions::new().write(true).create_new(true).open(&tmp) {
             Ok(f) => return Ok((tmp, f)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -394,6 +406,73 @@ mod tests {
         assert_eq!(got, d.join("a-2.dng"));
         assert_eq!(fs::read(&got).unwrap(), b"fresh");
         assert_eq!(names(&d), vec!["a-2.dng", "a.dng"], "the temp file is gone");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn temp_name_keeps_final_extension() {
+        assert_eq!(temp_name(Path::new("/x/IMG_1.jpg"), 7, 3), ".lightcraft-7-3-tmp.jpg");
+        assert_eq!(temp_name(Path::new("a.tar.gz"), 7, 0), ".lightcraft-7-0-tmp.gz");
+        assert_eq!(temp_name(Path::new("/x/Makefile"), 7, 3), ".lightcraft-7-3.tmp");
+        assert_eq!(temp_name(Path::new("/x/trailing."), 7, 3), ".lightcraft-7-3.tmp");
+        // a very long extension falls back to `.tmp`, so the name never exceeds NAME_MAX
+        let long = format!("/x/a.{}", "e".repeat(300));
+        assert_eq!(temp_name(Path::new(&long), 7, 3), ".lightcraft-7-3.tmp");
+        assert_eq!(temp_name(Path::new("/x/a.sixteenbyteext167"), 7, 3), ".lightcraft-7-3.tmp");
+        assert_eq!(temp_name(Path::new("/x/a.sixteenbyteext16"), 7, 3), ".lightcraft-7-3-tmp.sixteenbyteext16");
+        // the temp file sits next to the target and is hidden
+        let d = temp("tmpname");
+        let (tmp, _f) = create_temp(&d.join("out.png")).unwrap();
+        assert_eq!(tmp.parent(), Some(d.as_path()));
+        let name = tmp.file_name().unwrap().to_string_lossy().to_string();
+        assert!(name.starts_with('.') && name.ends_with(".png"), "{name}");
+        drop(_f);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// What MediaProvider does in `Pictures/`: a name whose extension is not an image one is refused.
+    fn image_only_name(name: &str) -> bool {
+        matches!(name.rsplit_once('.'), Some((_, "jpg" | "jpeg" | "png" | "webp" | "tif" | "tiff" | "dng")))
+    }
+
+    #[test]
+    fn write_atomic_into_image_only_dir() {
+        // every name this module creates in the folder must pass the fake check
+        let d = temp("imageonly");
+        let p = d.join("export.jpg");
+        let tmp_ok = |p: &Path| {
+            let name = temp_name(p, std::process::id(), 0);
+            image_only_name(&name)
+        };
+        assert!(tmp_ok(&p));
+        assert!(!image_only_name(".lightcraft-1-0.tmp"), "the check rejects a plain .tmp");
+        // a real write: scan the folder from inside the fill, while the temp file exists
+        write_atomic_with(&p, &mut |w| {
+            for n in names(&d) {
+                assert!(image_only_name(&n), "{n} would be refused in Pictures/");
+            }
+            w.write_all(b"jpeg")
+        })
+        .unwrap();
+        // write_new_unique: `new.dng` is taken, so the second candidate is asked for after the temp file
+        // was written and before it is published: scan the folder then
+        fs::write(d.join("new.dng"), b"old").unwrap();
+        let mut asked = 0;
+        let dir = d.clone();
+        let mut cands = std::iter::from_fn(|| {
+            asked += 1;
+            if asked == 2 {
+                let all = names(&dir);
+                assert!(all.len() >= 3, "the temp file should exist now: {all:?}");
+                for n in all {
+                    assert!(image_only_name(&n), "{n} would be refused in Pictures/");
+                }
+            }
+            Some(dir.join(if asked == 1 { "new.dng".to_string() } else { format!("new-{asked}.dng") }))
+        });
+        let got = write_new_unique(&mut cands, b"dng").unwrap();
+        assert_eq!(got, d.join("new-2.dng"));
+        assert_eq!(names(&d), vec!["export.jpg", "new-2.dng", "new.dng"]);
         let _ = fs::remove_dir_all(&d);
     }
 

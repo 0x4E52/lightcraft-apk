@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-8).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-9).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -23,7 +23,8 @@ the maintainer.
 | A host without `HOME` can place settings (`engine::config::use_dir`), the export folder (`Services::default_export_dir`) and the Local sidebar roots (`Services::local_roots`) | ✅ APK-6 |
 | Desktop host code the Android host also needs is shared (`lightcraft_ui_egui::host`: settings file, session opening, log file with the last error, flush, GPU markers; `lightcraft_engine::gpu::window`) | ✅ APK-7 |
 | A host without environment variables sets the diagnostics switches before first use (`lightcraft_profile::set_enabled` for `LIGHTCRAFT_PROFILE`, `lightcraft_engine::gpu::backend::set_choice` for `LIGHTCRAFT_GPU_BACKEND`) | ✅ APK-8 |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-9 … APK-43 below |
+| `safe_file` temp names keep the target's extension (`.lightcraft-<pid>-<n>-tmp.<ext>`, `.tmp` without one or with one over 16 bytes), as MediaProvider requires in `Pictures/` (device check: APK-27) | ✅ APK-9 |
+| Host crates, packaging, CI, touch UI, release | ⏳ APK-10 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1435,3 +1436,7 @@ Agents use the default until the maintainer decides (execution-plan §7).
   reads and three `OnceLock`s in catalog, pipeline, gpu, denoise, denoise-core, faces and engine;
   `gpu::backend::set_choice` fills the process's backend choice before first use and returns `Err(the choice in
   force)` after it was read.
+- 2026-10-17 (APK-9): `safe_file` temp names keep the target's extension (`.lightcraft-<pid>-<n>-tmp.<ext>`, `.tmp`
+  without one or with one over 16 bytes) so MediaProvider accepts them in `Pictures/`; the other `.tmp` writers
+  (catalog store, prefs, camera profiles, lightroom archive, preview cache, denoise models) write into app-private
+  folders.
