@@ -5,11 +5,12 @@
 //! ([`loader`]) and runs eframe until the Activity ends; the app it shows is the loading frame,
 //! then [`state::HostState`]'s LightCraft UI with the [`services`] Android provides. A wrapper
 //! around eframe's event handler saves, trims and leaves the loop as the Activity comes and goes
-//! ([`lifecycle_core`]). The pure parts ([`Exit`], [`exit_code`], [`try_start`], and every module
-//! but the eframe app and the wrapper) compile and are tested on every target; the Android-only
-//! dependencies (eframe,
-//! winit, android-activity) sit behind `cfg(target_os = "android")`, so `cargo test -p
-//! lightcraft-android-host` builds on Linux without them. No `unsafe`: the entry symbol lives in
+//! ([`lifecycle_core`]). A renderer that won't start is reported in a dialog and the next start
+//! tries the other one ([`renderer`]). The pure parts ([`Exit`], [`exit_code`], [`try_start`],
+//! and every module but the eframe app and the wrapper) compile and are tested on every target;
+//! the Android-only dependencies (eframe, winit, android-activity) sit behind
+//! `cfg(target_os = "android")`, so `cargo test -p lightcraft-android-host` builds on Linux
+//! without them. No `unsafe`: the entry symbol lives in
 //! `apps/lightcraft-android` and JNI in `crates/android-sys`.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -23,6 +24,7 @@ pub mod lifecycle_core;
 pub mod loader;
 pub mod memory;
 pub mod paths;
+pub mod renderer;
 mod run;
 pub mod services;
 pub mod state;

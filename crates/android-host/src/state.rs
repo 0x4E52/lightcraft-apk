@@ -54,6 +54,11 @@ pub struct Start {
     pub prefs: Option<UiState>,
     /// Why `ui.json` couldn't be used, for the notices panel.
     pub prefs_warning: Option<String>,
+    /// The last start died creating the GPU device, or stopped after the GPU was lost
+    /// (`host::gpu_markers`): GPU rendering is off and this says why (once).
+    pub gpu_notice: Option<String>,
+    /// The window's renderer failed to start last time, so this start uses another (once).
+    pub renderer_notice: Option<String>,
     /// `ui.json` couldn't be read: never overwrite it this session.
     pub keep_prefs_file: bool,
     /// Where the settings are written (`<config>/ui.json`).
@@ -75,7 +80,7 @@ impl Start {
     /// problem window (`LibraryProblem::pending_import`, the desktop's command-line files) are not
     /// carried: the phone has none; once share or inbox imports reach this path they go here.
     pub fn restarted(&self, old: &HostState, library: PathBuf) -> Start {
-        Start { prefs: Some(old.app.ui.clone()), prefs_warning: None, library, ..self.clone() }
+        Start { prefs: Some(old.app.ui.clone()), prefs_warning: None, gpu_notice: None, renderer_notice: None, library, ..self.clone() }
     }
 
     /// Prepare for opening `library` again (Try Again): the state over the problem, if there still
@@ -119,12 +124,18 @@ impl HostState {
         }
         lightcraft_ui_egui::i18n::set_language(app.ui.language);
         app.notices.extend(start.prefs_warning);
+        app.notices.extend(start.renderer_notice);
         app.gpu_notice = true;
         if problem.is_none() {
             lightcraft_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
         }
         // (after the launch-time view switch above, so it isn't saved for its own sake)
         let prefs = PrefsWriter::new(start.prefs_path, &app, start.keep_prefs_file);
+        // after the snapshot above, so the writer saves the switched-off preference (as the desktop)
+        if let Some(notice) = start.gpu_notice {
+            app.ui.settings.gpu = false;
+            app.notices.push(notice);
+        }
         app.library_problem = problem;
         HostState { app, prefs }
     }
@@ -267,6 +278,35 @@ mod tests {
         assert!(again.prefs_warning.is_none() && again.reopen.is_some());
         again.reopening(None, PathBuf::from("/x"));
         assert_eq!(again.library, PathBuf::from("/x"));
+    }
+
+    /// A GPU that died at the last start: the app starts with GPU rendering off and says why, and
+    /// that the window uses another renderer; both once (not again when the library reopens), and
+    /// the switched-off preference is saved.
+    #[test]
+    fn gpu_notices_reach_the_app_once() {
+        let dir = temp("gpu-notice");
+        let lib = dir.join("library");
+        let mut session = Session::new().with_fs();
+        session.open_library(&lib, true).unwrap();
+        let start = Start {
+            gpu_notice: Some("LightCraft closed unexpectedly while starting the GPU last time".into()),
+            renderer_notice: Some("The window could not start with its vulkan renderer last time.".into()),
+            prefs_path: Some(dir.join("ui.json")),
+            library: lib.clone(),
+            ..Start::default()
+        };
+        let mut state = HostState::new(Ok((session, None)), start.clone());
+        assert!(!state.app.ui.settings.gpu, "GPU rendering starts off");
+        let said = |state: &HostState, what: &str| state.app.notices.iter().filter(|n| n.contains(what)).count();
+        assert_eq!(said(&state, "starting the GPU last time"), 1);
+        assert_eq!(said(&state, "vulkan renderer last time"), 1);
+        state.prefs.save(&state.app).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("ui.json")).unwrap()).unwrap();
+        assert_eq!(saved["settings"]["gpu"], json!(false), "{saved}");
+        let next = start.restarted(&state, lib);
+        assert!(next.gpu_notice.is_none() && next.renderer_notice.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A library the loader couldn't open is never replaced: the session is empty and in memory

@@ -39,7 +39,7 @@ pub fn activity_state(app: &android_activity::AndroidApp) -> Result<ActivityStat
 /// A `boolean` a Java method answered; a thrown exception is caught and named instead of the bare
 /// JNI error.
 #[cfg(target_os = "android")]
-fn answer_bool(env: &jni::Env<'_>, answer: jni::errors::Result<jni::JValueOwned<'_>>) -> Result<bool, crate::Error> {
+pub(crate) fn answer_bool(env: &jni::Env<'_>, answer: jni::errors::Result<jni::JValueOwned<'_>>) -> Result<bool, crate::Error> {
     match answer {
         Ok(answer) => Ok(answer.z()?),
         Err(e) => {

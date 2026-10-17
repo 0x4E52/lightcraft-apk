@@ -78,7 +78,10 @@ impl eframe::App for HostApp {
             };
             // the app's first `logic` runs in this frame: its fonts and theme go in at once
             let start = self.start.clone();
+            // (said once: not again when the library is opened again)
             self.start.prefs_warning = None;
+            self.start.gpu_notice = None;
+            self.start.renderer_notice = None;
             *slot = Some(HostState::new(opened, start));
             self.last_flush = Instant::now();
         }

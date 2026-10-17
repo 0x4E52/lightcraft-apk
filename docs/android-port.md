@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-18).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-19).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -34,7 +34,8 @@ the maintainer.
 | `.github/workflows/android.yml` (pushes touching Android paths, `workflow_dispatch`): `android check`, `so` for arm64-v8a and x86_64 (sizes in the job summary), `apk`, `aapt2 dump badging` must show the id, SDK levels, `application-label:'LightCraft'` and `application-icon-`; an x86_64 API 35 emulator job installs the APK, starts the NativeActivity, takes a screenshot and fails on a dead or restarted process or `panicked` / `fatal` (`packaging/android/smoke.sh`) | ✅ APK-16 committed, YAML parsed here; no run has been seen yet (the first link, packaging and start are in it): the Device checklist lines stay unticked |
 | Back and Quit: Android's Back key becomes Escape (`input::browser_back_to_escape` in the host's `raw_input_hook`), so open menus, popups and text fields take it first and `view.back` runs its cascade unchanged; its new last step, `Services::move_to_back`, posts `Activity.moveTaskToBack(true)` to the Java main thread (`android-sys` `activity.rs`, not awaited). `Services::quit_disabled` (Android) refuses `app.quit` (command, Cmd+Q, control channel), leaves Quit out of the menus and the library problem window, opens no quit prompt and clears egui's own Ctrl+Q (`Options::quit_shortcuts`), so nothing ends the one event loop | ✅ APK-17, headless tests with a fake service; the JNI call has not run here (device check in `docs/android.md`) |
 | Lifecycle: eframe runs through `eframe::create_native` on the host's own event loop inside a wrapper (`lifecycle.rs`) that maps winit's callbacks to the pure `lifecycle_core::on_event`: focus lost → full save; suspended → `trim()` (`Session::trim_caches`, `gpu::trim_pool(0)`) and a quick save only when focus loss didn't save; `memory_warning` → `trim()`; while away, each `about_to_wait` asks the Activity (`android-sys` `activity_state`: `isFinishing`/`isDestroyed`) and a destroyed one ends the loop (`Exit::Destroyed`), so `onDestroy` doesn't hang | ✅ APK-18, pure core and engine trim tested here; the wrapper and the JNI calls have not run (Device checklist: smoke run, kill/rotate/"Don't keep activities") |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-19 … APK-43 below |
+| Renderer failure: the window starts on Vulkan, then GL (`renderer::order` over `window_renderer_order`), its marker (`gpu_markers::Files`) armed before eframe and cleared by the app creator, which also installs the logging error handler and logs the adapter; a renderer that fails (an error eframe only logs, found as "app creator never ran" plus `log_file::last_error`, or a caught panic) gets an `AlertDialog` (`android-sys` `dialog.rs`) that android_main waits on (`renderer::wait_until`, polling the Activity's commands) before `run` returns `Err`, so the next start tries the other renderer; the desktop's GPU crash and GPU-lost sentinels turn GPU compute off with a notice | ✅ APK-19, pure parts tested here; the dialog and the JNI calls have not run (Device checklist: the adapter line in the CI logcat) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-20 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1622,3 +1623,26 @@ Agents use the default until the maintainer decides (execution-plan §7).
   `destroyed_while_the_library_opens_still_leaves`, `a_busy_state_is_skipped_not_a_panic`,
   `leaving_needs_destroyed_or_finishing_without_a_surface`, `state_trim_lets_caches_go`. `docs/android.md` explains
   the lifecycle and the cached-apps freezer; the smoke-run and lifecycle device checks are added unticked.
+- 2026-10-17 (APK-19): Renderer failure and GPU start markers. `android-host` `renderer.rs`: `order(forced, failed,
+  compiled)` over `backend::window_renderer_order(…, "android", compiled, false)` (Vulkan, GL; the failed one last),
+  `wgpu_options` (the first renderer's backends with the app's backend options and instance flags), `exit_reason(
+  app_created, exit_requested, last_error)`, `panic_reason`, `failure_text` (reason, the renderer the next start tries,
+  the log path), `wait_until(dismissed, tick, limit)` and, Android only, `show_failure_and_wait`, which polls
+  `poll_events(200 ms)` (a Destroy ends the wait; input that reaches the Activity is drained) and the dialog's
+  `isShowing()`, at most 10 minutes, a JNI error ending it at once. `android-sys` `dialog.rs`: `show_alert` posts
+  `AlertDialog.Builder(…).setTitle/setMessage/setPositiveButton(…, null)/setCancelable(true).show()` to the Java main
+  thread and keeps a global reference; `Alert::status` asks `isShowing()` on the calling thread; the pure
+  `status_from` maps what is known to `Pending`/`Showing`/`Dismissed`/`Failed`. `run`: the GPU crash and GPU-lost
+  checks under `<config>` (GPU compute off, the notice in the app via `Start::gpu_notice`, saved as the desktop does),
+  `Files::take_failed` → `order(None, failed, wgpu::Instance::enabled_backend_features())`, the renderer notice
+  (`Start::renderer_notice`), `files.arm` before `create_native`, the app creator `files.started`, `app_created`,
+  `install_error_handler` and the adapter line; `catch_unwind` around the event loop; a reason → the GPU-lost record
+  when the app had run, the dialog and its wait, then `Err`. Changes to the card: `HOW_TO_FORCE` reads "a developer can
+  run adb shell setprop debug.lightcraft.gpu_backend gl (or vulkan) and start LightCraft again" instead of APK-7's
+  "Settings ▸ Performance, or …" (Performance has no backend choice); an event loop that fails to build or run gets
+  the same dialog; and a loop the host left because the Activity went away before the window came up removes the
+  marker, so that start doesn't count as the renderer's failure. Tests: `failed_vulkan_start_tries_gl_next`,
+  `order_keeps_to_compiled_backends`, `exit_without_app_shows_last_error`, `normal_exit_shows_nothing`,
+  `waits_for_dismissal_then_returns`, `jni_error_ends_wait`, `gpu_notices_reach_the_app_once` (android-host),
+  `dialog_status_follows_the_posted_dialog` (android-sys). `docs/android.md` explains the renderer start and its
+  failure; the adapter line in the CI logcat is added to the Device checklist, unticked.

@@ -75,6 +75,25 @@ No frame runs while the app is in the background, so the host saves and trims fr
   its row in the activity stack but makes no progress while frozen, and continues when LightCraft is opened again;
   the row is not stalled, only paused. There is no foreground service (it would need Java, decision 2).
 
+## When the graphics won't start
+
+The window draws with wgpu: Vulkan first, then OpenGL ES (`crates/android-host/src/renderer.rs`). Before eframe starts,
+the host writes `files/config/window-init.marker` naming the renderer; it is removed once the window is up. Logcat shows
+the choice (`window: renderer vulkan (order ["vulkan", "gl"])`) and, once the window is up, the adapter (`window:
+adapter … (Vulkan, …), driver …`).
+
+- **The renderer fails** (an error eframe logs, or a panic): an `AlertDialog` says why and where the log is
+  (`files/logs`). The native thread waits until it is closed (at most 10 minutes; the Activity's lifecycle stays
+  answered meanwhile), then the process exits. The marker stays behind, so the next start puts that renderer last and
+  tries the other one first, and a notice in the app says so.
+- **The process dies inside the driver** (no dialog is possible): the marker stays too, so the next start tries the
+  other renderer.
+- **The GPU compute device died at start, or the GPU was lost while LightCraft ran** (`gpu-init.marker`,
+  `gpu-lost.marker`, as on the desktop): the next start renders photos on the CPU and says why;
+  Settings ▸ Performance ▸ Use the GPU for rendering turns the GPU back on.
+
+Forcing a backend with `adb shell setprop debug.lightcraft.gpu_backend gl` comes with APK-20.
+
 ## Device checklist
 
 What only a device (or a CI run an agent cannot start) can show. Whoever saw it ticks the line.
@@ -103,3 +122,5 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   slider drag: no ANR, and the drag is one undo step; rotate; Developer options ▸ "Don't keep activities" on → leave →
   reopen: no ANR, the app reopens (logcat: "the Activity is going away"); remove from recents → reopen; Home with a
   20k-photo library: no ANR.
+- [ ] Renderer start (APK-19): the CI logcat (`lightcraft-smoke` artifact) shows the adapter line (`window: adapter
+  …`) after `window: renderer …`, and no failure dialog.
