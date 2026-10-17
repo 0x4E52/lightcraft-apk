@@ -1,0 +1,147 @@
+# Links the Android library, packages the debug APK and starts it on an x86_64 emulator
+# (docs/android-port.md, APK-16). The agent container has no NDK, SDK or KVM, so this is where those
+# steps run for the first time on every push; a red run is fixed forward before new work.
+name: Android
+
+on:
+  push:
+    paths:
+      - ".github/workflows/android.yml"
+      - ".cargo/**"
+      - "apps/lightcraft-android/**"
+      - "crates/**"
+      - "packaging/android/**"
+      # files the crates embed with include_bytes! / include_str!
+      - "assets/**"
+      - "locales/**"
+      - "docs/whats-new.md"
+      - "docs/raf-corpus.sha256"
+      - "docs/raw/coverage-sweep.tsv"
+      - "LICENSE-*"
+      - "NOTICE"
+      - "xtask/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Runs queue instead of cancelling each other, as in ci.yml.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # keeps the debug build small on the runner; set for every step so xtask and the host build scripts
+  # are built once with the same profile
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # the debug application id `cargo xtask android manifest` writes (decision 1)
+  APP_ID: io.github.n0x4e52.lightcraft.debug
+
+jobs:
+  apk:
+    name: Link and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Free disk space
+        # not /usr/local/lib/android: the SDK and NDK live there
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Rust toolchain and targets
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add aarch64-linux-android x86_64-linux-android
+          rustc --version
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME NDK=${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-unset}}"
+      - name: cargo xtask android check
+        run: cargo xtask android check
+      - name: cargo xtask android so
+        run: cargo xtask android so --abi arm64-v8a --abi x86_64
+      - name: Library sizes
+        run: |
+          {
+            echo "### Libraries"
+            echo '```'
+            ls -l target/android/jniLibs/*/*.so
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: cargo xtask android apk
+        run: cargo xtask android apk
+      - name: Check the APK with aapt2 dump badging
+        run: |
+          # the newest stable 36.x, as xtask picks it (no -rc / -beta folders)
+          build_tools=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -name '36.*' ! -name '*-*' | sort -V | tail -n 1)
+          if [ -z "$build_tools" ]; then
+            echo "::error::no stable build-tools 36.x under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          "$build_tools/aapt2" dump badging target/android/lightcraft-debug.apk | tee target/android/badging.txt
+          fail=0
+          for want in "package: name='$APP_ID'" "sdkVersion:'30'" "targetSdkVersion:'36'" "application-label:'LightCraft'" "application-icon-"; do
+            if ! grep -qF -- "$want" target/android/badging.txt; then
+              echo "::error::aapt2 dump badging lacks: $want"
+              fail=1
+            fi
+          done
+          {
+            echo "### APK"
+            echo '```'
+            ls -l target/android/lightcraft-debug.apk
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit "$fail"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        # also after a failed badging check: the APK and the dump are what shows why
+        if: ${{ !cancelled() }}
+        with:
+          name: lightcraft-debug-apk
+          path: |
+            target/android/lightcraft-debug.apk
+            target/android/badging.txt
+          if-no-files-found: warn
+
+  emulator:
+    name: Start on an emulator
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: lightcraft-debug-apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, start, screenshot, logcat
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash packaging/android/smoke.sh apk/lightcraft-debug.apk "$APP_ID" smoke
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: lightcraft-smoke
+          path: |
+            smoke/shot.png
+            smoke/logcat.txt
+          if-no-files-found: warn

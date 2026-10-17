@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-15).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-16).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -31,7 +31,8 @@ the maintainer.
 | `packaging/android/AndroidManifest.xml` (NativeActivity, `hasCode=false`, `allowBackup=false`, `extractNativeLibs=false`, the Back opt-out, full `configChanges`, minSdk 30 / targetSdk 36) filled by `cargo xtask android manifest [--release]` (`.debug` application id suffix for debug); `version_code` from the workspace version (alpha < beta < rc < release) | ✅ APK-13, unit-tested; `cargo xtask android apk` (APK-15) hands it to `aapt2 link`, which has not run here (no SDK): APK-16 `aapt2 dump badging` |
 | Launcher and adaptive icons (`packaging/android/res/`: legacy, foreground and monochrome PNGs for mdpi to xxxhdpi, `mipmap-anydpi-v26/ic_launcher.xml`, background colour `#f2a516`) generated from `assets/app-icon/lightcraft.svg` by `packaging/android/icons.sh`; the manifest names them (`android:icon`, `android:roundIcon`) | ✅ APK-14, attributed; `aapt2 compile` and `link` read them in `cargo xtask android apk` (APK-15), first run in the APK-16 workflow (`application-icon-` check); the foreground's chest runs off the 72 dp viewport so no mask shows a cut, but the ear tuft tips reach 43.5 dp from the centre (measured), beyond the 33 dp safe circle; how it looks under real launcher masks and as a themed icon is a device check (APK-14 card) |
 | `cargo xtask android apk`: `aapt2 compile`/`link --debug-mode`, aapt2's entries raw-copied and the `.so` appended Stored at 16 KB alignment (`zip_lib.rs`), `zipalign -P 16`, `apksigner` with the debug key made by `keytool` when missing (`signing.rs`), `zipalign -c`; `docs/android.md` (build, install, debugging, Device checklist) | ✅ APK-15, argument builders and the zip step unit-tested; no SDK here, so the first real packaging is the APK-16 workflow |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-16 … APK-43 below |
+| `.github/workflows/android.yml` (pushes touching Android paths, `workflow_dispatch`): `android check`, `so` for arm64-v8a and x86_64 (sizes in the job summary), `apk`, `aapt2 dump badging` must show the id, SDK levels, `application-label:'LightCraft'` and `application-icon-`; an x86_64 API 35 emulator job installs the APK, starts the NativeActivity, takes a screenshot and fails on a dead or restarted process or `panicked` / `fatal` (`packaging/android/smoke.sh`) | ✅ APK-16 committed, YAML parsed here; no run has been seen yet (the first link, packaging and start are in it): the Device checklist lines stay unticked |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-17 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -133,7 +134,7 @@ crates/android-sys          package lightcraft-android-sys, rlib, the JNI unsafe
   ├─ clipboard.rs           ClipboardManager get/set                                                    (APK-28)
   └─ insets.rs              getRootWindowInsets (system bars, cutout, IME)                              (APK-31)
 crates/profile              package lightcraft-profile, L0: one LIGHTCRAFT_PROFILE switch              (APK-8)
-packaging/android/          AndroidManifest.xml template, res/ (icons), icons.sh, no Java/Kotlin
+packaging/android/          AndroidManifest.xml template, res/ (icons), icons.sh, smoke.sh (emulator smoke test for android.yml), no Java/Kotlin
 xtask/src/android/          mod.rs (dispatch), check.rs, sdk.rs, so.rs, elf.rs, manifest.rs, zip_lib.rs,
                             signing.rs, apk.rs, aab.rs, listing.rs
 .github/workflows/android.yml          builds the APK, boots an x86_64 emulator, smoke-tests (APK-16)
@@ -707,7 +708,7 @@ right after their number, in letter order.
   image, `emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim`, script: `adb
   install`, `adb shell am start -n <id>/android.app.NativeActivity`, wait, `adb exec-out screencap -p > shot.png`,
   `adb logcat -d --pid=$(adb shell pidof <id>)` plus `AndroidRuntime`/`DEBUG` lines naming `<id>`; fail on
-  `panicked` / `FATAL`. Upload APK, screenshot and logcat. Triggers: `workflow_dispatch` and pushes touching Android
+  `panicked` / `fatal`. Upload APK, screenshot and logcat. Triggers: `workflow_dispatch` and pushes touching Android
   paths.
 - **Tests:** the workflow run itself (maintainer or agent per decision 0).
 - **Verify:** here: YAML parse (rule above), `actionlint` if available, `cargo test -p xtask`; then the CI-run rule.
@@ -1561,3 +1562,24 @@ Agents use the default until the maintainer decides (execution-plan §7).
   aapt2, zipalign nor apksigner exist here: only argument builders and the zip step are tested; the first real
   packaging is the APK-16 workflow. `docs/android.md` (build, install, debugging) is new, with the Device checklist
   holding APK-14's launcher-icon line and the first-packaging line, both unticked.
+- 2026-10-17 (APK-16): `.github/workflows/android.yml` with two jobs. `apk` (ubuntu-latest, SDK and NDK preinstalled,
+  `sdkmanager` adds `platforms;android-36` and `build-tools;36.0.0`) runs `android check`, `so --abi arm64-v8a --abi
+  x86_64`, lists the `.so` sizes and the APK size in the job summary,
+  runs `android apk` and fails unless `aapt2 dump badging` shows the debug application id, `sdkVersion:'30'`,
+  `targetSdkVersion:'36'`, `application-label:'LightCraft'` and an `application-icon-` line. `emulator` (needs `apk`)
+  sets up KVM with the card's udev rule and runs `reactivecircus/android-emulator-runner` (pinned by SHA, v2.37.0;
+  x86_64, API 35, `google_apis`, the card's emulator options). The script is `packaging/android/smoke.sh` (not in the
+  card's file list: the action runs each `script:` line in its own shell, so a file keeps the wait loops and the
+  exit-trap log collection readable): install, `am start -n <id>/android.app.NativeActivity`, wait up to 60 s for the
+  process, run 45 s, screenshot, logcat of the pid (remembered after `am start`, so a dead process still has its log;
+  the whole log when the app never appeared) plus `AndroidRuntime`/`DEBUG` lines naming the id plus the crash buffer
+  of that pid only (other processes' crashes do not fail the run), fail on a missing or restarted process or `panicked` / `fatal`.
+  `CARGO_PROFILE_DEV_DEBUG=line-tables-only` is workflow-level env. APK, screenshot and log are uploaded; the APK and
+  `badging.txt` also after a failed badging check. Triggers:
+  `workflow_dispatch` and pushes touching `.cargo/`, `crates/`, `apps/lightcraft-android/`, `packaging/android/`, `xtask/`,
+  the files the crates embed (`assets/`, `locales/`, `docs/whats-new.md`, `docs/raf-corpus.sha256`,
+  `docs/raw/coverage-sweep.tsv`, `LICENSE-*`, `NOTICE`), the Cargo manifests or the workflow (the crates the APK links are most of `crates/`). Action
+  SHAs were read with `git ls-remote`. The disk step spares `/usr/local/lib/android`, which ci.yml deletes. The badging step uses the newest stable `build-tools/36.*` (as xtask does). The smoke script also fails when the pid changed
+  after 45 s (crash and relaunch) and saves `files/config/panic.log` and `files/logs` via `run-as`. Checked
+  here: YAML parse, `bash -n`, `actionlint` 1.7.12 with `shellcheck` (clean); no run yet. The two Device checklist lines (run
+  green with a screenshot showing the UI; CI APK on an arm64 phone) are added unticked.

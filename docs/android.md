@@ -25,6 +25,17 @@ earlier emulator build is packaged next to a fresh `arm64-v8a` one unless `--abi
 The debug key is `~/.android/debug.keystore` (password `android`). It is created with `keytool` when missing and never
 lives in the repository; `.gitignore` also keeps `*.jks`, `*.keystore`, `*.p12` and `keystore.properties` out.
 
+## CI
+
+`.github/workflows/android.yml` runs on pushes that touch Android paths (the crates, `packaging/android/`, `xtask/`,
+the manifests, and the files the crates embed: `assets/`, `locales/`, `docs/whats-new.md`, the licence files) and on demand. The `apk` job runs `cargo xtask android check`, `so --abi arm64-v8a --abi x86_64` and
+`apk` on a GitHub runner (SDK and NDK preinstalled; the library sizes go to the job summary), then `aapt2 dump
+badging` must show the application id, minSdk 30, targetSdk 36, `application-label:'LightCraft'` and an
+`application-icon-` line. The `emulator` job boots an x86_64 API 35 image and runs `packaging/android/smoke.sh`: it
+installs the APK, starts `android.app.NativeActivity`, lets it run for 45 s, and fails when the process is gone or restarted, or the
+log shows `panicked` or `fatal`. The APK (`lightcraft-debug-apk`), the screenshot and the log (`lightcraft-smoke`) are
+uploaded as artifacts.
+
 ## Install and run
 
 ```sh
@@ -59,3 +70,6 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   targetSdk 36 from the manifest; the APK-16 workflow runs it.
 - [ ] `cargo xtask android apk` has produced an APK with the SDK build-tools (aapt2 accepts the manifest and
   resources, `zipalign -c -P 16` passes, `apksigner verify` passes): first real run is the APK-16 workflow.
+- [ ] `android.yml` run green; the screenshot shows the LightCraft UI (APK-16): the run's `lightcraft-smoke` artifact
+  holds `shot.png` and `logcat.txt`. The job fails on a dead process or a panic, but it does not judge the picture.
+- [ ] The CI APK (APK-16) installs on an arm64 phone and opens on the demo library.
