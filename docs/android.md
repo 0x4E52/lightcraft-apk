@@ -140,9 +140,73 @@ the smoke test: it does exactly this and sends one `ui.inspect`, then one withou
 `smoke/control.txt` in the `lightcraft-smoke` artifact is its output. To pull a screenshot, write it under `files/` and
 `adb exec-out run-as <id> cat files/shot.png > shot.png`.
 
+## Continuing on a Mac
+
+Everything the cloud agents did is on the branch `ccr-9ce32afe-lqdb0r` of `0x4E52/lightcraft-apk`, one commit per
+task (`APK-<n>: …`); the next task is the first open card in [`android-port.md`](android-port.md) → "Order of the
+remaining work". A Mac, unlike the agent container, can download the SDK and NDK, so it builds, installs and runs the
+APK itself.
+
+### One-time setup (Apple Silicon or Intel)
+
+```sh
+# Rust and the targets
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add aarch64-linux-android x86_64-linux-android wasm32-unknown-unknown
+
+# JDK (keytool for the debug key) and the Android command-line tools
+brew install openjdk@21
+brew install --cask android-commandlinetools android-platform-tools   # android-platform-tools = adb
+export ANDROID_HOME="$(brew --prefix)/share/android-commandlinetools"
+sdkmanager --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+# put the two exports in ~/.zshrc; Android Studio's SDK (~/Library/Android/sdk) works the same way
+```
+
+`sdkmanager --sdk_root="$ANDROID_HOME" --list | grep ndk` shows the NDK versions on offer. Any NDK r28 or newer works (`xtask/src/android/so.rs` adds the 16 KB page flag itself for older ones); if sdkmanager
+lists a newer r28+ revision, use that and adjust `ANDROID_NDK_HOME`.
+
+### Get the code and check it
+
+```sh
+git clone https://github.com/0x4E52/lightcraft-apk && cd lightcraft-apk
+git checkout ccr-9ce32afe-lqdb0r
+cargo xtask android check        # lint everything the APK links
+cargo xtask ci                   # the full gate (as GitHub's ci.yml runs it); a Mac is faster than the container
+```
+
+### Build, install, run on your phone
+
+```sh
+cargo xtask android so --abi arm64-v8a
+cargo xtask android apk --abi arm64-v8a
+adb install -r target/android/lightcraft-debug.apk   # phone with USB debugging on
+adb shell am start -n io.github.n0x4e52.lightcraft.debug/android.app.NativeActivity
+```
+
+On an Apple Silicon Mac the Android emulator runs arm64 images, so use `--abi arm64-v8a` there too (the CI emulator
+is x86_64 because GitHub's runners are). Headless snapshots of the phone layout need no device:
+`cargo run -p lightcraft-cli -- snapshot --demo --size 412x915 --scale 2.625 -o phone.png`.
+
+### Continue with Claude Code on the Mac
+
+The rules the agents followed are in the repository: `CLAUDE.md` (fast gate per Android task), `docs/android-port.md`
+(cards, "Executing in this container", decisions) and `docs/android-touch-ui.md` (the Lightroom-like touch UI). On
+a Mac the container limits don't apply: the SDK, NDK and a device are there, so a card's NDK, SDK and device steps run
+locally instead of only in CI. To go on task by task, ask Claude Code in the repository:
+
+> Continue the Android port: take the next open card from docs/android-port.md → "Order of the remaining work",
+> implement only that card, run its fast gate, commit it as `APK-<n>: …`, and push.
+
+For several cards in a row with an implementer, an adversarial reviewer and a fix round per card, run the workflow
+in [`tools/agents/android-runner.js`](../tools/agents/android-runner.js) (see the comment at its top).
+
 ## Device checklist
 
 What only a device (or a CI run an agent cannot start) can show. Whoever saw it ticks the line.
+
+- [x] The debug APK from the Android workflow starts and renders on a real phone (maintainer, 2026-10-17); the
+  layout is the desktop one until Phase 3.
 
 - [ ] Launcher icon (APK-14): under circle and squircle masks the ear tufts and the shoulder are not cut, and as a
   themed (monochrome) icon it reads as the LightCraft mark.

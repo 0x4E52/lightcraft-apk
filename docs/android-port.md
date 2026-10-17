@@ -38,6 +38,7 @@ the maintainer.
 | Diagnostics switches without environment variables: `debug.lightcraft.{profile,log,gpu_backend,control}` system properties (`android-sys` `props::settings_from`, pure; `props::read` on Android) applied first thing in `run` (log filter, `lightcraft_profile::set_enabled`, `backend::set_choice`, the forced window renderer); `.control` starts the server (next row) | ✅ APK-20, pure parts tested here; the property reads have not run on a device (Device checklist) |
 | Debug control server: `host::control_server` (moved from `apps/lightcraft`, shared with the desktop) takes `token: Option<String>`; the Android host starts it only when `debug.lightcraft.control=<port>` is set, after writing a random 128-bit token (`getrandom`) to `files/control-token`, and a request without the token gets `bad token` and a closed connection; the manifest requests `INTERNET`; `control-check.sh` in the `emulator` job reads the token and sends `ui.inspect` over the forwarded port | ✅ APK-21, server and token file tested here; the property read, `getrandom` and the CI step have not run (Device checklist) |
 | Host UI, packaging, CI, touch UI, release | ⏳ APK-22 … APK-43 below |
+| First start on a real phone (debug APK from the Android workflow) | ✅ maintainer, 2026-10-17: starts and renders; desktop layout, so hard to use (Phase 3) |
 
 ## Ground rules for the port
 
@@ -285,6 +286,19 @@ applies, **Maintainer checks on a device**. Decisions that block a task are name
 uses the default in "Decisions for the maintainer". Where a card's **Verify** ends with "`cargo xtask ci` green",
 that means the gate per task here plus the GitHub `ci.yml` run (Rules). IDs with a letter suffix (APK-11b, APK-30b, APK-32a–c) run
 right after their number, in letter order.
+
+## Order of the remaining work
+
+Maintainer decision 2026-10-17, after the first start on a phone (desktop layout, top bar under the status bar,
+dialogs wider than the screen): **responsive and touch first, then real photos.** Breakpoints follow the available
+width, never the platform, so a narrow desktop or browser window gets the same layout; touch density follows touch
+input (APK-32a). The order below respects every card's "Depends on":
+
+1. Phase 3: APK-29, APK-30, APK-30b, APK-31, APK-32a, APK-32b, APK-32c, APK-33, APK-33b, APK-34, APK-34b
+2. Phase 2: APK-22 … APK-28
+3. APK-35 (soft keyboard), then Phase 4: APK-36 … APK-43
+
+Each pushed card leaves a debug APK in the Android workflow's artifacts, so the maintainer can follow on a phone.
 
 ## Phase 0: foundation (x86_64, no NDK)
 
@@ -1220,14 +1234,33 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
 - **Goal:** usable at 412×915 pt (2.625 px/pt); side panels become bottom sheets, no second UI.
 - **Files:** changed `crates/ui-egui/src/` panel host modules, `crates/ui-egui/src/menus.rs` (`view.back` arm);
   new `crates/ui-egui/src/sheet.rs`.
-- **Steps:** below the phone breakpoint, Library/Develop panels render inside a sheet with a drag handle; `view.back`
-  (APK-17) closes the sheet first (a new arm at the front of the cascade, desktop unaffected).
+- **Steps:** below the phone breakpoint (a width in points, for every platform), Library/Develop panels render inside
+  a sheet with a drag handle; the right-hand tool strip becomes the bottom edit toolbar of
+  [`android-touch-ui.md`](android-touch-ui.md) §1 (one scrolling row of icon + label, a tool opens its panel as the
+  sheet above it); panel content never clips at the sheet's width; `view.back` (APK-17) closes the sheet first (a new
+  arm at the front of the cascade, desktop unaffected).
 - **Tests:** `side_panels_become_sheet_below_breakpoint`, `back_closes_sheet_first`, `min_hit_size_48dp_at_phone`
   (APK-32b's allow-list check at 412×915 under touch density; new small widgets are fixed, not allow-listed);
   `desktop_layout_fingerprint_unchanged` stays green.
 - **Verify:** `cargo test -p lightcraft-ui-egui -- sheet min_hit_size desktop_layout && cargo run -p lightcraft-cli --
   snapshot --demo --size 412x915 --scale 2.625 -o target/android/phone.png`, then Read the PNG.
 - **Depends on:** APK-17, APK-32c  **Needs:** none  **Model:** opus — UI structure change across panels.
+- **Done when:** tests pass; desktop fingerprint unchanged.
+
+#### APK-33b Dialogs fit narrow screens
+- **Goal:** every dialog fits the window at 412×915 pt: on the first phone start the About dialog was wider than the
+  screen and hung off its left edge.
+- **Files:** changed `crates/ui-egui/src/panels/dialogs.rs` (window width = min(its width, content width minus
+  margins); full-width below the phone breakpoint), the dialogs with fixed widths (`about.rs`, `licences.rs`,
+  `credits.rs`, …), `crates/ui-egui/src/tests_dialog_fit.rs`.
+- **Steps:** 1. One helper gives every dialog its width from the content rect (insets of APK-31 included). 2. Tab
+  rows wrap (`horizontal_wrapped`), two-column bodies (Licences, Contributors) stack below the breakpoint. 3. Extend
+  `tests_dialog_fit.rs` from desktop sizes to 412×915 and 915×412 at 2.625 px/pt for every dialog it lists.
+- **Tests:** `every_dialog_fits_a_phone` (no dialog rect outside the content rect, both orientations);
+  `desktop_layout_fingerprint_unchanged` stays green.
+- **Verify:** `cargo test -p lightcraft-ui-egui -- dialog_fit desktop_layout`, a 412×915 snapshot of About ▸
+  Licences (`lightcraft-cli snapshot --demo --size 412x915 --scale 2.625`), then Read the PNG.
+- **Depends on:** APK-31, APK-33  **Needs:** none  **Model:** opus — touches every dialog through one helper.
 - **Done when:** tests pass; desktop fingerprint unchanged.
 
 #### APK-34 Menu bar → overflow menu
@@ -1239,6 +1272,19 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
 - **Verify:** `cargo test -p lightcraft-ui-egui -- overflow && cargo xtask parity && cargo xtask ci`
 - **Depends on:** APK-33  **Needs:** none  **Model:** sonnet — reuses the menu tree.
 - **Done when:** tests pass.
+
+#### APK-34b Top bar at narrow widths
+- **Goal:** nothing in the top bar overlaps: on the first phone start "Search Photos", the arrows and the icons ran
+  into each other.
+- **Files:** changed `crates/ui-egui/src/panels/topbar.rs`, `crates/ui-egui/src/titlebar.rs`.
+- **Steps:** below the phone breakpoint the search field collapses to a magnifier button that opens it full-width;
+  the right-hand icons move into APK-34's overflow menu except Share (as in `android-touch-ui.md` §1); the bar lays
+  out inside the content rect (APK-31).
+- **Tests:** `topbar_widgets_do_not_overlap` at 412×915 and 915×412; `search_opens_from_the_magnifier`;
+  `desktop_layout_fingerprint_unchanged` stays green.
+- **Verify:** `cargo test -p lightcraft-ui-egui -- topbar desktop_layout`, a 412×915 snapshot, then Read the PNG.
+- **Depends on:** APK-34  **Needs:** none  **Model:** sonnet — one bar, test-driven.
+- **Done when:** tests pass; desktop fingerprint unchanged.
 
 #### APK-35 Soft keyboard and text input spike
 - **Goal:** the facts the maintainer needs for a go/no-go on text input under NativeActivity (the verdict itself
@@ -1663,3 +1709,6 @@ Agents use the default until the maintainer decides (execution-plan §7).
   unset; no token, no server). `LightcraftApp::{set_control, take_control}` let the host hand the channel to the app
   built after Try Again. Manifest: `INTERNET`. `packaging/android/control-check.sh` runs after the smoke test in
   `android.yml` (property, restart, forward, token, `ui.inspect`, and a refused request without the token).
+- 2026-10-17 (after the first start on a phone): responsive and touch first ("Order of the remaining work"),
+  breakpoints by width for every platform, APK-33 builds the bottom edit toolbar, new APK-33b (dialogs fit) and
+  APK-34b (top bar at narrow widths); "Continuing on a Mac" in `android.md`.

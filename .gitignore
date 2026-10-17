@@ -22,3 +22,4 @@ keystore.properties
 local.properties
 .gradle/
 /packaging/android/build/
+__pycache__/
