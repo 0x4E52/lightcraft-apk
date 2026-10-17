@@ -362,6 +362,7 @@ impl Headless {
             || self.app.session.denoise_busy()
             || !self.app.tasks.is_empty()
             || !self.app.synthetic.is_empty()
+            || !self.app.touch_queue.is_empty()
             || !self.events.is_empty()
     }
 
@@ -447,7 +448,7 @@ impl Headless {
         };
         // let injected input (clicks, keys, drags) play out before the next request
         let t1 = Instant::now();
-        while (!self.app.synthetic.is_empty() || !self.events.is_empty()) && t1.elapsed() < timeout {
+        while (!self.app.synthetic.is_empty() || !self.app.touch_queue.is_empty() || !self.events.is_empty()) && t1.elapsed() < timeout {
             self.step();
         }
         self.step();
@@ -4677,5 +4678,45 @@ mod tests {
         assert_eq!(r["ok"], true);
         let r = h.request("ui.screenshot", json!({"headless": true}), SETTLE);
         assert_eq!(r["result"]["width"], 640, "{r}");
+    }
+
+    fn touch(id: u64, phase: &str, x: f64, y: f64, t: f64) -> Value {
+        json!({"id": id, "phase": phase, "x": x, "y": y, "t": t})
+    }
+
+    #[test]
+    fn touch_two_fingers_reports_multi_touch() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let r = h.request(
+            "ui.touch",
+            json!({"events": [touch(1, "start", 0.4, 0.5, 0.0), touch(2, "start", 0.6, 0.5, 0.0), touch(1, "move", 0.3, 0.5, 0.1), touch(2, "move", 0.7, 0.5, 0.1)]}),
+            t,
+        );
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        let mt = h.view.ctx.input(|i| i.multi_touch());
+        let mt = mt.expect("two fingers down report multi-touch");
+        assert!(mt.zoom_delta >= 1.0 && mt.num_touches == 2, "{mt:?}");
+        let r = h.request("ui.touch", json!({"events": [touch(1, "end", 0.3, 0.5, 0.0), touch(2, "end", 0.7, 0.5, 0.0)]}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        assert!(h.view.ctx.input(|i| i.multi_touch()).is_none());
+        let bad = h.request("ui.touch", json!({"events": [{"id": 1, "phase": "wiggle", "x": 0.5, "y": 0.5}]}), t);
+        assert_eq!(bad["ok"], false);
+    }
+
+    #[test]
+    fn touch_hold_reports_long_touch() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.touch", json!({"events": [touch(1, "start", 0.5, 0.5, 0.0), touch(1, "move", 0.5, 0.5, 1.2)]}), t);
+        h.step();
+        let (down, held) = h.view.ctx.input(|i| (i.pointer.primary_down(), i.pointer.press_start_time().map(|s| i.time - s)));
+        assert!(down, "finger still down");
+        let held = held.expect("press recorded");
+        assert!(held >= 1.0, "egui saw a {held} s hold, enough for a long touch");
+        h.request("ui.touch", json!({"events": [touch(1, "end", 0.5, 0.5, 0.0)]}), t);
+        assert!(!h.view.ctx.input(|i| i.pointer.primary_down()));
     }
 }

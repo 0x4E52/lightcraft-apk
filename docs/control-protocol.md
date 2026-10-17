@@ -69,6 +69,7 @@ filmstrip is visible.
 | `ui.widgets` | `{filter?}` | On-screen widgets `{id, rect: [x, y, w, h]}` (screen points) |
 | `ui.clickWidget` / `ui.dragWidget` / `ui.hoverWidget` | `{id, count?, button?, fx?, fy?}` (`button: "right"` right-clicks) / `{id, toX?, toY?, dx?, dy?, steps?}` / `{id, fx?, fy?}` | Real egui input on a widget (hover: the pointer rests on it, e.g. for preset/profile previews) |
 | `ui.move` / `ui.click` / `ui.drag` | `{x, y, count?, button?}` / `{x, y, toX, toY, steps?}` | Raw pointer input, screen points |
+| `ui.touch` | `{events: [{id, phase: start\|move\|end\|cancel, x, y, t?}]}` | Touch fingers (`id` any integer). `x`/`y` are normalized like `ui.pointer` (the photo frame in Detail view, else the window). Each event becomes an `egui::Event::Touch`; the first finger down also drives the pointer. Events with `t` (seconds from the first) are released in later frames, equal `t` together, and `RawInput.time` follows a synthetic clock so long-press and double-tap timing sees the gaps |
 | `ui.pointer` | `{events: [{kind: down\|drag\|up, x, y}], alt?, shift?, cmd?}` | Gesture in normalized image coordinates (Detail view) |
 | `ui.key` | `{key, cmd?, shift?, alt?, ctrl?}` | Key press |
 | `ui.text` | `{text}` | Text input |

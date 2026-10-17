@@ -10,6 +10,8 @@
 //! - `ui.move/click/drag {x, y, …}`: raw pointer input in screen points
 //! - `ui.pointer {events: [{kind: down|drag|up, x, y}], space: "image"}`: gestures in normalized
 //!   image coordinates (brush strokes, crop handles…) — mapped to screen and injected as real input
+//! - `ui.touch {events: [{id, phase: start|move|end|cancel, x, y, t?}]}`: multi-finger touch (normalized
+//!   image or window coordinates; `t` seconds on a synthetic clock)
 //! - `ui.key {key, shift?, alt?, cmd?}` / `ui.text {text}` / `ui.scroll {dx, dy}`
 //! - `ui.set {view?, panel?, filmstrip?, leftPanel?, zoom?, …}` / `ui.dialog.confirm|cancel`
 //! - `ui.screenshot {path?, headless?}` (headless: CPU-rendered, no compositor needed), `ui.resize {width, height}`, `ui.render {id?, size?, path?}`, `app.quit`
@@ -288,6 +290,65 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
                     _ => app.synthetic.push(egui::Event::PointerMoved(pos)),
                 }
             }
+            ctx.request_repaint();
+            ok(json!({"events": events.len()}))
+        }
+        "ui.touch" => {
+            let Some(events) = p.get("events").and_then(Value::as_array) else { return err("missing `events`") };
+            let area = app.image_rect.unwrap_or_else(|| ctx.content_rect());
+            let mut steps = Vec::with_capacity(events.len());
+            let mut fingers = app.touch_fingers.clone();
+            for e in events {
+                let Some(id) = e.get("id").and_then(Value::as_u64) else { return err("ui.touch: every event needs an integer `id`") };
+                let phase = match e.get("phase").and_then(Value::as_str) {
+                    Some("start") => egui::TouchPhase::Start,
+                    Some("move") => egui::TouchPhase::Move,
+                    Some("end") => egui::TouchPhase::End,
+                    Some("cancel") => egui::TouchPhase::Cancel,
+                    _ => return err("ui.touch: `phase` is start, move, end or cancel"),
+                };
+                let (Some(x), Some(y)) = (e.get("x").and_then(Value::as_f64), e.get("y").and_then(Value::as_f64)) else {
+                    return err("ui.touch: every event needs numeric `x` and `y`");
+                };
+                if !x.is_finite() || !y.is_finite() {
+                    return err("ui.touch: `x` and `y` must be finite");
+                }
+                let t = match e.get("t") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => match v.as_f64().filter(|t| t.is_finite() && (0.0..=3600.0).contains(t)) {
+                        Some(t) => Some(t),
+                        None => return err("ui.touch: `t` is seconds between 0 and 3600"),
+                    },
+                };
+                let pos = egui::pos2(area.left() + x as f32 * area.width(), area.top() + y as f32 * area.height());
+                let mut evs = vec![egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(id), phase, pos, force: None }];
+                if phase == egui::TouchPhase::Start && !fingers.contains(&id) {
+                    fingers.push(id);
+                }
+                // the primary finger (first down) also drives the pointer, as egui-winit does
+                if fingers.first() == Some(&id) {
+                    let button =
+                        |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+                    match phase {
+                        egui::TouchPhase::Start => {
+                            evs.push(egui::Event::PointerMoved(pos));
+                            evs.push(button(true));
+                        }
+                        egui::TouchPhase::Move => evs.push(egui::Event::PointerMoved(pos)),
+                        egui::TouchPhase::End => {
+                            evs.push(button(false));
+                            evs.push(egui::Event::PointerGone);
+                        }
+                        egui::TouchPhase::Cancel => evs.push(egui::Event::PointerGone),
+                    }
+                }
+                if matches!(phase, egui::TouchPhase::End | egui::TouchPhase::Cancel) {
+                    fingers.retain(|f| *f != id);
+                }
+                steps.push(crate::TouchStep { t, events: evs });
+            }
+            app.touch_fingers = fingers;
+            app.touch_queue.extend(steps);
             ctx.request_repaint();
             ok(json!({"events": events.len()}))
         }

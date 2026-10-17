@@ -378,6 +378,13 @@ impl QuitPrompt {
     }
 }
 
+/// One step of a `ui.touch` request: the events to release together and, when the request gave
+/// `t`, the time (seconds from the first release) the synthetic clock must have reached.
+pub struct TouchStep {
+    pub t: Option<f64>,
+    pub events: Vec<egui::Event>,
+}
+
 pub struct LightcraftApp {
     pub(crate) model_setup: model_setup::Pending,
     /// Per-catalog-revision caches of library-wide results the panels show every frame
@@ -419,6 +426,14 @@ pub struct LightcraftApp {
     shadow: Option<headless::HeadlessView>,
     /// Synthetic input events (from the control channel) injected one step per frame.
     pub synthetic: Vec<egui::Event>,
+    /// `ui.touch` events not yet released, in order (see [`TouchStep`]).
+    pub touch_queue: std::collections::VecDeque<TouchStep>,
+    /// Fingers currently down (the first is the primary one that drives the pointer).
+    pub(crate) touch_fingers: Vec<u64>,
+    /// Synthetic clock: `RawInput.time` when the current `ui.touch` request started releasing.
+    touch_origin: Option<f64>,
+    /// Seconds the synthetic clock is ahead of the host's, so egui sees the gaps between events.
+    touch_shift: f64,
     /// The text the UI last put on the clipboard (`ui.inspect` → `copied`).
     pub copied: Option<String>,
     /// Native file dialogs up for commands (`pick`): each command runs again when its closes.
@@ -551,6 +566,10 @@ impl LightcraftApp {
             screenshot_token: 0,
             shadow: None,
             synthetic: vec![],
+            touch_queue: Default::default(),
+            touch_fingers: vec![],
+            touch_origin: None,
+            touch_shift: 0.0,
             copied: None,
             pending_picks: vec![],
             synthetic_mods: egui::Modifiers::NONE,
@@ -1406,6 +1425,34 @@ impl LightcraftApp {
         self.screen_profile = icc;
     }
 
+    /// Release the next `ui.touch` step into this frame, moving the synthetic clock to its time
+    /// (events with the same `t` go out together; without `t`, one per frame).
+    fn release_touch(&mut self, raw: &mut egui::RawInput) {
+        if let Some(t) = raw.time.as_mut() {
+            *t += self.touch_shift;
+        }
+        let Some(first) = self.touch_queue.pop_front() else {
+            self.touch_origin = None;
+            return;
+        };
+        let now = raw.time.unwrap_or(0.0);
+        let origin = *self.touch_origin.get_or_insert(now);
+        let mut events = first.events;
+        if let Some(t) = first.t {
+            while self.touch_queue.front().is_some_and(|n| n.t == Some(t)) {
+                if let Some(n) = self.touch_queue.pop_front() {
+                    events.extend(n.events);
+                }
+            }
+            let ahead = origin + t - now;
+            if ahead.is_finite() && ahead > 0.0 && raw.time.is_some() {
+                self.touch_shift += ahead;
+                raw.time = Some(now + ahead);
+            }
+        }
+        raw.events.extend(events);
+    }
+
     /// Inject synthetic events (pointer events one per frame; key sequences up to the release).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
         // the frame after a synthetic release / key: modifiers back up
@@ -1413,6 +1460,7 @@ impl LightcraftApp {
             self.synthetic_mods = egui::Modifiers::NONE;
             raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
         }
+        self.release_touch(raw);
         if self.synthetic.is_empty() {
             return;
         }
