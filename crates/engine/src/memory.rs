@@ -20,26 +20,78 @@ use serde::Serialize;
 ///
 /// The rest is headroom for what isn't cached (renders in progress, textures, the UI). An export
 /// batch may, in addition, hold up to twice the budget in photos rendering side by side
-/// ([`export_gate`]): transient memory, given back when the batch ends. Default:
-/// a quarter of the machine's RAM, at most 1.5 GiB (`LIGHTCRAFT_MEMORY_MB` overrides it).
+/// ([`export_gate`]): transient memory, given back when the batch ends. Default
+/// ("automatic"): `LIGHTCRAFT_MEMORY_MB` when set, else what the host gave
+/// [`set_default_budget`] (Android: a phone-sized budget), else a quarter of the machine's RAM,
+/// at most 1.5 GiB.
 pub fn default_budget() -> usize {
-    if let Some(mb) = std::env::var("LIGHTCRAFT_MEMORY_MB").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|m| *m >= 64) {
-        return mb << 20;
+    let env = std::env::var("LIGHTCRAFT_MEMORY_MB").ok();
+    default_budget_from(env.as_deref(), DEFAULT_BUDGET.get().copied(), total_ram)
+}
+
+/// The automatic budget a host gave with [`set_default_budget`]. Process-wide, set at most once.
+static DEFAULT_BUDGET: OnceLock<usize> = OnceLock::new();
+
+/// Tell the engine the automatic budget (bytes, at least 64 MiB) for hosts whose devices can't
+/// spare the desktop's quarter of RAM (Android). Settings ▸ Performance ▸ Memory set to Automatic,
+/// the bug report and [`budget`] before any [`set_budget`] then use it. Call it once at start-up.
+/// The same value again is `Ok`; a different one is refused with `Err(the value in use)`.
+pub fn set_default_budget(bytes: usize) -> Result<(), usize> {
+    set_once_in(&DEFAULT_BUDGET, bytes.max(64 << 20))
+}
+
+/// [`default_budget`] over a given environment value, injected budget and RAM probe.
+fn default_budget_from(env_mb: Option<&str>, injected: Option<usize>, ram: impl FnOnce() -> Option<usize>) -> usize {
+    if let Some(mb) = env_mb.and_then(|v| v.trim().parse::<usize>().ok()).filter(|m| *m >= 64) {
+        return mb.saturating_mul(1 << 20);
+    }
+    if let Some(b) = injected {
+        return b;
     }
     let cap = 3usize << 29; // 1.5 GiB
-    match total_ram() {
+    match ram() {
         Some(ram) => (ram / 4).clamp(256 << 20, cap),
         None => cap,
     }
 }
 
+/// Physical memory (bytes): what the host gave [`set_total_ram`], else what the platform tells us
+/// without native calls (`None` where it doesn't, e.g. Android, whose host injects it). Export's and
+/// merge's memory fit checks use it.
+pub fn total_ram() -> Option<usize> {
+    total_ram_in(&TOTAL_RAM, probe_total_ram)
+}
+
+/// The physical memory a host gave with [`set_total_ram`]. Process-wide, set at most once.
+static TOTAL_RAM: OnceLock<usize> = OnceLock::new();
+
+/// Tell the engine how much physical memory the device has (bytes), for hosts where
+/// [`total_ram`] can't find out itself (Android: `/proc/meminfo` is read by the host, the engine
+/// has no Android code). Call it once at start-up. The same value again is `Ok`; a different one is
+/// refused with `Err(the value in use)`, and the first one stays.
+pub fn set_total_ram(bytes: usize) -> Result<(), usize> {
+    set_once_in(&TOTAL_RAM, bytes)
+}
+
+/// [`set_total_ram`] / [`set_default_budget`] on a given cell (tests use a local one, never the
+/// global).
+fn set_once_in(cell: &OnceLock<usize>, bytes: usize) -> Result<(), usize> {
+    let current = *cell.get_or_init(|| bytes);
+    if current == bytes { Ok(()) } else { Err(current) }
+}
+
+/// [`total_ram`] over a given cell and platform probe: the injected value first.
+fn total_ram_in(cell: &OnceLock<usize>, probe: impl FnOnce() -> Option<usize>) -> Option<usize> {
+    cell.get().copied().or_else(probe)
+}
+
 /// Physical memory (bytes), when the platform tells us without native calls.
-pub(crate) fn total_ram() -> Option<usize> {
+fn probe_total_ram() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
         let s = std::fs::read_to_string("/proc/meminfo").ok()?;
         let kb: usize = s.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse().ok()?;
-        Some(kb * 1024)
+        kb.checked_mul(1024)
     }
     #[cfg(target_os = "macos")]
     {
@@ -314,5 +366,51 @@ impl crate::Session {
         let b = set_budget(bytes);
         self.media.set_budget(cache_share(b));
         b
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const GB: usize = 1 << 30;
+
+    /// A host that injects the device's memory (Android, where the engine can't read it) turns on
+    /// export's and merge's fit checks: with 4 GB injected an export enlarged far past the photo is
+    /// refused, where an unknown amount lets it through to fail allocating. Local cells only: the
+    /// process-wide value stays untouched for the other tests.
+    #[test]
+    fn injected_total_ram_drives_fit_checks() {
+        let cell = OnceLock::new();
+        assert_eq!(total_ram_in(&cell, || None), None, "nothing injected, nothing probed");
+        assert_eq!(set_once_in(&cell, 4 * GB), Ok(()));
+        assert_eq!(set_once_in(&cell, 4 * GB), Ok(()), "the same value again");
+        assert_eq!(set_once_in(&cell, 8 * GB), Err(4 * GB), "the first value stays");
+        let ram = total_ram_in(&cell, || Some(64 * GB));
+        assert_eq!(ram, Some(4 * GB), "the injected value wins over the platform probe");
+        let why = crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, ram).unwrap();
+        assert!(why.contains("more than this computer has (4 GB)"), "{why}");
+        assert_eq!(crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, total_ram_in(&OnceLock::new(), || None)), None);
+        let pano = lightcraft_merge::PanoOptions::default();
+        let fitted = crate::merge::fit_in_memory(&pano, 100e6, ram);
+        assert!(fitted.max_megapixels < crate::merge::fit_in_memory(&pano, 100e6, Some(64 * GB)).max_megapixels);
+    }
+
+    /// "Automatic" is the host's budget when it gave one (Android's phone budget), not a quarter
+    /// of the RAM it also injected; `LIGHTCRAFT_MEMORY_MB` still wins. Local values only.
+    #[test]
+    fn injected_default_budget_is_automatic() {
+        let mib = 1usize << 20;
+        let ram = || Some(8 * GB);
+        assert_eq!(default_budget_from(None, None, ram), 1536 * mib, "desktop: a quarter of RAM, at most 1.5 GiB");
+        assert_eq!(default_budget_from(None, None, || Some(2 * GB)), 512 * mib);
+        assert_eq!(default_budget_from(None, Some(768 * mib), ram), 768 * mib, "the host's budget wins over RAM / 4");
+        assert_eq!(default_budget_from(Some(" 2048 "), Some(768 * mib), ram), 2048 * mib, "the variable wins");
+        assert_eq!(default_budget_from(Some("12"), Some(768 * mib), ram), 768 * mib, "below 64 MB is ignored");
+        let cell = OnceLock::new();
+        assert_eq!(set_once_in(&cell, 512 * mib), Ok(()));
+        assert_eq!(set_once_in(&cell, 768 * mib), Err(512 * mib), "set once");
+        assert_eq!(default_budget_from(None, cell.get().copied(), ram), 512 * mib);
     }
 }

@@ -3112,9 +3112,12 @@ dependencies = [
  "android-activity",
  "eframe",
  "lightcraft-android-sys",
+ "lightcraft-codecs",
  "lightcraft-engine",
+ "lightcraft-raster",
  "lightcraft-ui-egui",
  "log",
+ "serde_json",
  "winit",
 ]
 

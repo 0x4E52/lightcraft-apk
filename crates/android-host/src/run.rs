@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Exit {
     /// The Activity was destroyed (by the system, or after the user removed it from recents).
+    /// Not produced yet: eframe's loop ends the same way for both, so `run` returns
+    /// [`Exit::Closed`]; APK-18's lifecycle wrapper, which sees the destroy, maps it here.
     Destroyed,
     /// The user closed LightCraft (File ▸ Quit or the window closing).
     Closed,
@@ -42,28 +44,79 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 /// Runs LightCraft in this process's Activity until it ends. A second call in the same process
 /// returns `Err(REOPENED)` at once.
 ///
-/// For now the loop only drains input (unanswered input ends in an ANR) and waits for the
-/// Activity's destroy; APK-11 replaces it with eframe's event loop and the UI.
+/// Everything before eframe's event loop polls for the first time blocks the Java main thread
+/// (onStart/onResume, the input queue and surfaceCreated wait for android_main), so only quick
+/// work happens here: the logger, the folders, the memory budget, the panic hook and the settings
+/// file. The library opens on a worker ([`crate::loader`]) behind a loading frame.
+///
+/// Every normal end is `Ok(Exit::Closed)` until APK-18 tells a destroy apart. A start error
+/// (no internal storage folder, a folder that cannot be created) is an `Err` returned before any
+/// window exists: the entry crate logs it (logcat) and exits.
 #[cfg(target_os = "android")]
 pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
-    use android_activity::{InputStatus, MainEvent, PollEvent};
+    use lightcraft_ui_egui::host::{log_file, prefs, session_open};
 
     try_start(&STARTED)?;
+    // stderr reaches logcat (android-activity forwards it); the file follows once its folder exists
+    let logger = log_file::install_with(&log_file::filter_spec(None, None));
     log::info!("LightCraft {} started", env!("CARGO_PKG_VERSION"));
-    loop {
-        let (mut destroyed, mut input) = (false, false);
-        app.poll_events(None, |event| match event {
-            PollEvent::Main(MainEvent::Destroy) => destroyed = true,
-            PollEvent::Main(MainEvent::InputAvailable) => input = true,
-            _ => {}
-        });
-        if input && let Ok(mut events) = app.input_events_iter() {
-            while events.next(|_| InputStatus::Unhandled) {}
-        }
-        if destroyed {
-            return Ok(Exit::Destroyed);
-        }
+    let paths = crate::paths::Paths::from_internal(&crate::paths::internal_dir(app.internal_data_path())?);
+    paths.create()?;
+    if let Err(in_use) = lightcraft_engine::config::use_dir(paths.config.clone()) {
+        log::warn!("settings folder already set to {}", in_use.display());
     }
+    let log_path = logger.and_then(|logger| match logger.attach_dir(&paths.logs) {
+        Ok(path) => Some(path),
+        Err(e) => {
+            log::warn!("no log file: {e}");
+            None
+        }
+    });
+    lightcraft_engine::guard::install_hook(paths.panic_log());
+    if let Some(logger) = logger {
+        log_file::record_panics(logger);
+    }
+
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    // the phone budget is "automatic" too (Settings ▸ Performance ▸ Memory, the bug report)
+    if let Err(in_use) = lightcraft_engine::memory::set_default_budget(crate::memory::budget_for(&meminfo)) {
+        log::warn!("automatic memory budget already set to {} MiB", in_use >> 20);
+    }
+    let budget = lightcraft_engine::memory::set_budget(lightcraft_engine::memory::default_budget());
+    let total = crate::memory::mem_total(&meminfo).and_then(|b| usize::try_from(b).ok());
+    if let Some(total) = total
+        && let Err(in_use) = lightcraft_engine::memory::set_total_ram(total)
+    {
+        log::warn!("device memory already set to {in_use} bytes");
+    }
+    log::info!("memory budget {} MiB of {} MiB", budget >> 20, total.map_or(0, |t| t >> 20));
+
+    let (saved_ui, prefs_warning, keep_prefs_file) = prefs::load_prefs(Some(&paths.config), false);
+    if let Some(ui) = &saved_ui {
+        lightcraft_ui_egui::i18n::set_language(ui.language);
+    }
+    lightcraft_engine::gpu::set_enabled(saved_ui.as_ref().is_none_or(|u| u.settings.gpu));
+    let start = crate::state::Start {
+        prefs: saved_ui,
+        prefs_warning,
+        keep_prefs_file,
+        prefs_path: prefs::prefs_path(Some(&paths.config)),
+        log_file: log_path,
+        library: paths.library.clone(),
+    };
+    let library = paths.library.clone();
+    let loader = crate::loader::Loader::start(move || {
+        // a new library starts with the procedural demo photos
+        let (session, problem) = session_open::open_session(false, Some(library), true);
+        (session.with_default_sam3_model(), problem)
+    });
+
+    let slot: crate::app::Slot = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let options = eframe::NativeOptions { android_app: Some(app.clone()), renderer: eframe::Renderer::Wgpu, ..Default::default() };
+    let app_slot = slot.clone();
+    eframe::run_native("LightCraft", options, Box::new(move |_cc| Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start)))))
+        .map(|()| Exit::Closed)
+        .map_err(|e| format!("LightCraft could not open its window: {e}"))
 }
 
 #[cfg(test)]

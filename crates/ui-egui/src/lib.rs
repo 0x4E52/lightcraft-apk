@@ -1430,6 +1430,12 @@ impl LightcraftApp {
         }
     }
 
+    /// Whether the UI fonts and theme are installed, so [`Self::ui`] draws: until then it draws
+    /// nothing, and a host may show its own frame (Android's "Opening library…").
+    pub fn fonts_ready(&self) -> bool {
+        self.fonts_ready
+    }
+
     /// Lay out the whole window.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         i18n::set_language(self.ui.language);

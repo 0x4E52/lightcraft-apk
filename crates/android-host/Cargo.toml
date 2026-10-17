@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "LightCraft Android host: start guard, start-up and event loop of the Android app (no unsafe; the entry symbol lives in apps/lightcraft-android)"
+description = "LightCraft Android host: start guard, quick start-up, the library opened on a worker, services and the eframe app (no unsafe; the entry symbol lives in apps/lightcraft-android)"
 
 [lints]
 workspace = true
@@ -18,7 +18,12 @@ denoise = ["lightcraft-engine/denoise"]
 lightcraft-android-sys = { workspace = true }
 lightcraft-engine = { workspace = true, features = ["sam"] }
 lightcraft-ui-egui = { workspace = true }
+lightcraft-codecs = { workspace = true }
+lightcraft-raster = { workspace = true }
 log = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 # Android only: android-activity has a `compile_error!` on every other OS, and winit without
 # x11/wayland one on Linux. Never `accesskit` (a compile error with native-activity) and no `glow`.

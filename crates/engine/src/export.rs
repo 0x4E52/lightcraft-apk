@@ -1698,7 +1698,7 @@ fn original_folder(source: &lightcraft_catalog::Source) -> Option<String> {
 /// enlarged past the photo's size that needs more memory than the computer has would fail to
 /// allocate, which ends the process rather than the export. Full-size and smaller exports, and
 /// computers whose memory isn't known, are never refused.
-fn too_big_for_memory(out: (usize, usize), native_px: usize, weight: usize, ram: Option<usize>) -> Option<String> {
+pub(crate) fn too_big_for_memory(out: (usize, usize), native_px: usize, weight: usize, ram: Option<usize>) -> Option<String> {
     let ram = ram?;
     if out.0.saturating_mul(out.1) <= native_px || weight <= ram {
         return None;

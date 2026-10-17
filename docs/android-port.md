@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-10).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-11).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -25,7 +25,8 @@ the maintainer.
 | A host without environment variables sets the diagnostics switches before first use (`lightcraft_profile::set_enabled` for `LIGHTCRAFT_PROFILE`, `lightcraft_engine::gpu::backend::set_choice` for `LIGHTCRAFT_GPU_BACKEND`) | ✅ APK-8 |
 | `safe_file` temp names keep the target's extension (`.lightcraft-<pid>-<n>-tmp.<ext>`, `.tmp` without one or with one over 16 bytes), as MediaProvider requires in `Pictures/` (device check: APK-27) | ✅ APK-9 |
 | The three Android crates exist and lint clean for `aarch64-linux-android` (`lightcraft-android` entry symbol with a process exit after `run`, `lightcraft-android-host` start guard and `Exit`, `lightcraft-android-sys` `with_activity` and Java error mapping); `cargo xtask android check` derives its set from `lightcraft-android` | ✅ APK-10 (no `.so` linked or run yet: APK-12, APK-16) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-11 … APK-43 below |
+| The Android host opens the UI (eframe, wgpu) on the procedural demo library in internal storage (`files/{config,library,logs,inbox}`), the session opened on a worker behind an "Opening library…" frame, with a phone memory budget (MemTotal / 8, 256–768 MiB, also what Settings' "Automatic" means: `engine::memory::set_default_budget`), the device's RAM injected for export/merge fit checks (`engine::memory::set_total_ram`), the log file, the panic log and file/PNG writers | ✅ APK-11, compiled and linted for `aarch64-linux-android` (first run on a device or emulator: APK-16) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-11b … APK-43 below |
 
 ## Ground rules for the port
 
@@ -493,7 +494,8 @@ right after their number, in letter order.
   phone can hold, with exports and screenshots able to write files.
 - **Files:** new `crates/android-host/src/{paths.rs,memory.rs,loader.rs,state.rs,app.rs,services.rs}`; changed
   `crates/android-host/src/{lib.rs,run.rs}`, `crates/android-host/Cargo.toml`, `crates/engine/src/memory.rs`
-  (`set_total_ram`, `total_ram()` made `pub`).
+  (`set_total_ram`, `set_default_budget`, `total_ram()` made `pub`), `crates/ui-egui/src/lib.rs`
+  (`LightcraftApp::fonts_ready()`).
 - **Steps:** 0. **Start order.** Everything `run()` does before the event loop's first poll blocks the Java main
   thread (onStart/onResume, `set_input`, surfaceCreated wait for android_main; Ground rules), so a slow start is a
   black screen and a tap during it is an input-dispatch ANR. Before the loop `run()` does only quick work, so
@@ -502,8 +504,10 @@ right after their number, in letter order.
   desktop order (open the session, then `run_native`) does not carry over. 1. `paths.rs` (pure): `internal_data_path()`
   is `/data/user/0/<id>/files` (so `run-as <id>` paths start with `files/`); derive `config/`, `library/`, `logs/`,
   `inbox/`; `engine::config::use_dir(config)`. 2. `memory.rs` (pure): `mem_total(meminfo: &str) -> Option<u64>` and
-  `budget_for(meminfo) -> usize` = MemTotal / 8 clamped to [256 MiB, 768 MiB] (256 MiB when unreadable); `run` calls
-  `lightcraft_engine::memory::set_budget` and the new `lightcraft_engine::memory::set_total_ram(bytes)` (an injected
+  `budget_for(meminfo) -> usize` = MemTotal / 8 clamped to [256 MiB, 768 MiB] (256 MiB when unreadable); `run` gives
+  it to the new `lightcraft_engine::memory::set_default_budget` (so Settings ▸ Performance ▸ Memory set to Automatic,
+  a cleared `memory_mb` in `ui.json` and the bug report use the phone budget, not a quarter of RAM up to 1.5 GiB),
+  applies it with `set_budget` and calls the new `lightcraft_engine::memory::set_total_ram(bytes)` (an injected
   `OnceLock` that `total_ram()` consults first; no android cfg in engine), so export's `too_big_for_memory`
   (export.rs:1654) and merge's `fit_in_memory` (merge.rs:155, 200) work on Android. (`ActivityManager.getMemoryClass()`
   is not used: it bounds the Java heap, not native allocations.) 3. Audit `grep -rn 'target_os = "linux"' crates
@@ -522,10 +526,11 @@ right after their number, in letter order.
   `host::flush::flush_periodic`) and `trim()` (APK-18). 8. `app.rs` (android only): the eframe::App wrapper holding
   `Rc<RefCell<Option<HostState>>>` (shared with APK-18's lifecycle wrapper). Until the loader answers, `ui` draws one
   centred "Opening library…" label and `logic` polls the loader with `ctx.request_repaint_after(100 ms)`; on `Some`
-  it builds `LightcraftApp` from the session on the UI thread and fills the slot. Then `logic` → `app.logic` +
-  `PrefsWriter::tick` + `flush_periodic` every 30 s (web precedent; never `flush_leaving`, which would cut an open
-  slider drag into one undo step per frame), `raw_input_hook`, `ui`, `on_exit` → `flush_leaving` +
-  `session.close_library()` + `shutdown(EXIT_WAIT)` (as main.rs:60-108). A failed `try_borrow_mut` is logged and
+  it builds `LightcraftApp` from the session on the UI thread and fills the slot (the label stays until
+  `app.fonts_ready()`, so the hand-over frames are never blank). Then `logic` → `app.logic` + `PrefsWriter::tick` +
+  `flush_periodic` every 30 s (web precedent; never `flush_leaving`, which would cut an open slider drag into one
+  undo step per frame), `raw_input_hook`, `ui`, `on_exit` → `flush_leaving` + `session.close_library()` +
+  `shutdown(EXIT_WAIT)` (as main.rs:60-108). A failed `try_borrow_mut` is logged and
   skipped, never a panic. 9. `eframe::run_native("LightCraft", NativeOptions { android_app: Some(app.clone()),
   renderer: Wgpu, .. }, …)`; returns `Ok(Exit::Closed)` or `Err` with the reason (the entry crate logs it and exits).
 - **Tests:** `paths_from_internal_dir`, `budget_for_phone_meminfo` (4 GB → 512 MiB, 12 GB → 768 MiB, garbage → 256
@@ -533,9 +538,10 @@ right after their number, in letter order.
   is `None`), `loader_hands_over_session` (after the barrier, `poll()` yields the session),
   `services_have_writer_and_png`, `state_flush_without_a_frame` (all x86_64); engine
   `injected_total_ram_drives_fit_checks` (`too_big_for_memory` refuses a large export with 4 GB injected, through a
-  pure `total_ram_in(cell, probe)` so the global stays untouched).
-- **Verify:** `cargo test -p lightcraft-android-host && cargo test -p lightcraft-engine -- total_ram && cargo xtask
-  android check && cargo xtask ci`
+  pure `total_ram_in(cell, probe)` so the global stays untouched), `injected_default_budget_is_automatic` (the host's
+  budget wins over RAM / 4, `LIGHTCRAFT_MEMORY_MB` over both, through a pure `default_budget_from`).
+- **Verify:** `cargo test -p lightcraft-android-host && cargo test -p lightcraft-engine -- total_ram default_budget
+  && cargo xtask android check && cargo xtask ci`
 - **Depends on:** APK-7, APK-10  **Needs:** rust-target  **Model:** opus — eframe/Android start-up wiring and
   thread hand-over.
 - **Done when:** the host compiles and lints for Android; first real run happens in the APK-16 workflow.
@@ -549,18 +555,28 @@ right after their number, in letter order.
 - **Files:** changed `crates/ui-egui/src/lib.rs` (`Services::library_notice: Option<String>`,
   `Services::min_ram_for_sam: Option<u64>`), `crates/ui-egui/src/menus.rs` (`enabled()` and tooltip of the AI-mask
   commands; SAM availability today hangs off `session.segmenter.dir`, menus.rs:2159), the SAM setup dialog,
-  `crates/ui-egui/src/host/prefs.rs` (a "library notice shown" flag), `crates/android-host/src/{services.rs,memory.rs}`.
+  `crates/ui-egui/src/host/prefs.rs` (a "library notice shown" flag), `crates/ui-egui/src/panels/library_problem.rs`
+  (Try Again through `Services`), `crates/engine/src/export.rs` and `crates/ui-egui/src/merge.rs` (wording),
+  `crates/ui-egui/locales/*.json`, `crates/android-host/src/{services.rs,memory.rs,app.rs}`.
 - **Steps:** 1. `library_notice`: when `Some` and the prefs flag is unset, push it once through the existing notices
   panel and set the flag. Android text: "Your library is stored inside LightCraft. Uninstalling it or Clear data
   deletes the library; back it up with File ▸ Export…". 2. `min_ram_for_sam`: when `memory::total_ram()` (injected by
   APK-11) is below it, the AI-mask commands' `enabled()` is false with the tooltip "Needs a device with 8 GB of
   memory", and the setup dialog shows the same reason. Default `None` = desktop unchanged. 3. Android: pure
-  `sam_allowed(mem_total) -> bool` (≥ 8 GiB) in memory.rs; `min_ram_for_sam = Some(8 GiB)`.
+  `sam_allowed(mem_total) -> bool` (≥ 8 GiB) in memory.rs; `min_ram_for_sam = Some(8 GiB)`. 4. Try Again off
+  android_main: the library problem window's Try Again (`panels/library_problem.rs`) runs `app.openLibrary` on the
+  UI thread, which on Android is android_main (Ground rules (2): a large library's replay there blocks the event
+  loop, the ANR APK-11 avoided for the first open); give `Services` a reopen hook the Android host fills with a
+  `Loader` behind the "Opening library…" frame (desktop unchanged when `None`). 5. Wording on a phone: export's
+  `too_big_for_memory` ("more than this computer has") and the merge note ("than this computer has", ui-egui
+  merge.rs) say "this device" (new catalog keys in `crates/ui-egui/locales/*-formats.json`), and "Opening library…"
+  gets its `locales/*.json` entries with the next translation update.
 - **Tests:** headless `library_notice_shown_once`, `sam_disabled_below_min_ram` (fake service, injected RAM through
-  the pure check, not the global); android-host `sam_allowed_for_phone_meminfo`.
+  the pure check, not the global), `try_again_uses_reopen_hook` (a fake hook is called and `app.openLibrary` is
+  not); android-host `sam_allowed_for_phone_meminfo`.
 - **Verify:** `cargo test -p lightcraft-ui-egui -- library_notice sam_disabled && cargo test -p
   lightcraft-android-host -- sam_allowed && cargo xtask android check && cargo xtask ci`
-- **Depends on:** APK-11  **Needs:** rust-target  **Model:** sonnet — two `Services` fields on existing patterns.
+- **Depends on:** APK-11  **Needs:** rust-target  **Model:** sonnet — three `Services` fields on existing patterns.
 - **Done when:** tests pass; desktop unchanged.
 - **Maintainer checks on a device:** first start shows the notice once; on a phone with < 8 GB the AI mask command is
   disabled with the reason.
@@ -1451,3 +1467,17 @@ Agents use the default until the maintainer decides (execution-plan §7).
   message }` from caught exceptions and `SecurityViolation`; `user_message`). Registered in `layers::TABLE`
   (android-sys L0 standalone, the other two exempt) and `licences::SHIPPED`; CLAUDE.md and AGENTS.md name both
   unsafe crates.
+- 2026-10-17 (APK-11): `android-host` gains `paths` (`files/config`, `library`, `logs`, `inbox`; the settings folder
+  through `config::use_dir`), `memory` (`mem_total`, `budget_for`), `loader` (the session opened on a worker, polled
+  with `try_recv`; a worker that stops without an answer is an error), `services` (`base_services`: writers, PNG,
+  log file), `state` (`HostState` with `flush_leaving`/`flush_dirty`/`close`; a failed open shows the library
+  problem window) and the Android-only eframe `app` (loading frame, then the UI, `flush_periodic` every 30 s);
+  `run` does only quick work before `eframe::run_native`. Engine: `memory::total_ram()` is public and consults
+  `memory::set_total_ram` first, and `memory::default_budget()` ("Automatic") the host's `set_default_budget` (the
+  phone budget; before, Settings ▸ Performance ▸ Memory set back to Automatic or a cleared `memory_mb` applied a
+  quarter of RAM up to 1.5 GiB, enough for the low-memory killer). The loading label stays until the app's fonts
+  are in. `target_os = "linux"` audit: besides the RAM probe Android skips the
+  removable-device mount points (engine `devices.rs`, no card readers there), the NixOS GPU hint, the Linux
+  model-folder opener and the `~/.local/share/icc` hint, none of which applies on a phone. Found and given to
+  APK-11b: Try Again in the library problem window opens the library on android_main, and export's and merge's
+  memory messages say "this computer".
