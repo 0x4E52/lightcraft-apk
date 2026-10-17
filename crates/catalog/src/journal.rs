@@ -169,8 +169,7 @@ pub struct SnapshotTiming {
 
 /// `LIGHTCRAFT_PROFILE` is set: print persistence timings to stderr.
 fn profiling() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("LIGHTCRAFT_PROFILE").is_some())
+    lightcraft_profile::enabled()
 }
 
 fn ms_since(t: web_time::Instant) -> f64 {

@@ -13,6 +13,7 @@ default = []
 rawnind-model = []
 
 [dependencies]
+lightcraft-profile = { workspace = true }
 lightcraft-raster = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

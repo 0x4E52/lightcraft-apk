@@ -705,8 +705,7 @@ pub(crate) fn is_bw(s: &DevelopSettings) -> bool {
 
 /// `LIGHTCRAFT_PROFILE` is set: print per-stage timings to stderr.
 pub fn profiling() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("LIGHTCRAFT_PROFILE").is_some())
+    lightcraft_profile::enabled()
 }
 
 /// Run `f`, printing its duration under `LIGHTCRAFT_PROFILE`.

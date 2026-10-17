@@ -3104,6 +3104,7 @@ dependencies = [
  "lightcraft-develop",
  "lightcraft-geom",
  "lightcraft-meta",
+ "lightcraft-profile",
  "lightcraft-raw",
  "log",
  "proptest",
@@ -3174,6 +3175,7 @@ version = "0.8.0"
 dependencies = [
  "faer-core",
  "lightcraft-denoise-core",
+ "lightcraft-profile",
  "lightcraft-raster",
  "miniz_oxide 0.8.9",
  "proptest",
@@ -3189,6 +3191,7 @@ dependencies = [
 name = "lightcraft-denoise-core"
 version = "0.8.0"
 dependencies = [
+ "lightcraft-profile",
  "lightcraft-raster",
  "miniz_oxide 0.8.9",
  "proptest",
@@ -3237,6 +3240,7 @@ dependencies = [
  "lightcraft-meta",
  "lightcraft-pipeline",
  "lightcraft-preview",
+ "lightcraft-profile",
  "lightcraft-raster",
  "lightcraft-raw",
  "lightcraft-scenes",
@@ -3258,6 +3262,7 @@ dependencies = [
 name = "lightcraft-faces"
 version = "0.8.0"
 dependencies = [
+ "lightcraft-profile",
  "lightcraft-testkit",
  "matrixmultiply",
  "ndarray",
@@ -3307,6 +3312,7 @@ dependencies = [
  "lightcraft-faces",
  "lightcraft-geom",
  "lightcraft-pipeline",
+ "lightcraft-profile",
  "lightcraft-raster",
  "lightcraft-raw",
  "lightcraft-scenes",
@@ -3388,6 +3394,7 @@ dependencies = [
  "lightcraft-develop",
  "lightcraft-geom",
  "lightcraft-inpaint",
+ "lightcraft-profile",
  "lightcraft-raster",
  "lightcraft-raw",
  "lightcraft-scenes",
@@ -3408,6 +3415,10 @@ dependencies = [
  "zune-core",
  "zune-jpeg",
 ]
+
+[[package]]
+name = "lightcraft-profile"
+version = "0.8.0"
 
 [[package]]
 name = "lightcraft-raster"

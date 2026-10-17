@@ -430,7 +430,7 @@ const FIT_PREVIEW_MAX_PIXELS: u64 = 128_000_000;
 fn fit_dng_tone(raw: &RawImage, bytes: &[u8], transform: &CameraTransform, lens: Option<&lightcraft_develop::EmbeddedLens>) -> Option<CameraLook> {
     // Logged under LIGHTCRAFT_PROFILE so a corpus run can count the outcome per gate.
     let refuse = |why: &str| {
-        if std::env::var_os("LIGHTCRAFT_PROFILE").is_some() {
+        if lightcraft_profile::enabled() {
             eprintln!("DNGTONE refused {why}");
         }
         None
@@ -466,7 +466,7 @@ fn fit_dng_tone(raw: &RawImage, bytes: &[u8], transform: &CameraTransform, lens:
     if clips_more(&sensor, &reference, &fitted, &plain) {
         return refuse("clip");
     }
-    if std::env::var_os("LIGHTCRAFT_PROFILE").is_some() {
+    if lightcraft_profile::enabled() {
         eprintln!("DNGTONE accepted");
     }
     Some(look)

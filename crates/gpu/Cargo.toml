@@ -9,6 +9,7 @@ description = "LightCraft GPU develop pipeline: wgpu compute (WGSL) twin of the 
 workspace = true
 
 [dependencies]
+lightcraft-profile = { workspace = true }
 lightcraft-denoise = { workspace = true, optional = true }
 lightcraft-geom = { workspace = true }
 lightcraft-color = { workspace = true }

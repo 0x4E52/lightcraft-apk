@@ -960,7 +960,7 @@ pub(crate) fn make_product(spec: &JobSpec, progress: Option<&Progress>) -> Resul
     }
     let ran = began.elapsed();
     product::write(&spec.product, &rgb, &spec.key).map_err(|e| MakeError::Failed(format!("could not save the denoised picture: {e}")))?;
-    if std::env::var_os("LIGHTCRAFT_PROFILE").is_some() {
+    if lightcraft_profile::enabled() {
         eprintln!(
             "[denoise] read + decode {:.0} ms, model (set-up, tiles, blend) {:.0} ms, write {:.0} ms",
             decoded.as_secs_f64() * 1e3,

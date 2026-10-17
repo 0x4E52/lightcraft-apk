@@ -210,7 +210,7 @@ pub fn denoise_bayer(
     if acc.iter().flatten().any(|v| !v.is_finite()) {
         return Err(Error::Model("numbers that are not finite after tile blending".into()));
     }
-    if std::env::var_os("LIGHTCRAFT_PROFILE").is_some() {
+    if lightcraft_profile::enabled() {
         eprintln!(
             "[denoise] {total} tiles, {} at once: tiles {:.0} ms (blending, {:.0} ms of it, overlaps the model), normalise {:.0} ms",
             group,

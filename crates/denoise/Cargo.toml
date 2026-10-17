@@ -15,6 +15,7 @@ runtime = ["dep:faer"]
 rawnind-model = ["lightcraft-denoise-core/rawnind-model"]
 
 [dependencies]
+lightcraft-profile = { workspace = true }
 lightcraft-denoise-core = { workspace = true }
 # Safe matrix views over the pure-Rust GEMM backend; no BLAS, cc/build scripts
 # or inner thread pool. Its dependencies include architecture-specific assembly.

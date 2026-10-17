@@ -571,8 +571,7 @@ struct Host {
 }
 
 pub(crate) fn profiling() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("LIGHTCRAFT_PROFILE").is_some())
+    lightcraft_profile::enabled()
 }
 
 /// Render on `gpu`, reusing `stages` (if given). `None` (or a result the caller discards) when the

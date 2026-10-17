@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-7).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-8).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -22,7 +22,8 @@ the maintainer.
 | `cargo xtask android check`: clippy `-D warnings` for every crate the APK links, for `aarch64-linux-android`, a step of `ci` (skipped, and reported as skipped, without the target) | ✅ APK-5 |
 | A host without `HOME` can place settings (`engine::config::use_dir`), the export folder (`Services::default_export_dir`) and the Local sidebar roots (`Services::local_roots`) | ✅ APK-6 |
 | Desktop host code the Android host also needs is shared (`lightcraft_ui_egui::host`: settings file, session opening, log file with the last error, flush, GPU markers; `lightcraft_engine::gpu::window`) | ✅ APK-7 |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-8 … APK-43 below |
+| A host without environment variables sets the diagnostics switches before first use (`lightcraft_profile::set_enabled` for `LIGHTCRAFT_PROFILE`, `lightcraft_engine::gpu::backend::set_choice` for `LIGHTCRAFT_GPU_BACKEND`) | ✅ APK-8 |
+| Host crates, packaging, CI, touch UI, release | ⏳ APK-9 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1429,3 +1430,8 @@ Agents use the default until the maintainer decides (execution-plan §7).
   interaction, `flush_leaving` commits it first (desktop `on_exit` calls it before `close_library`);
   `log_file::install_with(spec)` and `last_error()`; the GPU crash notice takes the host's `how_to_force` sentence.
   `docs/showcase/run.py` takes `--port` and `--token`.
+- 2026-10-17 (APK-8): new L0 crate `lightcraft-profile` (`enabled()`, `set_enabled(bool)`: an `AtomicU8`
+  unset/off/on, the variable read once while unset, the setter always wins) replaces the nine `LIGHTCRAFT_PROFILE`
+  reads and three `OnceLock`s in catalog, pipeline, gpu, denoise, denoise-core, faces and engine;
+  `gpu::backend::set_choice` fills the process's backend choice before first use and returns `Err(the choice in
+  force)` after it was read.

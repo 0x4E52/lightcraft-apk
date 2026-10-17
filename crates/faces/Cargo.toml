@@ -12,6 +12,7 @@ workspace = true
 default = []
 
 [dependencies]
+lightcraft-profile = { workspace = true }
 ndarray = { version = "=0.17.2", default-features = false, features = ["std"] }
 # Rust intrinsics only, CPU-dispatched; no BLAS, cc/assembly or nested threading.
 matrixmultiply = { version = "=0.3.11", default-features = false, features = ["std", "avx512"] }

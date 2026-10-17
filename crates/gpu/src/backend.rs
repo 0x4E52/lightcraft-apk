@@ -7,7 +7,8 @@
 //! although DX12 would have been used. So Windows defaults to DX12 alone. macOS uses Metal, Linux
 //! Vulkan (plus GL for the window when the build has it).
 //!
-//! Overrides, read once per process:
+//! Overrides, read once per process (a host without environment variables calls [`set_choice`]
+//! before the first GPU use instead):
 //! - `LIGHTCRAFT_GPU_BACKEND` = `dx12` | `vulkan` | `metal` | `gl` (comma lists allowed), `auto`
 //!   (the platform default), or `off` (no GPU compute; the window still needs one backend and
 //!   keeps the platform default);
@@ -17,7 +18,7 @@
 //! with a warning and the platform default is used.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 pub use wgpu::Backends;
 
@@ -98,13 +99,29 @@ pub fn resolve(choice: BackendChoice, default: Backends, compiled: Backends) -> 
     }
 }
 
+/// The process's backend choice: filled by [`set_choice`], or else from the environment on first use.
+static C: OnceLock<BackendChoice> = OnceLock::new();
+
 fn env_choice() -> BackendChoice {
-    static C: std::sync::OnceLock<BackendChoice> = std::sync::OnceLock::new();
     *C.get_or_init(|| {
         let lc = std::env::var("LIGHTCRAFT_GPU_BACKEND").ok();
         let wg = std::env::var("WGPU_BACKEND").ok();
         choose(lc.as_deref(), wg.as_deref())
     })
+}
+
+/// Set the backend choice for the whole process, for a host without environment variables
+/// (Android: its setting and system property). Call it before the first GPU use: once the choice
+/// was read (from the environment or an earlier call) it is fixed, and this returns
+/// `Err(the choice in force)`.
+pub fn set_choice(c: BackendChoice) -> Result<(), BackendChoice> {
+    set_choice_in(&C, c)
+}
+
+/// [`set_choice`] over `cell`: fills it, or returns `Err(existing)` when it already holds a choice.
+pub fn set_choice_in(cell: &OnceLock<BackendChoice>, c: BackendChoice) -> Result<(), BackendChoice> {
+    // `set` fails only when the cell holds a value, so `get` finds it
+    cell.set(c).map_err(|c| cell.get().copied().unwrap_or(c))
 }
 
 /// The backends of the compute device (`None`: `LIGHTCRAFT_GPU_BACKEND=off`).
@@ -345,6 +362,24 @@ pub fn window_renderer_order(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn set_choice_in_fills_empty_cell() {
+        let cell = OnceLock::new();
+        assert_eq!(set_choice_in(&cell, BackendChoice::Use(Backends::GL)), Ok(()));
+        assert_eq!(cell.get(), Some(&BackendChoice::Use(Backends::GL)));
+    }
+
+    #[test]
+    fn set_choice_in_after_read_errs() {
+        // as `env_choice` does on first use
+        let cell = OnceLock::new();
+        assert_eq!(*cell.get_or_init(|| choose(Some("off"), None)), BackendChoice::Off);
+        assert_eq!(set_choice_in(&cell, BackendChoice::Use(Backends::VULKAN)), Err(BackendChoice::Off));
+        assert_eq!(set_choice_in(&cell, BackendChoice::Auto), Err(BackendChoice::Off));
+        assert_eq!(cell.get(), Some(&BackendChoice::Off), "the first choice stays");
+    }
 
     /// #250: the indirect-call validation pipeline is off unless asked for; other flags are kept.
     #[test]
@@ -356,7 +391,6 @@ mod tests {
         assert_eq!(instance_flags(F::empty(), Some("1")), F::VALIDATION_INDIRECT_CALL);
         assert_eq!(instance_flags(F::empty(), None), F::empty());
     }
-    use super::*;
 
     #[test]
     fn parses_backend_names() {
