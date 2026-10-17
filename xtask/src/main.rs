@@ -8,7 +8,9 @@ mod bench;
 mod ci_report;
 mod ico;
 mod layers;
+mod licences;
 mod parity;
+mod spdx;
 mod stats;
 mod version;
 mod web;
@@ -27,6 +29,10 @@ commands:
   ico <out.ico> <in.png>...
                   pack square PNGs (<= 256 px) into a Windows .ico (see packaging/icons.sh)
   layers          enforce the crate dependency layering (plan/architecture.md §3)
+  licences [--write]
+                  check that every crate the shipped apps link is under an allowed licence and that
+                  assets/licences/third-party.json (shown in About ▸ Licences) is current; --write
+                  regenerates it
   parity [--write]
                   check docs/parity-checklist.md (every cmd:/ctl: id and path it cites exists) and print the
                   Lightroom parity summary; --write refreshes the summary table in the document
@@ -35,7 +41,8 @@ commands:
                   build the browser app (apps/lightcraft-web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
   ci [--hardware] [--summary-md]
-                  fmt --check, clippy -D warnings, heif, test, GPU probe, parity refs, layers, assets, wasm
+                  fmt --check, clippy -D warnings, heif, test, GPU probe, parity refs, layers, assets, licences,
+                  wasm
                   (stops at first failure); writes target/ci/report.json (machine, GPU adapters, data,
                   steps, skipped tests) and target/ci/summary.md; --hardware also runs the GPU tests on
                   every backend with a hardware adapter; --summary-md prints the Markdown summary
@@ -59,6 +66,7 @@ fn main() -> ExitCode {
         Some("assets") => assets::run(&root()),
         Some("bench") => bench::run(&root(), &rest),
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
+        Some("licences") => licences::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
         Some("web") => web::run(&rest),
         Some("ci") => cmd_ci(&rest),
@@ -363,6 +371,7 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
     steps.push(("parity", Box::new(|| parity::run(&root, false))));
     steps.push(("layers", Box::new(cmd_layers)));
     steps.push(("assets", Box::new(|| assets::run(&root))));
+    steps.push(("licences", Box::new(|| licences::run(&root, false))));
     steps.push(("wasm", Box::new(cmd_wasm)));
 
     let mut results = Vec::new();
