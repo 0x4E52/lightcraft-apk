@@ -3097,6 +3097,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-android"
+version = "0.8.0"
+dependencies = [
+ "android-activity",
+ "lightcraft-android-host",
+ "log",
+]
+
+[[package]]
+name = "lightcraft-android-host"
+version = "0.8.0"
+dependencies = [
+ "android-activity",
+ "eframe",
+ "lightcraft-android-sys",
+ "lightcraft-engine",
+ "lightcraft-ui-egui",
+ "log",
+ "winit",
+]
+
+[[package]]
+name = "lightcraft-android-sys"
+version = "0.8.0"
+dependencies = [
+ "android-activity",
+ "jni",
+]
+
+[[package]]
 name = "lightcraft-catalog"
 version = "0.8.0"
 dependencies = [

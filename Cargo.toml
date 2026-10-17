@@ -42,6 +42,8 @@ lightcraft-segment = { path = "crates/segment" }
 lightcraft-geocode = { path = "crates/geocode" }
 lightcraft-slideshow = { path = "crates/slideshow" }
 lightcraft-testkit = { path = "crates/testkit" }
+lightcraft-android-host = { path = "crates/android-host" }
+lightcraft-android-sys = { path = "crates/android-sys" }
 
 # foundation
 thiserror = "2"
@@ -103,6 +105,12 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 # Appearance Mode ▸ Auto). Pure Rust; the version accesskit already brings in, pinned to it.
 zbus = "=5.19.0"
 web-time = "1"
+
+# android (apps/lightcraft-android, crates/android-host, crates/android-sys; docs/android-port.md).
+# Pinned to the versions winit 0.30 pulls in, so `AndroidApp` and the JVM singleton are eframe's.
+# Used only under `[target.'cfg(target_os = "android")'.dependencies]`.
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+jni = "=0.22.4"
 
 # web (apps/lightcraft-web)
 wasm-bindgen = "0.2.129"

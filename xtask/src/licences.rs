@@ -20,7 +20,7 @@ pub const OUTPUT: &str = "assets/licences/third-party.json";
 const STANDARD_TEXTS: &str = "assets/licences/spdx";
 
 /// The packages that are distributed: their dependencies are what the inventory lists.
-const SHIPPED: &[&str] = &["lightcraft", "lightcraft-cli", "lightcraft-web"];
+const SHIPPED: &[&str] = &["lightcraft", "lightcraft-cli", "lightcraft-web", "lightcraft-android"];
 
 /// Licences a shipped dependency may be used under: permissive licences, and MPL-2.0 (file-level
 /// copyleft, which an unmodified dependency meets by naming its source). Nothing from the GPL

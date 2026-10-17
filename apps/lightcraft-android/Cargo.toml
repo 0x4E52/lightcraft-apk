@@ -1,0 +1,24 @@
+[package]
+name = "lightcraft-android"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "LightCraft for Android: the cdylib holding the `android_main` entry symbol (empty on other targets)"
+
+[lib]
+name = "lightcraft_android"
+crate-type = ["cdylib"]
+
+# The workspace lints deny `unsafe_code`; only `android_main` (`#[unsafe(no_mangle)]`) allows it.
+[lints]
+workspace = true
+
+[features]
+default = ["denoise"]
+denoise = ["lightcraft-android-host/denoise"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+lightcraft-android-host = { workspace = true }
+android-activity = { workspace = true }
+log = { workspace = true }

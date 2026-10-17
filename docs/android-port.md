@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-9).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-10).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -16,7 +16,7 @@ the maintainer.
 | Licence notices inside the app (About ▸ Licences: NOTICE, both licences, Inter's OFL, all 600 linked crates) | ✅ APK-2 (embedded craft-fonts faces still missing: APK-38) |
 | ArtCraft marks out of the app (docs/brand/LICENSE-brand.txt, "Forks and modified versions") | ✅ APK-3: no Discord/website links or labels; About names the original in plain text only |
 | `lightcraft-engine` (also `--features sam,denoise`) and `lightcraft-ui-egui` compile for `aarch64-linux-android` | ✅ `cargo check` passes, unchanged |
-| An eframe host (`wgpu` + `android-native-activity` + `default_fonts`) compiles for `aarch64-linux-android` | ✅ checked in a scratch crate; not in the repo yet |
+| An eframe host (`wgpu` + `android-native-activity` + `default_fonts`) compiles for `aarch64-linux-android` | ✅ `crates/android-host` (APK-10) |
 | Container limits and agent CI access measured (disk need, network, targets, `gh`) | ✅ APK-4 ("Executing in this container"): no SDK/NDK download; agents read CI runs through `gh api`, starting one needs decision 0 |
 | Full `cargo xtask ci` on GitHub for every push (`.github/workflows/ci.yml`), fast gate per task here | ✅ maintainer decision 2026-10-17 |
 | `cargo xtask android check`: clippy `-D warnings` for every crate the APK links, for `aarch64-linux-android`, a step of `ci` (skipped, and reported as skipped, without the target) | ✅ APK-5 |
@@ -24,7 +24,8 @@ the maintainer.
 | Desktop host code the Android host also needs is shared (`lightcraft_ui_egui::host`: settings file, session opening, log file with the last error, flush, GPU markers; `lightcraft_engine::gpu::window`) | ✅ APK-7 |
 | A host without environment variables sets the diagnostics switches before first use (`lightcraft_profile::set_enabled` for `LIGHTCRAFT_PROFILE`, `lightcraft_engine::gpu::backend::set_choice` for `LIGHTCRAFT_GPU_BACKEND`) | ✅ APK-8 |
 | `safe_file` temp names keep the target's extension (`.lightcraft-<pid>-<n>-tmp.<ext>`, `.tmp` without one or with one over 16 bytes), as MediaProvider requires in `Pictures/` (device check: APK-27) | ✅ APK-9 |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-10 … APK-43 below |
+| The three Android crates exist and lint clean for `aarch64-linux-android` (`lightcraft-android` entry symbol with a process exit after `run`, `lightcraft-android-host` start guard and `Exit`, `lightcraft-android-sys` `with_activity` and Java error mapping); `cargo xtask android check` derives its set from `lightcraft-android` | ✅ APK-10 (no `.so` linked or run yet: APK-12, APK-16) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-11 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1440,3 +1441,10 @@ Agents use the default until the maintainer decides (execution-plan §7).
   without one or with one over 16 bytes) so MediaProvider accepts them in `Pictures/`; the other `.tmp` writers
   (catalog store, prefs, camera profiles, lightroom archive, preview cache, denoise models) write into app-private
   folders.
+- 2026-10-17 (APK-10): new crates `apps/lightcraft-android` (cdylib; `android_main` catches a panic, logs the
+  outcome and exits the process with `exit_code`), `crates/android-host` (`run` with the start guard `try_start`,
+  `Exit { Destroyed, Closed }`; until APK-11 the loop only drains input and waits for the destroy) and
+  `crates/android-sys` (`jni_env::with_activity`, not re-entrant through `ReentryGuard`; `Error::Java { class,
+  message }` from caught exceptions and `SecurityViolation`; `user_message`). Registered in `layers::TABLE`
+  (android-sys L0 standalone, the other two exempt) and `licences::SHIPPED`; CLAUDE.md and AGENTS.md name both
+  unsafe crates.

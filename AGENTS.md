@@ -40,9 +40,12 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   "unsupported" error or is disabled. Sole exception: a provably infallible literal, as `#[allow(clippy::expect_used)]`
   + `.expect("why it can't fail")`.
 - **`unsafe` lives only in `crates/sysmem`** (one FFI call, `malloc_zone_pressure_relief`, that returns freed
-  allocator pages to macOS after raw decodes). Every other production crate root has `#![forbid(unsafe_code)]`. A new
-  unsafe need goes in an isolated, well-tested helper crate like it: `// SAFETY:` on every block, a safe API, a safe
-  fallback where possible, and a line here naming it.
+  allocator pages to macOS after raw decodes) **and the two Android crates**: `apps/lightcraft-android` (the
+  `#[unsafe(no_mangle)] fn android_main` symbol android-activity calls; nothing else) and `crates/android-sys` (the one
+  Activity-pointer cast in `jni_env::with_activity`, behind a safe JNI API). Both use `[lints] workspace = true` with
+  `#[allow(unsafe_code)]` and `// SAFETY:` on that one item only. Every other production crate root has
+  `#![forbid(unsafe_code)]`. A new unsafe need goes in an isolated, well-tested helper crate like these: `// SAFETY:` on
+  every block, a safe API, a safe fallback where possible, and a line here naming it.
 - **Input-derived numbers are hostile:** `get()` instead of `[i]`/`[a..b]` for offsets from files, users, agents or
   arithmetic on them; checked/saturating math for lengths, offsets and counts; no division by zero, NaN/inf or negative
   casts to `usize`; cap allocations sized by input; slice strings only at char boundaries.
@@ -138,7 +141,8 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 
 ## Map of the code
 `geom`, `color`, `raster`, `tiff` (L0) → `raw`, `codecs`, `meta`, `develop` (L1) → `pipeline` → `catalog` → `engine`
-→ `ui-egui`, `mcp` (L5) → apps `lightcraft` (desktop), `lightcraft-cli` (render/commands/MCP). `scenes` generates demo
+→ `ui-egui`, `mcp` (L5) → apps `lightcraft` (desktop), `lightcraft-cli` (render/commands/MCP), `lightcraft-android`
+(entry symbol; host in `android-host`, JNI in `android-sys`, docs/android-port.md). `scenes` generates demo
 photos. `xtask` = tooling (`ci`, `layers`, `assets`, `licences`, `parity`, `wasm`, `android`, `corpus`, `stats`); `testkit` = test helpers
 (dev-dependency only). `flake.nix` +
 `nix/package.nix` = the Nix package (`nix build` builds both binaries with the craft-fonts input, installs the

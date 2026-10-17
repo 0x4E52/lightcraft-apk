@@ -1,0 +1,28 @@
+[package]
+name = "lightcraft-android-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "LightCraft Android host: start guard, start-up and event loop of the Android app (no unsafe; the entry symbol lives in apps/lightcraft-android)"
+
+[lints]
+workspace = true
+
+[features]
+# AI denoise, as the desktop app's optional `denoise` feature (on by default in lightcraft-android).
+denoise = ["lightcraft-engine/denoise"]
+
+# Compiled on every target, so `cargo test -p lightcraft-android-host` runs the pure parts on x86_64.
+[dependencies]
+lightcraft-android-sys = { workspace = true }
+lightcraft-engine = { workspace = true, features = ["sam"] }
+lightcraft-ui-egui = { workspace = true }
+log = { workspace = true }
+
+# Android only: android-activity has a `compile_error!` on every other OS, and winit without
+# x11/wayland one on Linux. Never `accesskit` (a compile error with native-activity) and no `glow`.
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { workspace = true, features = ["wgpu", "android-native-activity", "default_fonts"] }
+winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
+android-activity = { workspace = true }

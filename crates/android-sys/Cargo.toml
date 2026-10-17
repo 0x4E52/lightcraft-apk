@@ -1,0 +1,17 @@
+[package]
+name = "lightcraft-android-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "LightCraft android-sys (L0 standalone): the Android host's JNI calls behind a safe API; one unsafe cast, in jni_env::with_activity"
+
+# The workspace lints deny `unsafe_code`; the one item that needs it carries `#[allow(unsafe_code)]`
+# with a `// SAFETY:` comment (docs/android-port.md, Ground rules).
+[lints]
+workspace = true
+
+# android-activity has a `compile_error!` on every other OS: Android-only dependencies stay here.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { workspace = true }
+android-activity = { workspace = true }

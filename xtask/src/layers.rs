@@ -39,6 +39,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("tiff", Class::Layer(0)),
     ("sysmem", Class::Layer(0)),
     ("profile", Class::Layer(0)),
+    // JNI behind a safe API for the Android host; its pure modules compile on wasm32 too
+    ("android-sys", Class::Standalone),
     ("fetch", Class::Layer(0)),
     ("denoise-core", Class::Layer(1)),
     ("denoise", Class::Layer(1)),
@@ -68,6 +70,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("lightcraft", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
+    ("android", Class::Exempt),
+    ("android-host", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
@@ -309,8 +313,18 @@ mod tests {
     }
 
     #[test]
+    fn android_crates_registered() {
+        assert_eq!(classify("lightcraft-android"), Some(Class::Exempt));
+        assert_eq!(classify("lightcraft-android-host"), Some(Class::Exempt));
+        assert_eq!(classify("lightcraft-android-sys"), Some(Class::Standalone));
+        // android-sys may use no workspace crate (it joins the wasm set as L0 standalone)
+        let v = check(&[c("lightcraft-android-sys", &[("jni", Normal, false), ("lightcraft-geom", Normal, true)])]);
+        assert!(matches!(&v[..], [Violation::StandaloneHasWorkspaceDep { .. }]), "{v:?}");
+    }
+
+    #[test]
     fn apps_exempt() {
-        for app in ["lightcraft", "lightcraft-cli", "lightcraft-web", "xtask"] {
+        for app in ["lightcraft", "lightcraft-cli", "lightcraft-web", "lightcraft-android", "lightcraft-android-host", "xtask"] {
             assert!(check(&[c(app, &[("egui", Normal, false), ("lightcraft-ui-egui", Normal, true)])]).is_empty());
         }
     }
