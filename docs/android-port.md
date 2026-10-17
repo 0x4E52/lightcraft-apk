@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (fast gate, after APK-4).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-5).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -19,7 +19,8 @@ the maintainer.
 | An eframe host (`wgpu` + `android-native-activity` + `default_fonts`) compiles for `aarch64-linux-android` | ✅ checked in a scratch crate; not in the repo yet |
 | Container limits and agent CI access measured (disk need, network, targets, `gh`) | ✅ APK-4 ("Executing in this container"): no SDK/NDK download; agents read CI runs through `gh api`, starting one needs decision 0 |
 | Full `cargo xtask ci` on GitHub for every push (`.github/workflows/ci.yml`), fast gate per task here | ✅ maintainer decision 2026-10-17 |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-5 … APK-43 below |
+| `cargo xtask android check`: clippy `-D warnings` for every crate the APK links, for `aarch64-linux-android`, a step of `ci` (skipped, and reported as skipped, without the target) | ✅ APK-5 |
+| Host crates, packaging, CI, touch UI, release | ⏳ APK-6 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -210,7 +211,7 @@ Facts (measured by APK-4, 2026-10-17; each line says how to re-check it):
   GitHub MCP server. Starting a run (`gh workflow run`) was refused by the session's permission check as an external
   write, not by the proxy: it needs decision 0 (a token in a new session) or the maintainer's go-ahead. Pushes go
   through the session's git access, and every push starts `.github/workflows/ci.yml`.
-- **`cargo xtask ci`** (fmt, clippy, heif, test, GPU probe, parity, layers, assets, licences, wasm): from a cold
+- **`cargo xtask ci`** (fmt, clippy, heif, test, GPU probe, parity, layers, assets, licences, wasm; since APK-5 also android): from a cold
   `target/` with `CARGO_PROFILE_DEV_DEBUG=line-tables-only` it took 3037 s (about 51 min) and ended green. `df` fell
   from 28 GB free to 1.4 GB during the run (`target/` peaked near 21 GB and was 17 GB after deleting
   `target/debug/examples` and `target/debug/incremental`). A warm run was not timed: per-task runs here are replaced
@@ -1412,3 +1413,6 @@ Agents use the default until the maintainer decides (execution-plan §7).
   the xtask checks the change touches), the full `cargo xtask ci` on GitHub for every push (`ci.yml`), red runs
   fixed forward. Review of APK-4 applied: agents can read CI runs through `gh api` now that Actions is enabled
   (starting one still needs decision 0); the disk rule is a precondition, cleaning only while no cargo runs.
+- 2026-10-17 (APK-5): `cargo xtask android check` (`xtask/src/android/`) lints the workspace crates the APK links (derived
+  from `cargo metadata`, normal dependencies only) for `aarch64-linux-android` and runs in `ci` after `wasm`; `ci`
+  steps return a `StepOutcome`, so a missing target shows as `skipped` with its reason in the report and summary.

@@ -254,6 +254,18 @@ fn no_skips(report: &Value) -> &'static str {
     if test_ran { "none recorded" } else { "unknown, the test step did not run" }
 }
 
+/// Steps that could not run their checks (`status` "skipped") with the reason, for example a
+/// missing toolchain target. They are neither a pass nor a failure.
+fn skipped_steps(report: &Value) -> Vec<(&str, &str)> {
+    report["steps"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| s["status"] == "skipped")
+        .map(|s| (s["name"].as_str().unwrap_or("?"), s["reason"].as_str().unwrap_or("no reason given")))
+        .collect()
+}
+
 fn skips_from(report: &Value) -> Vec<Skip> {
     report["skips"]
         .as_array()
@@ -410,6 +422,9 @@ pub fn summary_text(report: &Value) -> String {
             h["status"].as_str().unwrap_or("?")
         );
     }
+    for (step, why) in skipped_steps(report) {
+        let _ = writeln!(s, "Skipped step: {step} ({why})");
+    }
     let skips = skips_from(report);
     if skips.is_empty() {
         let _ = writeln!(s, "Skipped tests: {}", no_skips(report));
@@ -459,7 +474,11 @@ pub fn summary_md(report: &Value) -> String {
     let _ = writeln!(s, "\n| Step | Result | Time |\n|---|---|---|");
     for step in report["steps"].as_array().into_iter().flatten() {
         let time = step["seconds"].as_f64().map(seconds).unwrap_or_default();
-        let _ = writeln!(s, "| {} | {} | {time} |", cell(step["name"].as_str().unwrap_or("?")), step["status"].as_str().unwrap_or("?"));
+        let status = match (step["status"].as_str().unwrap_or("?"), step["reason"].as_str()) {
+            ("skipped", Some(why)) => format!("skipped ({why})"),
+            (status, _) => status.to_owned(),
+        };
+        let _ = writeln!(s, "| {} | {} | {time} |", cell(step["name"].as_str().unwrap_or("?")), cell(&status));
     }
     for h in report["hardware"].as_array().into_iter().flatten() {
         let time = h["seconds"].as_f64().map(seconds).unwrap_or_default();
@@ -587,6 +606,25 @@ mod tests {
         assert!(md.contains("| test | ok | 2m 05s |"), "{md}");
         assert!(md.contains("| gpu | 1 | no GPU \\| adapter | `memory::memory` |"), "{md}");
         assert!(md.contains("1 tests skipped (gpu 1)"), "{md}");
+    }
+
+    #[test]
+    fn skipped_step_is_reported() {
+        let report = json!({
+            "command": "cargo xtask ci",
+            "result": "pass",
+            "steps": [
+                {"name": "wasm", "status": "ok", "seconds": 3.0},
+                {"name": "android", "status": "skipped", "reason": "aarch64-linux-android not installed", "seconds": 0.1},
+            ],
+            "skips": [],
+        });
+        let text = summary_text(&report);
+        assert!(text.contains("Skipped step: android (aarch64-linux-android not installed)"), "{text}");
+        assert!(!text.contains("Skipped step: wasm"), "{text}");
+        let md = summary_md(&report);
+        assert!(md.contains("| android | skipped (aarch64-linux-android not installed) | 0.1 s |"), "{md}");
+        assert!(md.contains("| wasm | ok | 3.0 s |"), "{md}");
     }
 
     #[test]

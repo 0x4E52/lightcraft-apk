@@ -3,6 +3,7 @@
 //! Pure Rust (std + serde_json; flate2/brotli for the web bundle). External tools (`cargo`, `curl`, `tar`) are
 //! invoked through `std::process::Command`.
 
+mod android;
 mod assets;
 mod bench;
 mod ci_report;
@@ -22,6 +23,8 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
+  android check   clippy -D warnings for every crate the APK links, for aarch64-linux-android (skipped
+                  without the target)
   assets          every image/icon/font/media file is attributed in assets/ATTRIBUTION.md; no Adobe assets
   bench [FILE] [--strict] [--threshold PCT]
                   run the render benchmark, append to target/bench/history.jsonl, compare CPU time with
@@ -42,7 +45,7 @@ commands:
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
   ci [--hardware] [--summary-md]
                   fmt --check, clippy -D warnings, heif, test, GPU probe, parity refs, layers, assets, licences,
-                  wasm
+                  wasm, android
                   (stops at first failure); writes target/ci/report.json (machine, GPU adapters, data,
                   steps, skipped tests) and target/ci/summary.md; --hardware also runs the GPU tests on
                   every backend with a hardware adapter; --summary-md prints the Markdown summary
@@ -68,6 +71,7 @@ fn main() -> ExitCode {
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("licences") => licences::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
+        Some("android") => android::run(&rest),
         Some("web") => web::run(&rest),
         Some("ci") => cmd_ci(&rest),
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
@@ -273,6 +277,19 @@ fn cmd_wasm() -> Result<(), String> {
     if failed == 0 { Ok(()) } else { Err(format!("{failed} crate(s) failed the wasm check")) }
 }
 
+/// What a `ci` step did: ran its checks, or could not and says why (a missing toolchain target is
+/// not a failure, but the report must not call it a pass).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepOutcome {
+    Ran,
+    Skipped(String),
+}
+
+/// A step that has nothing to skip.
+fn plain<'a>(f: impl Fn() -> Result<(), String> + 'a) -> Box<dyn Fn() -> Result<StepOutcome, String> + 'a> {
+    Box::new(move || f().map(|()| StepOutcome::Ran))
+}
+
 fn cmd_ci(args: &[&str]) -> Result<(), String> {
     let hardware = args.contains(&"--hardware");
     let print_md = args.contains(&"--summary-md");
@@ -303,11 +320,11 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
         }
     };
 
-    type Step<'a> = (&'static str, Box<dyn Fn() -> Result<(), String> + 'a>);
+    type Step<'a> = (&'static str, Box<dyn Fn() -> Result<StepOutcome, String> + 'a>);
     let mut steps: Vec<Step> = vec![
         (
             "fmt",
-            Box::new(|| {
+            plain(|| {
                 let mut c = cargo();
                 c.args(["fmt", "--all", "--", "--check"]);
                 run(c, "cargo fmt --all -- --check")
@@ -315,7 +332,7 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
         ),
         (
             "clippy",
-            Box::new(|| {
+            plain(|| {
                 let mut c = cargo();
                 c.args(["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]);
                 run(c, "cargo clippy --workspace --all-targets -- -D warnings")
@@ -323,7 +340,7 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
         ),
         (
             "heif",
-            Box::new(|| {
+            plain(|| {
                 // the optional HEIC/HEIF decoder is off in the workspace build above
                 let mut c = cargo();
                 c.args(["clippy", "-p", "lightcraft-codecs", "--features", "heif", "--all-targets", "--", "-D", "warnings"]);
@@ -333,12 +350,12 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
                 test(&["test", "-p", "lightcraft-engine", "--lib", "--features", "lightcraft-codecs/heif", "heic"], "heif")
             }),
         ),
-        ("test", Box::new(|| test(&["test", "--workspace"], "test"))),
+        ("test", plain(|| test(&["test", "--workspace"], "test"))),
     ];
     if hardware {
         steps.push((
             "gpu-backends",
-            Box::new(|| {
+            plain(|| {
                 // the GPU tests once per backend with a hardware adapter (`LIGHTCRAFT_GPU_BACKEND`)
                 probe();
                 let backends = ci_report::hardware_backends(&gpu.borrow());
@@ -368,20 +385,31 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
             }),
         ));
     }
-    steps.push(("parity", Box::new(|| parity::run(&root, false))));
-    steps.push(("layers", Box::new(cmd_layers)));
-    steps.push(("assets", Box::new(|| assets::run(&root))));
-    steps.push(("licences", Box::new(|| licences::run(&root, false))));
-    steps.push(("wasm", Box::new(cmd_wasm)));
+    steps.push(("parity", plain(|| parity::run(&root, false))));
+    steps.push(("layers", plain(cmd_layers)));
+    steps.push(("assets", plain(|| assets::run(&root))));
+    steps.push(("licences", plain(|| licences::run(&root, false))));
+    steps.push(("wasm", plain(cmd_wasm)));
+    steps.push(("android", Box::new(android::check)));
 
     let mut results = Vec::new();
+    let mut skipped: Vec<(&str, String)> = Vec::new();
     let mut failure = None;
     for (name, f) in &steps {
         eprintln!("\n=== ci: {name} ===");
         let t = std::time::Instant::now();
         let r = f();
-        let status = if r.is_ok() { "ok" } else { "fail" };
-        results.push(serde_json::json!({"name": name, "status": status, "seconds": t.elapsed().as_secs_f64()}));
+        let mut row = serde_json::json!({"name": name, "seconds": t.elapsed().as_secs_f64()});
+        match &r {
+            Ok(StepOutcome::Ran) => row["status"] = "ok".into(),
+            Ok(StepOutcome::Skipped(why)) => {
+                row["status"] = "skipped".into();
+                row["reason"] = why.as_str().into();
+                skipped.push((*name, why.clone()));
+            }
+            Err(_) => row["status"] = "fail".into(),
+        }
+        results.push(row);
         if *name == "test" {
             // right after the workspace tests, before parity and wasm build other feature sets
             probe();
@@ -399,14 +427,24 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
         Some((name, e)) => {
             println!("\nCI summary:");
             for d in done.iter().filter(|d| *d != name) {
-                println!("  ok    {d}");
+                match skipped.iter().find(|s| s.0 == *d) {
+                    Some((_, why)) => println!("  SKIPPED {d}: {why}"),
+                    None => println!("  ok    {d}"),
+                }
             }
             println!("  FAIL  {name}: {e}");
             for (n, _) in steps.iter().skip(results.len()) {
                 println!("  skip  {n}");
             }
         }
-        None => println!("\nCI summary: all {} steps passed ({})", done.len(), done.join(", ")),
+        None if skipped.is_empty() => println!("\nCI summary: all {} steps passed ({})", done.len(), done.join(", ")),
+        None => {
+            let ran: Vec<&str> = done.iter().copied().filter(|d| !skipped.iter().any(|s| s.0 == *d)).collect();
+            println!("\nCI summary: {} steps passed ({}), {} skipped:", ran.len(), ran.join(", "), skipped.len());
+            for (n, why) in &skipped {
+                println!("  SKIPPED {n}: {why}");
+            }
+        }
     }
     for (n, _) in steps.iter().skip(results.len()) {
         results.push(serde_json::json!({"name": n, "status": "not run"}));
