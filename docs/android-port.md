@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (review round 3).* Revision history at the end.
+*Last updated: 2026-10-17 (APK-4).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -17,7 +17,8 @@ the maintainer.
 | ArtCraft marks out of the app (docs/brand/LICENSE-brand.txt, "Forks and modified versions") | ✅ APK-3: no Discord/website links or labels; About names the original in plain text only |
 | `lightcraft-engine` (also `--features sam,denoise`) and `lightcraft-ui-egui` compile for `aarch64-linux-android` | ✅ `cargo check` passes, unchanged |
 | An eframe host (`wgpu` + `android-native-activity` + `default_fonts`) compiles for `aarch64-linux-android` | ✅ checked in a scratch crate; not in the repo yet |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-4 … APK-43 below |
+| Container limits and agent CI access measured (disk need, network, targets, `gh`) | ✅ APK-4 ("Executing in this container"): no SDK/NDK download, no CI access for agents |
+| Host crates, packaging, CI, touch UI, release | ⏳ APK-5 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -176,30 +177,59 @@ xtask/src/android/          mod.rs (dispatch), check.rs, sdk.rs, so.rs, elf.rs, 
 
 ## Executing in this container
 
-Facts (2026-10-17, round 3): linux x86_64, 4 CPUs, 16 GB RAM; disk **11 GB free** (`df -h /`), `target/` 19 GB after a
-warm `ci` (`target/debug/deps` 15 GB, `target/debug/examples` 3.0 GB from `clippy --workspace --all-targets`,
-`target/debug/incremental` 0.1 GB, `target/wasm32-unknown-unknown` 0.25 GB, no `target/aarch64-linux-android` yet);
-runs as root (`id -u` = 0: chmod-based read-only tests are vacuous here); `/bin/sh` is dash; JDK 21 and
-`/opt/gradle-8.14.3` installed; `xvfb-run` installed; `resvg` and `lightcraft-cli` not on PATH (use `cargo install
-resvg --locked` and `cargo run -p lightcraft-cli --`); Rust targets `x86_64-unknown-linux-gnu`,
-`aarch64-linux-android` and `wasm32-unknown-unknown`; no `/dev/kvm`, no GPU (no `/dev/dri`, no Vulkan ICD); the proxy refuses
-`dl.google.com` (SDK, NDK,
-build-tools, emulator images), `maven.google.com` is reachable. GitHub: `gh auth status` reports the `GH_TOKEN`
-invalid, the GitHub MCP server is refused by the proxy, the fork `0x4E52/lightcraft-apk` has never run a workflow
-(Actions most likely disabled), and `.github/workflows` has no general ci workflow (only freebsd, nix,
-packaging-lint, release, windows-arm64). So **here** an agent can run `cargo check` / `cargo clippy --target
-aarch64-linux-android` (no linker needed; engine + ui-egui ≈ 4 min cold) and every x86_64 test, but cannot link the
-`.so`, build an APK, boot an emulator or start or read a CI run. Linking, packaging and the emulator smoke test run in
-`.github/workflows/android.yml` (APK-16) on GitHub's ubuntu runners (SDK/NDK preinstalled, KVM available), started by
-the maintainer until decision 0 is done.
+Facts (measured by APK-4, 2026-10-17; each line says how to re-check it):
+- **Machine.** linux x86_64, 4 CPUs, 16 GB RAM (`nproc`, `free -g`); runs as root (`id -u` = 0: chmod-based read-only
+  tests are vacuous here); `/bin/sh` is dash; JDK 21.0.12 (`java -version`) and `/opt/gradle-8.14.3` installed;
+  `xvfb-run` installed; `resvg` and `lightcraft-cli` not on PATH (use `cargo install resvg --locked` and `cargo run -p
+  lightcraft-cli --`); no `/dev/kvm`, no GPU (no `/dev/dri`, no Vulkan ICD).
+- **Disk.** `df -h /` showed 11 GB free at the start (the volume is 252 GB, but free space is what counts and it
+  moved by several GB while builds ran). `target/` was 19 GB: `target/debug/deps` 15 GB, `target/debug/examples`
+  3.0 GB (from `clippy --workspace --all-targets`), `target/debug/build` 0.58 GB, `target/debug/incremental`
+  0.1 GB, `target/wasm32-unknown-unknown` 0.25 GB. **The Android need is 0.6 GB**: `target/aarch64-linux-android`
+  is 590 MB after `cargo clippy --target aarch64-linux-android -p lightcraft-engine -p lightcraft-ui-egui
+  --features lightcraft-engine/sam,lightcraft-engine/denoise` (143 s cold with
+  `CARGO_PROFILE_DEV_DEBUG=line-tables-only`, 160 s without), and the figure is the same with and without the variable
+  because clippy writes metadata only; a card that links a `.so` (APK-12 on) must re-measure its own need. Two traps found on the way: (a) exporting
+  `CARGO_PROFILE_DEV_DEBUG=line-tables-only` against a `target/` built without it rebuilds every crate and keeps
+  both sets (`deps` grew from 15 GB to 21.5 GB in one `ci` run until the disk filled: linker "Bus error",
+  rustc "No space left on device"), so start the first `ci` of a session with the variable already exported, or with
+  `target/debug` removed, or with at least 15 GB free; (b) `cargo clean --target aarch64-linux-android` (cargo 1.97.0)
+  also removed `target/ci`, `target/wasm32-unknown-unknown` and most of `target/debug` here, so use `rm -rf
+  target/aarch64-linux-android` to drop the Android output only.
+- **Network** (`curl -sS -o /dev/null -w '%{http_code}' -I <url>`): `dl.google.com/android/repository/
+  repository2-3.xml` fails (the proxy refuses the CONNECT with 403: no SDK, NDK, build-tools or emulator images);
+  `maven.google.com` 301; `services.gradle.org` 200; `repo.maven.apache.org` 200.
+- **Rust targets** (`rustup target list --installed`): `aarch64-linux-android`, `wasm32-unknown-unknown`,
+  `x86_64-linux-android` (added by APK-4 for the CI emulator ABI, decision 5) and `x86_64-unknown-linux-gnu`.
+- **GitHub (decision 0 is not done).** `gh auth status` reports the `GH_TOKEN` invalid; `gh workflow list` and `gh
+  run list` print nothing; `gh api repos/0x4E52/lightcraft-apk/actions/workflows` answers `total_count: 0`; the proxy
+  refuses the Actions API (`/actions/permissions`: "Access to this GitHub Actions path is not permitted through this
+  proxy") and the GitHub MCP server. Read-only calls such as `gh api user` and `gh api repos/0x4E52/lightcraft-apk` do
+  work. The session's permission check refused `gh workflow run packaging-lint.yml` as an external write, so that
+  step was not run. **Agents here cannot start or read a CI run**; `.github/workflows` has no general ci workflow
+  (only freebsd, nix, packaging-lint, release, windows-arm64).
+- **`cargo xtask ci`** (fmt, clippy, heif, test, GPU probe, parity, layers, assets, licences, wasm): from a cold
+  `target/` with `CARGO_PROFILE_DEV_DEBUG=line-tables-only` it took 3037 s (about 51 min) and ended green. `df` fell
+  from 28 GB free to 1.4 GB during the run (`target/` peaked near 21 GB and was 17 GB after deleting
+  `target/debug/examples` and `target/debug/incremental`), so on a tight disk delete those two as soon as the `test`
+  step is over. A warm re-run is shorter and was not timed. It ends with a skip report (corpus, GPU, craft-fonts and
+  model tests skip here).
+- So **here** an agent can run `cargo check` / `cargo clippy --target aarch64-linux-android` (no linker needed;
+  engine + ui-egui about 2.5 min cold) and every x86_64 test, but cannot link the `.so`, build an APK, boot an
+  emulator or start or read a CI run. Linking, packaging and the emulator smoke test run in
+  `.github/workflows/android.yml` (APK-16) on GitHub's ubuntu runners (SDK/NDK preinstalled, KVM available), started
+  by the maintainer until decision 0 is done.
 
 Rules for every task:
 - Run tasks sequentially in the main checkout, default `target/` dir (no parallel worktrees, no second target tree).
   Agent sessions export `CARGO_PROFILE_DEV_DEBUG=line-tables-only` (session environment only, never in the repo).
-- Disk, graded (the Android need is what APK-4 measured; until then assume 6 GB): when `df -h /` shows less than the
-  Android need plus 2 GB, (1) delete `target/debug/examples` and `target/debug/incremental`; (2) still short:
-  `cargo clean --target aarch64-linux-android` or `cargo clean -p <crates the card touches>`; (3) a full `cargo clean`
-  only as the last step (a cold rebuild exceeds the shell's foreground limit: run it in the background).
+- Disk, graded (the Android need measured by APK-4 is 0.6 GB for `clippy`/`check`): when `df -h /` shows less than
+  the Android need plus 2 GB, or less than 8 GB while a `ci` runs, (1) delete `target/debug/examples` and
+  `target/debug/incremental` (never while a `cargo` command runs: it fails with "failed to move dependency graph");
+  (2) still short: `rm -rf target/aarch64-linux-android` or `cargo clean -p <crates the card touches>` (not `cargo
+  clean --target`, see Facts); never delete files from `target/debug/deps` by age (cargo then fails to link); (3) a
+  full `cargo clean` only as the last step (a cold rebuild exceeds the shell's foreground limit: run it in the
+  background).
 - Before the first `cargo xtask ci` of a session, `rustup target list --installed` must list both
   `wasm32-unknown-unknown` and `aarch64-linux-android`; if not, `rustup target add` them.
 - `cargo xtask ci` takes longer than the shell tool's 10-minute foreground limit: start it with `run_in_background`
@@ -210,8 +240,8 @@ Rules for every task:
   **ndk**, **sdk**, **ci** (the GitHub workflow), **device**. A task whose `Needs` is ndk/sdk/ci verifies here with
   the parts that run here (unit tests, YAML parse with `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))'
   <file>`, `actionlint` if available), and its NDK/SDK/CI steps are proven by a workflow run, never assumed.
-- **CI runs.** If APK-4 recorded that `gh` works (decision 0 done), a ci task pushes its commit to the session's
-  working branch (`git branch --show-current`), starts the run with `gh workflow run <file> --ref <branch>` (works only
+- **CI runs.** APK-4 recorded that `gh` does not work here (decision 0 is not done). If a later session finds it does, a ci
+  task pushes its commit to the session's working branch (`git branch --show-current`), starts the run with `gh workflow run <file> --ref <branch>` (works only
   once the workflow file exists on the default branch; before that the `push` trigger starts it), watches it with
   `gh run watch`, and records the run URL in the commit or PR. Otherwise the task stops at "workflow committed" and
   adds "CI run green: <what it shows>" to `docs/android.md` → "Device checklist" for the maintainer.
@@ -1367,3 +1397,6 @@ Agents use the default until the maintainer decides (execution-plan §7).
   manifest, `version_code` rules, NEEDED-library check, debug keystore and shared `signing.rs`, zip without
   features. Tests no longer touch process-wide statics; renderer order, forced backend and log spec are parameters
   (APK-19 no longer needs APK-20); `run.py --port/--token`; graded disk rule; corrected code references.
+- 2026-10-17 (APK-4): environment probed; the facts in "Executing in this container" are now measured (Android need
+  0.6 GB, network, targets, `gh` unusable for agents, `ci` duration) and the disk rule names the traps found:
+  a profile change doubles `deps`, `cargo clean --target` wipes more than the Android output.
