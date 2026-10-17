@@ -1284,36 +1284,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                         1 => crate::credits::contributors_ui(app, ui),
                         2 => crate::credits::models_ui(ui),
                         3 => crate::licences::licences_ui(app, ui),
-                        _ => {
-                            ui.label(egui::RichText::new("LightCraft").font(t.semibold(20.0)).color(t.text));
-                            ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
-                            ui.label(crate::i18n::tr_format!(
-                                "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
-                                crate::theme::font_credits(app.chinese_font.is_some())
-                            ));
-                            ui.add_space(10.0);
-                            let r = crate::button::Button::new("Join the ArtCraft Discord")
-                                .primary()
-                                .large()
-                                .min_width(260.0)
-                                .widget("button:aboutDiscord")
-                                .tooltip(crate::links::DISCORD)
-                                .show(ui);
-                            if r.clicked() {
-                                let _ = crate::links::open(app, crate::links::DISCORD);
-                            }
-                            ui.add_space(6.0);
-                            for (label, url) in [
-                                ("LightCraft website", crate::links::APP_PAGE),
-                                ("Source code on GitHub", crate::links::GITHUB),
-                                ("ArtCraft — more creative apps", crate::links::WEBSITE),
-                            ] {
-                                let r = ui.link(crate::i18n::tr(label)).on_hover_text(url);
-                                if r.clicked() {
-                                    let _ = crate::links::open(app, url);
-                                }
-                            }
-                        }
+                        _ => crate::about::about_ui(app, ui),
                     }
                 }
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),

@@ -1,3 +1,8 @@
+> **This repository (0x4E52/lightcraft-apk) is a modified version of
+> [LightCraft](https://github.com/storytold/lightcraft) that is being ported to Android**
+> ([plan](docs/android-port.md)). It is not an ArtCraft product; the app carries none of the ArtCraft marks (see
+> `NOTICE` and `docs/brand/LICENSE-brand.txt`). The rest of this README describes the upstream project.
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>
