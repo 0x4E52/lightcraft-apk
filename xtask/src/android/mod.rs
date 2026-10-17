@@ -2,13 +2,15 @@
 //! step; this file only dispatches.
 
 mod check;
+mod elf;
+mod sdk;
+mod so;
 
 use crate::StepOutcome;
 
 pub use check::check;
 
-const USAGE: &str =
-    "usage: cargo xtask android <step>\n\nsteps:\n  check   clippy -D warnings for every crate the APK links, for aarch64-linux-android";
+const USAGE: &str = "usage: cargo xtask android <step>\n\nsteps:\n  check   clippy -D warnings for every crate the APK links, for aarch64-linux-android\n  so      link liblightcraft_android.so with the NDK [--abi arm64-v8a|x86_64]… and check it (needs the NDK)";
 
 /// `cargo xtask android <step> …`.
 pub fn run(args: &[&str]) -> Result<(), String> {
@@ -20,6 +22,7 @@ pub fn run(args: &[&str]) -> Result<(), String> {
                 Ok(())
             }
         },
+        Some("so") => so::run(args.get(1..).unwrap_or_default()),
         Some(other) => Err(format!("android: unknown step `{other}`\n\n{USAGE}")),
         None => Err(format!("android: needs a step\n\n{USAGE}")),
     }

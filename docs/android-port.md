@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-11b).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-12).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -27,7 +27,8 @@ the maintainer.
 | The three Android crates exist and lint clean for `aarch64-linux-android` (`lightcraft-android` entry symbol with a process exit after `run`, `lightcraft-android-host` start guard and `Exit`, `lightcraft-android-sys` `with_activity` and Java error mapping); `cargo xtask android check` derives its set from `lightcraft-android` | ✅ APK-10 (no `.so` linked or run yet: APK-12, APK-16) |
 | The Android host opens the UI (eframe, wgpu) on the procedural demo library in internal storage (`files/{config,library,logs,inbox}`), the session opened on a worker behind an "Opening library…" frame, with a phone memory budget (MemTotal / 8, 256–768 MiB, also what Settings' "Automatic" means: `engine::memory::set_default_budget`), the device's RAM injected for export/merge fit checks (`engine::memory::set_total_ram`), the log file, the panic log and file/PNG writers | ✅ APK-11, compiled and linted for `aarch64-linux-android` (first run on a device or emulator: APK-16) |
 | The first start tells once that uninstalling or Clear data deletes the library (`Services::library_notice`, flag `UiState::library_notice_shown`); Object and Describe masks are off with "Needs a device with 8 GB of memory" below `Services::min_ram_for_sam` (7 GiB MemTotal, which is what an 8 GB phone reads); Try Again in the library problem window reopens the library on the loader's worker behind the "Opening library…" frame (`Services::reopen_library`); export's and merge's memory messages say "this device" on a phone (`memory::set_handheld`) | ✅ APK-11b (the device checks stay in the card, unticked) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-12 … APK-43 below |
+| `cargo xtask android so [--abi arm64-v8a\|x86_64]…` links `liblightcraft_android.so` with the NDK's clang (no `cargo ndk`; the 16 KB page flag below NDK r28), copies it to `target/android/jniLibs/<abi>/` and checks `LOAD` alignment, the `android_main` / `ANativeActivity_onCreate` exports and system-only `NEEDED` libraries | ✅ APK-12, unit-tested on canned `llvm-readelf` output; no NDK here, so the first real link is the APK-16 workflow |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-13 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1499,3 +1500,15 @@ Agents use the default until the maintainer decides (execution-plan §7).
   languages). "Opening library…", the notice text, "Needs a device with 8 GB of memory", the SAM dialog's body and its title
   "Object and Describe Masks" have no `locales/*.json` entry yet (next translation update). Try Again carries no
   pending command-line import (the phone has none). The device checks in the card stay unticked.
+- 2026-10-17 (APK-12): `cargo xtask android so` (`xtask/src/android/{sdk,so,elf}.rs`). `sdk.rs` finds the NDK
+  (`ANDROID_NDK_HOME`, `ANDROID_NDK_LATEST_HOME`, else the newest `$ANDROID_HOME/ndk/<version>`, with
+  `ANDROID_SDK_ROOT` as the older name of `ANDROID_HOME`) and reads its revision from `source.properties`; a missing
+  SDK or NDK is an error naming the variable to set. `so.rs` points `CARGO_TARGET_<TRIPLE>_LINKER` at
+  `<ndk>/toolchains/llvm/prebuilt/<host>/bin/<triple>30-clang` (`MIN_SDK` 30, decision 3), appends
+  `-C link-arg=-Wl,-z,max-page-size=16384` to `RUSTFLAGS` for NDKs older than r28, builds `-p lightcraft-android` in
+  the dev profile for each `--abi` (arm64-v8a by default, `x86_64` for the CI emulator) and copies the result. `elf.rs`
+  runs the NDK's `llvm-readelf -lW -d --dyn-syms` and fails unless every `LOAD` is aligned to a power of two of at
+  least 0x4000, `android_main` and `ANativeActivity_onCreate` are defined global symbols, and every `NEEDED` entry is
+  libc, libm, libdl, liblog, libandroid, libnativewindow, libvulkan, libEGL or libGLESv2. Not run here (no NDK:
+  `dl.google.com` is refused); the APK-16 workflow runs it and is the first real link. A release profile build is not
+  part of this card (APK-40).
