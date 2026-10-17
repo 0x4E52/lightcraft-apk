@@ -89,12 +89,17 @@ jobs:
           fi
           "$build_tools/aapt2" dump badging target/android/lightcraft-debug.apk | tee target/android/badging.txt
           fail=0
-          for want in "package: name='$APP_ID'" "sdkVersion:'30'" "targetSdkVersion:'36'" "application-label:'LightCraft'" "application-icon-"; do
+          for want in "package: name='$APP_ID'" "targetSdkVersion:'36'" "application-label:'LightCraft'" "application-icon-"; do
             if ! grep -qF -- "$want" target/android/badging.txt; then
               echo "::error::aapt2 dump badging lacks: $want"
               fail=1
             fi
           done
+          # aapt2 prints the minimum as minSdkVersion:'30'; the old aapt printed sdkVersion:'30'
+          if ! grep -qE "^(min)?[sS]dkVersion:'30'" target/android/badging.txt; then
+            echo "::error::aapt2 dump badging lacks: minSdkVersion:'30'"
+            fail=1
+          fi
           {
             echo "### APK"
             echo '```'
