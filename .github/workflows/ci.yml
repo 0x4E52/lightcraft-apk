@@ -1,0 +1,45 @@
+# The full quality gate (`cargo xtask ci`: fmt, clippy, heif, tests, parity, layers, assets, licences, wasm) on
+# every push. Agents working on the Android port run only the fast part per task (fmt, clippy, the tests of the
+# crates they touch: docs/android-port.md, "Executing in this container") and fix forward when this goes red.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  xtask-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: always
+      # a warm workspace build needs about 19 GB with incremental data; CI never reuses it
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Free disk space
+        # the runner's preinstalled SDKs leave too little room for the workspace build
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Rust toolchain and targets
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add wasm32-unknown-unknown aarch64-linux-android
+          rustc --version
+      - name: cargo xtask ci
+        run: cargo xtask ci
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f target/ci/summary.md ]; then cat target/ci/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          df -h /

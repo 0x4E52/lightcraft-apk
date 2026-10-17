@@ -66,6 +66,10 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI, control channel and MCP all dispatch by id. Every slider is a `develop` control spec.
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
 - **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, wasm).
+  Android-port tasks (`APK-<n>`, maintainer decision 2026-10-17) run the fast gate of `docs/android-port.md` →
+  "Executing in this container" instead (fmt, clippy and tests of the touched crates, the xtask checks the change
+  touches); the full `cargo xtask ci` runs on GitHub for every push (`.github/workflows/ci.yml`), and a red run is
+  fixed forward before the next task.
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 
 ## Assets: icons, images, fonts (ABSOLUTE RULE — never violate)

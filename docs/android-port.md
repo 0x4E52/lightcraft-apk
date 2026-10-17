@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (APK-4).* Revision history at the end.
+*Last updated: 2026-10-17 (fast gate, after APK-4).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -17,7 +17,8 @@ the maintainer.
 | ArtCraft marks out of the app (docs/brand/LICENSE-brand.txt, "Forks and modified versions") | ✅ APK-3: no Discord/website links or labels; About names the original in plain text only |
 | `lightcraft-engine` (also `--features sam,denoise`) and `lightcraft-ui-egui` compile for `aarch64-linux-android` | ✅ `cargo check` passes, unchanged |
 | An eframe host (`wgpu` + `android-native-activity` + `default_fonts`) compiles for `aarch64-linux-android` | ✅ checked in a scratch crate; not in the repo yet |
-| Container limits and agent CI access measured (disk need, network, targets, `gh`) | ✅ APK-4 ("Executing in this container"): no SDK/NDK download, no CI access for agents |
+| Container limits and agent CI access measured (disk need, network, targets, `gh`) | ✅ APK-4 ("Executing in this container"): no SDK/NDK download; agents read CI runs through `gh api`, starting one needs decision 0 |
+| Full `cargo xtask ci` on GitHub for every push (`.github/workflows/ci.yml`), fast gate per task here | ✅ maintainer decision 2026-10-17 |
 | Host crates, packaging, CI, touch UI, release | ⏳ APK-5 … APK-43 below |
 
 ## Ground rules for the port
@@ -183,14 +184,15 @@ Facts (measured by APK-4, 2026-10-17; each line says how to re-check it):
   `xvfb-run` installed; `resvg` and `lightcraft-cli` not on PATH (use `cargo install resvg --locked` and `cargo run -p
   lightcraft-cli --`); no `/dev/kvm`, no GPU (no `/dev/dri`, no Vulkan ICD).
 - **Disk.** `df -h /` showed 11 GB free at the start (the volume is 252 GB, but free space is what counts and it
-  moved by several GB while builds ran). `target/` was 19 GB: `target/debug/deps` 15 GB, `target/debug/examples`
+  moved by several GB while builds ran; after trap (b) below wiped `target/`, 28 GB were free and the cold `ci`
+  started from there). `target/` was 19 GB: `target/debug/deps` 15 GB, `target/debug/examples`
   3.0 GB (from `clippy --workspace --all-targets`), `target/debug/build` 0.58 GB, `target/debug/incremental`
   0.1 GB, `target/wasm32-unknown-unknown` 0.25 GB. **The Android need is 0.6 GB**: `target/aarch64-linux-android`
   is 590 MB after `cargo clippy --target aarch64-linux-android -p lightcraft-engine -p lightcraft-ui-egui
   --features lightcraft-engine/sam,lightcraft-engine/denoise` (143 s cold with
   `CARGO_PROFILE_DEV_DEBUG=line-tables-only`, 160 s without), and the figure is the same with and without the variable
-  because clippy writes metadata only; a card that links a `.so` (APK-12 on) must re-measure its own need. Two traps found on the way: (a) exporting
-  `CARGO_PROFILE_DEV_DEBUG=line-tables-only` against a `target/` built without it rebuilds every crate and keeps
+  because clippy writes metadata only; a card that links a `.so` (APK-12 on) must re-measure its own need. Two traps
+  found on the way: (a) exporting `CARGO_PROFILE_DEV_DEBUG=line-tables-only` against a `target/` built without it rebuilds every crate and keeps
   both sets (`deps` grew from 15 GB to 21.5 GB in one `ci` run until the disk filled: linker "Bus error",
   rustc "No space left on device"), so start the first `ci` of a session with the variable already exported, or with
   `target/debug` removed, or with at least 15 GB free; (b) `cargo clean --target aarch64-linux-android` (cargo 1.97.0)
@@ -201,31 +203,31 @@ Facts (measured by APK-4, 2026-10-17; each line says how to re-check it):
   `maven.google.com` 301; `services.gradle.org` 200; `repo.maven.apache.org` 200.
 - **Rust targets** (`rustup target list --installed`): `aarch64-linux-android`, `wasm32-unknown-unknown`,
   `x86_64-linux-android` (added by APK-4 for the CI emulator ABI, decision 5) and `x86_64-unknown-linux-gnu`.
-- **GitHub (decision 0 is not done).** `gh auth status` reports the `GH_TOKEN` invalid; `gh workflow list` and `gh
-  run list` print nothing; `gh api repos/0x4E52/lightcraft-apk/actions/workflows` answers `total_count: 0`; the proxy
-  refuses the Actions API (`/actions/permissions`: "Access to this GitHub Actions path is not permitted through this
-  proxy") and the GitHub MCP server. Read-only calls such as `gh api user` and `gh api repos/0x4E52/lightcraft-apk` do
-  work. The session's permission check refused `gh workflow run packaging-lint.yml` as an external write, so that
-  step was not run. **Agents here cannot start or read a CI run**; `.github/workflows` has no general ci workflow
-  (only freebsd, nix, packaging-lint, release, windows-arm64).
+- **GitHub** (re-checked after the maintainer enabled Actions, 2026-10-17). `gh api repos/0x4E52/lightcraft-apk/
+  actions/workflows` lists the workflows as active and `gh api …/actions/runs` and `…/actions/runs/<id>/jobs` answer,
+  so **agents can read runs and their jobs** through `gh api` (the proxy authenticates the call although `gh auth
+  status` reports the session's `GH_TOKEN` invalid). The proxy refuses some paths (`/actions/permissions`) and the
+  GitHub MCP server. Starting a run (`gh workflow run`) was refused by the session's permission check as an external
+  write, not by the proxy: it needs decision 0 (a token in a new session) or the maintainer's go-ahead. Pushes go
+  through the session's git access, and every push starts `.github/workflows/ci.yml`.
 - **`cargo xtask ci`** (fmt, clippy, heif, test, GPU probe, parity, layers, assets, licences, wasm): from a cold
   `target/` with `CARGO_PROFILE_DEV_DEBUG=line-tables-only` it took 3037 s (about 51 min) and ended green. `df` fell
   from 28 GB free to 1.4 GB during the run (`target/` peaked near 21 GB and was 17 GB after deleting
-  `target/debug/examples` and `target/debug/incremental`), so on a tight disk delete those two as soon as the `test`
-  step is over. A warm re-run is shorter and was not timed. It ends with a skip report (corpus, GPU, craft-fonts and
+  `target/debug/examples` and `target/debug/incremental`). A warm run was not timed: per-task runs here are replaced
+  by the fast gate (Rules), so the full run's warm time matters only on GitHub. It ends with a skip report (corpus, GPU, craft-fonts and
   model tests skip here).
 - So **here** an agent can run `cargo check` / `cargo clippy --target aarch64-linux-android` (no linker needed;
-  engine + ui-egui about 2.5 min cold) and every x86_64 test, but cannot link the `.so`, build an APK, boot an
-  emulator or start or read a CI run. Linking, packaging and the emulator smoke test run in
-  `.github/workflows/android.yml` (APK-16) on GitHub's ubuntu runners (SDK/NDK preinstalled, KVM available), started
-  by the maintainer until decision 0 is done.
+  engine + ui-egui about 2.5 min cold), every x86_64 test and read CI runs, but cannot link the `.so`, build an APK
+  or boot an emulator. Linking, packaging and the emulator smoke test run in `.github/workflows/android.yml` (APK-16)
+  on GitHub's ubuntu runners (SDK/NDK preinstalled, KVM available); a push starts them.
 
 Rules for every task:
 - Run tasks sequentially in the main checkout, default `target/` dir (no parallel worktrees, no second target tree).
   Agent sessions export `CARGO_PROFILE_DEV_DEBUG=line-tables-only` (session environment only, never in the repo).
-- Disk, graded (the Android need measured by APK-4 is 0.6 GB for `clippy`/`check`): when `df -h /` shows less than
-  the Android need plus 2 GB, or less than 8 GB while a `ci` runs, (1) delete `target/debug/examples` and
-  `target/debug/incremental` (never while a `cargo` command runs: it fails with "failed to move dependency graph");
+- Disk, graded, as a precondition: before a build step, `df -h /` must show the step's need plus 2 GB (Android
+  `clippy`/`check`: 0.6 GB; a full local `cargo xtask ci`: about 27 GB from cold). Clean only while no cargo runs
+  (`pgrep -x cargo` prints nothing; deleting under a running cargo fails with "failed to move dependency graph"); if
+  space runs low mid-run, stop the command first. (1) Delete `target/debug/examples` and `target/debug/incremental`;
   (2) still short: `rm -rf target/aarch64-linux-android` or `cargo clean -p <crates the card touches>` (not `cargo
   clean --target`, see Facts); never delete files from `target/debug/deps` by age (cargo then fails to link); (3) a
   full `cargo clean` only as the last step (a cold rebuild exceeds the shell's foreground limit: run it in the
@@ -240,15 +242,20 @@ Rules for every task:
   **ndk**, **sdk**, **ci** (the GitHub workflow), **device**. A task whose `Needs` is ndk/sdk/ci verifies here with
   the parts that run here (unit tests, YAML parse with `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))'
   <file>`, `actionlint` if available), and its NDK/SDK/CI steps are proven by a workflow run, never assumed.
-- **CI runs.** APK-4 recorded that `gh` does not work here (decision 0 is not done). If a later session finds it does, a ci
-  task pushes its commit to the session's working branch (`git branch --show-current`), starts the run with `gh workflow run <file> --ref <branch>` (works only
-  once the workflow file exists on the default branch; before that the `push` trigger starts it), watches it with
-  `gh run watch`, and records the run URL in the commit or PR. Otherwise the task stops at "workflow committed" and
-  adds "CI run green: <what it shows>" to `docs/android.md` → "Device checklist" for the maintainer.
+- **CI runs.** Every push starts `ci.yml` (the full `cargo xtask ci`) and, from APK-16, `android.yml`. After pushing,
+  a task reads the run for its commit with `gh api repos/0x4E52/lightcraft-apk/actions/runs?head_sha=<sha>` and its
+  jobs, and records the run URL in its result. It doesn't wait for the run to finish before the next task starts;
+  whoever sees a red run first fixes it in the next commit (fix forward), before any new card. Starting a run by hand
+  (`gh workflow run`) needs decision 0; until then the push trigger is the way.
 - "Maintainer checks on a device" (and CI lines the agent can't run) are never ticked by an agent. An agent adds them
   to `docs/android.md` → "Device checklist" (created by APK-15) unticked.
-- Every task ends with `cargo xtask ci` green and one commit `APK-<n>: …`. No task waits for a CI run or a device
-  check to be ticked: "Depends on" lists only code dependencies.
+- **Gate per task (maintainer decision 2026-10-17, replaces a local `cargo xtask ci` per task).** Before its one
+  commit `APK-<n>: …`, a task runs here: `cargo fmt --all -- --check`; `cargo clippy --all-targets -p <each touched
+  crate> -- -D warnings` (and `--target aarch64-linux-android` for crates the APK links); `cargo test -p <each touched
+  crate>`; and the xtask checks its change touches (`cargo xtask parity` for docs/tracker, `layers` for new crates or
+  dependencies, `assets` for assets, `licences` for `Cargo.lock`, `wasm` for wasm-safe crates, `android check` from
+  APK-5). Then it pushes; the full `cargo xtask ci` runs on GitHub (`ci.yml`). A red run is fixed forward first. No
+  task waits for a CI run or a device check to be ticked: "Depends on" lists only code dependencies.
 
 ## Task card format
 
@@ -256,7 +263,8 @@ Each card has: **Goal**; **Files** (exact paths, new/changed); **Steps**; **Test
 change); **Verify** (commands runnable in this container); **Depends on** (the cards whose code it uses; each task
 depends only on earlier ones); **Needs**; **Model** (sonnet or opus, with the reason); **Done when**; and, where it
 applies, **Maintainer checks on a device**. Decisions that block a task are named in it; until decided, the agent
-uses the default in "Decisions for the maintainer". IDs with a letter suffix (APK-11b, APK-30b, APK-32a–c) run
+uses the default in "Decisions for the maintainer". Where a card's **Verify** ends with "`cargo xtask ci` green",
+that means the gate per task here plus the GitHub `ci.yml` run (Rules). IDs with a letter suffix (APK-11b, APK-30b, APK-32a–c) run
 right after their number, in letter order.
 
 ## Phase 0: foundation (x86_64, no NDK)
@@ -1400,3 +1408,7 @@ Agents use the default until the maintainer decides (execution-plan §7).
 - 2026-10-17 (APK-4): environment probed; the facts in "Executing in this container" are now measured (Android need
   0.6 GB, network, targets, `gh` unusable for agents, `ci` duration) and the disk rule names the traps found:
   a profile change doubles `deps`, `cargo clean --target` wipes more than the Android output.
+- 2026-10-17 (after APK-4, maintainer decision): fast gate per task here (fmt, clippy and tests of the touched crates,
+  the xtask checks the change touches), the full `cargo xtask ci` on GitHub for every push (`ci.yml`), red runs
+  fixed forward. Review of APK-4 applied: agents can read CI runs through `gh api` now that Actions is enabled
+  (starting one still needs decision 0); the disk rule is a precondition, cleaning only while no cargo runs.
