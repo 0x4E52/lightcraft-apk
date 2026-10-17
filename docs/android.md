@@ -54,6 +54,27 @@ adb logcat --pid=$(adb shell pidof io.github.n0x4e52.lightcraft.debug)          
 adb logcat -d -s AndroidRuntime:E DEBUG:F                                          # Java and native crashes
 ```
 
+## Lifecycle: what happens when LightCraft is left
+
+No frame runs while the app is in the background, so the host saves and trims from the lifecycle callbacks
+(`crates/android-host/src/lifecycle_core.rs`):
+
+- **Focus lost** (Home, recents, another app, a system dialog): everything is saved, an open slider drag committed as
+  one undo step. A kill after this (`adb shell am kill`, the low-memory killer) loses nothing.
+- **Surface gone** (the app is in the background): the decoded photos, the rendered thumbnails in memory, the
+  slideshow backdrop and the GPU's recycled buffers are let go (`Session::trim_caches`, `gpu::trim_pool(0)`), so the
+  cached process holds little and is less likely to be killed. Only what changed is saved here, and only when no
+  focus-loss save ran: the system waits for this callback (surfaceDestroyed), so it stays short.
+- **Low memory** (`onLowMemory`): the same trim. NativeActivity does not forward `onTrimMemory`.
+- **Activity destroyed** (Developer options ▸ "Don't keep activities", removal from recents, a missed configuration
+  change): winit swallows `onDestroy`, which waits for the native thread, so the host asks the Activity
+  (`isDestroyed()` / `isFinishing()`) each time the event loop is about to wait while the app is away. When it is
+  ending, the host saves, leaves the loop, closes the library and the process exits (`Exit::Destroyed`); the next
+  launch starts fresh.
+- **Cached-apps freezer.** Android freezes a backgrounded app's process within seconds. A long import or export keeps
+  its row in the activity stack but makes no progress while frozen, and continues when LightCraft is opened again;
+  the row is not stalled, only paused. There is no foreground service (it would need Java, decision 2).
+
 ## Device checklist
 
 What only a device (or a CI run an agent cannot start) can show. Whoever saw it ticks the line.
@@ -76,3 +97,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] Back (APK-17) with gesture navigation on Android 16 (targetSdk 36): an open menu closes first, then Back walks
   back to the grid, then moves LightCraft to the background; Home → reopen and Back to the root → reopen both return
   to where it was. File has no Quit, and Ctrl+Q on a hardware keyboard closes nothing.
+- [ ] APK-16 smoke run still opens the UI with the lifecycle wrapper (APK-18): eframe now runs through
+  `eframe::create_native` on the host's own event loop.
+- [ ] Lifecycle (APK-18): edit, Home, `adb shell am kill <id>`, reopen: the edit and the view are back; Home during a
+  slider drag: no ANR, and the drag is one undo step; rotate; Developer options ▸ "Don't keep activities" on → leave →
+  reopen: no ANR, the app reopens (logcat: "the Activity is going away"); remove from recents → reopen; Home with a
+  20k-photo library: no ANR.

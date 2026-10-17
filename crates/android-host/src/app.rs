@@ -1,7 +1,8 @@
 //! The eframe app on Android: a loading frame until the library is open, then LightCraft's UI.
 //!
 //! The [`HostState`] lives in a shared slot (`Rc<RefCell<Option<HostState>>>`), created by `run`
-//! before eframe starts, so the lifecycle wrapper (APK-18) can flush it while no frame runs. Until
+//! before eframe starts, so the lifecycle wrapper (`lifecycle.rs`) can flush and trim it while no
+//! frame runs. Until
 //! the [`Loader`] answers, `ui` draws one centred "Opening library…" label and `logic` asks the
 //! loader again every 100 ms; once it answers, the app is built on this (the UI) thread and fills
 //! the slot, and the label stays until the app's fonts and theme are installed. While the app
@@ -16,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
+use crate::lifecycle_core::Host;
 use crate::loader::Loader;
 use crate::state::{HostState, Reopen, Start};
 

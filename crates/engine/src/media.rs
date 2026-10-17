@@ -470,6 +470,29 @@ impl MediaCache {
         self.full.clear();
     }
 
+    /// Drop everything these caches hold in memory, for a host that went to the background or was
+    /// warned of low memory; returns the bytes let go. Each is made again on demand:
+    /// - the decoded thumbnail-level, preview-level and full-size sources (decoded from the file,
+    ///   its smart preview or the demo scene again), the on-screen original included;
+    /// - the rendered thumbnails and previews in memory (the disk cache keeps its copies, so the
+    ///   grid reads them back instead of rendering again).
+    ///
+    /// Nothing is written and the photo-to-settings bookkeeping stays: unlike
+    /// [`Self::clear_sources`], the photo ids still mean the same photos.
+    pub fn trim_memory(&mut self) -> usize {
+        let held = self.held();
+        self.thumbs.clear();
+        self.previews.clear();
+        self.full.clear();
+        // (bounded: one image per entry held now)
+        for _ in 0..self.rendered.mem_usage().0 {
+            if self.rendered.evict_oldest().is_none() {
+                break;
+            }
+        }
+        held.saturating_sub(self.held())
+    }
+
     /// How many full-resolution originals to keep at once (at least one). Compare and Reference
     /// views zoomed to 1:1 cut windows from two photos' originals: with room for one, every window
     /// render of one side would evict the other side's original and decode its own again. Lowering

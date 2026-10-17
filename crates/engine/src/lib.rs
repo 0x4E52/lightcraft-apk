@@ -502,6 +502,25 @@ impl Session {
         }
     }
 
+    /// Let go of the memory caches that are cheap to fill again, for a host whose app went to the
+    /// background or was warned of low memory (Android's low-memory killer picks the process that
+    /// holds the most); returns the bytes let go. Memory only: nothing is written or read, so a
+    /// host may call it inside a lifecycle callback the system waits on. What goes:
+    /// - [`media::MediaCache::trim_memory`]: the decoded sources (thumbnail, preview and full size)
+    ///   and the rendered thumbnails held in memory (their disk cache stays);
+    /// - [`Session::slide_backdrop`]: the slideshow's rendered background image.
+    ///
+    /// The GPU's recycled buffers are the host's to free (`gpu::trim_pool(0)`), as is returning
+    /// freed pages to the system ([`memory::release`]).
+    pub fn trim_caches(&mut self) -> usize {
+        let mut freed = self.media.trim_memory();
+        let backdrop = self.slide_backdrop.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        if let Some((_, image)) = backdrop {
+            freed = freed.saturating_add(image.data.len().saturating_mul(4));
+        }
+        freed
+    }
+
     /// A session with the procedurally generated demo library loaded.
     pub fn with_demo() -> Session {
         let mut s = Session::new();

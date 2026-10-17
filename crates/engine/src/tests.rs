@@ -1682,3 +1682,39 @@ fn malformed_photo_targets_are_refused_not_widened() {
     let preset = s.presets.first().unwrap().id.clone();
     s.execute("preset.apply", &json!({"id": preset})).unwrap();
 }
+
+/// Backgrounded (Android's `suspended`, a low-memory warning), the host trims: every decoded
+/// source and the rendered thumbnails in memory go, the on-screen original too, and so does the
+/// slideshow backdrop; the photos and their edits stay, and the sources decode again on demand.
+#[test]
+fn trim_caches_empties_preview_cache() {
+    use crate::media::SourceLevel;
+    use std::sync::Arc;
+    let mut s = demo();
+    let id = s.active().unwrap();
+    s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
+    let image = Arc::new(lightcraft_raster::Rgb32f::new(64, 64));
+    for level in [SourceLevel::Thumb, SourceLevel::Preview, SourceLevel::Full] {
+        s.media.insert(id, level, image.clone());
+    }
+    s.media.set_on_screen(Some(id));
+    s.media.rendered.put(lightcraft_preview::Hash128(7), Arc::new(lightcraft_raster::Rgba8::new(32, 32)));
+    *s.slide_backdrop.lock().unwrap() = Some((1, Arc::new(lightcraft_raster::Rgba8::new(16, 16))));
+    let held = s.media.held();
+    assert!(held > 0 && s.media.rendered.mem_usage().0 == 1);
+
+    let freed = s.trim_caches();
+    assert_eq!(freed, held + 16 * 16 * 4);
+    assert_eq!(s.media.held(), 0);
+    assert_eq!(s.media.rendered.mem_usage(), (0, 0));
+    for level in [SourceLevel::Thumb, SourceLevel::Preview, SourceLevel::Full] {
+        assert!(!s.media.has_source(id, level), "{level:?}");
+    }
+    assert!(s.slide_backdrop.lock().unwrap().is_none());
+    // the photo and its edit are untouched, and its preview decodes again
+    assert_eq!(s.develop_of(id).and_then(|d| lightcraft_develop::controls::get(&d, "light.exposure")), Some(0.5));
+    assert!(s.source_now(id, SourceLevel::Preview).is_ok());
+    assert!(s.media.has_source(id, SourceLevel::Preview));
+    assert!(s.trim_caches() > 0, "the decoded preview goes again");
+    assert_eq!(s.trim_caches(), 0, "nothing left to let go");
+}

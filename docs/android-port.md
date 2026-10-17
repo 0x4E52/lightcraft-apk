@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-17).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-18).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -33,7 +33,8 @@ the maintainer.
 | `cargo xtask android apk`: `aapt2 compile`/`link --debug-mode`, aapt2's entries raw-copied and the `.so` appended Stored at 16 KB alignment (`zip_lib.rs`), `zipalign -P 16`, `apksigner` with the debug key made by `keytool` when missing (`signing.rs`), `zipalign -c`; `docs/android.md` (build, install, debugging, Device checklist) | ✅ APK-15, argument builders and the zip step unit-tested; no SDK here, so the first real packaging is the APK-16 workflow |
 | `.github/workflows/android.yml` (pushes touching Android paths, `workflow_dispatch`): `android check`, `so` for arm64-v8a and x86_64 (sizes in the job summary), `apk`, `aapt2 dump badging` must show the id, SDK levels, `application-label:'LightCraft'` and `application-icon-`; an x86_64 API 35 emulator job installs the APK, starts the NativeActivity, takes a screenshot and fails on a dead or restarted process or `panicked` / `fatal` (`packaging/android/smoke.sh`) | ✅ APK-16 committed, YAML parsed here; no run has been seen yet (the first link, packaging and start are in it): the Device checklist lines stay unticked |
 | Back and Quit: Android's Back key becomes Escape (`input::browser_back_to_escape` in the host's `raw_input_hook`), so open menus, popups and text fields take it first and `view.back` runs its cascade unchanged; its new last step, `Services::move_to_back`, posts `Activity.moveTaskToBack(true)` to the Java main thread (`android-sys` `activity.rs`, not awaited). `Services::quit_disabled` (Android) refuses `app.quit` (command, Cmd+Q, control channel), leaves Quit out of the menus and the library problem window, opens no quit prompt and clears egui's own Ctrl+Q (`Options::quit_shortcuts`), so nothing ends the one event loop | ✅ APK-17, headless tests with a fake service; the JNI call has not run here (device check in `docs/android.md`) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-18 … APK-43 below |
+| Lifecycle: eframe runs through `eframe::create_native` on the host's own event loop inside a wrapper (`lifecycle.rs`) that maps winit's callbacks to the pure `lifecycle_core::on_event`: focus lost → full save; suspended → `trim()` (`Session::trim_caches`, `gpu::trim_pool(0)`) and a quick save only when focus loss didn't save; `memory_warning` → `trim()`; while away, each `about_to_wait` asks the Activity (`android-sys` `activity_state`: `isFinishing`/`isDestroyed`) and a destroyed one ends the loop (`Exit::Destroyed`), so `onDestroy` doesn't hang | ✅ APK-18, pure core and engine trim tested here; the wrapper and the JNI calls have not run (Device checklist: smoke run, kill/rotate/"Don't keep activities") |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-19 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1600,3 +1601,24 @@ Agents use the default until the maintainer decides (execution-plan §7).
   `browser_back_becomes_escape` and `back_at_the_root_calls_the_host` (android-host). The device check (Back with
   gesture navigation walks back to the grid, then to the background; Home and reopen) is in the Device checklist,
   unticked.
+- 2026-10-17 (APK-18): Lifecycle. `run` builds its own `EventLoop::with_user_event().with_android_app(app)` and runs
+  `eframe::create_native`'s handler inside `lifecycle::Lifecycle` (android only), which forwards every callback to eframe
+  first and then feeds `lifecycle_core::on_event` (pure, tested on x86_64 with a fake `Host`): `FocusLost` →
+  `flush_leaving`; `Suspended` → `flush_dirty` only when no focus-loss flush ran since `FocusGained`, then `trim`;
+  `MemoryWarning` → `trim`; `AboutToWait` while suspended or unfocused → `activity_state()` and
+  `should_leave(state, suspended)` = destroyed, or finishing with the surface gone → `flush_leaving` and
+  `event_loop.exit()`; `run` returns `Exit::Destroyed`. `HostState` implements `Host` (its `flush_leaving`/`flush_dirty`
+  moved into the impl; `trim` = `Session::trim_caches()` + `gpu::trim_pool(0)` + `memory::release()`). Engine:
+  `Session::trim_caches()` and `MediaCache::trim_memory()` let go of the decoded sources (on-screen original included),
+  the rendered thumbnails in memory (disk kept) and the slideshow backdrop, and return the bytes. `android-sys`
+  `activity::{ActivityState, activity_state}` (two JNI calls on the calling thread). One change to the card: the
+  Activity is asked through a probe held by `CoreState`, not a `Host::activity_state` method, because a destroy while
+  the library is still opening has no `HostState` to ask, and none can arrive while suspended (the loader is polled by
+  frames), so the card's version would have hung `onDestroy` in exactly that case
+  (`destroyed_while_the_library_opens_still_leaves`); the `Host` flush methods return `Result` and `on_event` logs
+  failures. Tests: engine `trim_caches_empties_preview_cache`; android-host `core_flushes_on_focus_loss`,
+  `suspend_after_focus_loss_does_not_reflush`, `core_trims_when_backgrounded`, `core_maps_memory_warning_to_trim`,
+  `core_leaves_when_destroyed_while_suspended`, `focus_loss_alone_keeps_loop`, `events_before_app_created_are_noops`,
+  `destroyed_while_the_library_opens_still_leaves`, `a_busy_state_is_skipped_not_a_panic`,
+  `leaving_needs_destroyed_or_finishing_without_a_surface`, `state_trim_lets_caches_go`. `docs/android.md` explains
+  the lifecycle and the cached-apps freezer; the smoke-run and lifecycle device checks are added unticked.

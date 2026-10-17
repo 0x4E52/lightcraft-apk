@@ -1,10 +1,10 @@
 //! What the Android host holds once the library is open: the app and its settings writer.
 //!
 //! Built on the UI thread from the session the [`crate::loader::Loader`] opened, and kept in the
-//! slot the eframe app (and, from APK-18, the lifecycle wrapper) share. The saving rules are the
-//! desktop's (`lightcraft_ui_egui::host::flush`): while the app runs only what changed is written
-//! and an open slider drag stays open; when the app is left everything is written, the drag
-//! committed first.
+//! slot the eframe app and the lifecycle wrapper share; what the lifecycle asks of it is the
+//! [`Host`] trait. The saving rules are the desktop's (`lightcraft_ui_egui::host::flush`): while
+//! the app runs only what changed is written and an open slider drag stays open; when the app is
+//! left everything is written, the drag committed first.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -18,6 +18,7 @@ use lightcraft_ui_egui::host::session_open::open_session;
 use lightcraft_ui_egui::panels::library_problem::LibraryProblem;
 use lightcraft_ui_egui::state::UiState;
 
+use crate::lifecycle_core::Host;
 use crate::loader::Opened;
 
 /// A request to open the library again, from the library problem window's Try Again (the
@@ -128,17 +129,6 @@ impl HostState {
         HostState { app, prefs }
     }
 
-    /// Everything to disk now, an open slider drag committed first (the app is being left: focus
-    /// lost, closed). Needs no frame. Each failure is logged; the first is returned.
-    pub fn flush_leaving(&mut self) -> Result<(), String> {
-        flush::flush_leaving(&mut self.app, &mut self.prefs)
-    }
-
-    /// What changed to disk, an open slider drag left open (a timer while the app runs).
-    pub fn flush_dirty(&mut self) -> Result<(), String> {
-        flush::flush_periodic(&mut self.app, &mut self.prefs)
-    }
-
     /// The app ends: everything saved, the library closed, then up to `wait` for renders in
     /// flight, so none is inside the GPU driver when the process exits (as the desktop's
     /// `on_exit`).
@@ -150,6 +140,30 @@ impl HostState {
         if !self.app.shutdown(wait) {
             log::warn!("quit: background work was still running after {wait:?}");
         }
+    }
+}
+
+impl Host for HostState {
+    /// Everything to disk now, an open slider drag committed first (the app is being left: focus
+    /// lost, closed). Needs no frame. Each failure is logged; the first is returned.
+    fn flush_leaving(&mut self) -> Result<(), String> {
+        flush::flush_leaving(&mut self.app, &mut self.prefs)
+    }
+
+    /// What changed to disk, an open slider drag left open (a timer while the app runs; the
+    /// surface going away without a focus loss first).
+    fn flush_dirty(&mut self) -> Result<(), String> {
+        flush::flush_periodic(&mut self.app, &mut self.prefs)
+    }
+
+    /// The session's memory caches ([`lightcraft_engine::Session::trim_caches`]), the GPU's
+    /// recycled buffers, and the freed pages back to the system. Memory only: no file is read or
+    /// written.
+    fn trim(&mut self) {
+        let freed = self.app.session.trim_caches();
+        lightcraft_engine::gpu::trim_pool(0);
+        lightcraft_engine::memory::release();
+        log::info!("trimmed: {} MiB of caches let go", freed >> 20);
     }
 }
 
@@ -204,6 +218,22 @@ mod tests {
         assert_eq!(exposure(&reopened, id), Some(1.5));
         assert_eq!(reopened.selection.active, Some(id));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The lifecycle's trim (backgrounded, low memory) lets the decoded sources go without a frame
+    /// and without touching the library: the edits stay, nothing is written.
+    #[test]
+    fn state_trim_lets_caches_go() {
+        let mut session = Session::with_demo();
+        let id = session.active().unwrap();
+        let image = std::sync::Arc::new(lightcraft_raster::Rgb32f::new(64, 64));
+        session.media.insert(id, lightcraft_engine::media::SourceLevel::Preview, image);
+        let mut state = HostState::new(Ok((session, None)), Start::default());
+        assert!(state.app.session.media.held() > 0);
+        let photos = state.app.session.catalog.len();
+        state.trim();
+        assert_eq!(state.app.session.media.held(), 0);
+        assert_eq!(state.app.session.catalog.len(), photos);
     }
 
     /// Try Again in the problem window asks the host instead of reopening on the UI thread: the

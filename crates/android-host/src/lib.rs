@@ -3,9 +3,11 @@
 //! `run` (Android only) guards against a second start in one process, does the quick start-up
 //! work ([`paths`], [`memory`], the log and panic hook), opens the library on a worker
 //! ([`loader`]) and runs eframe until the Activity ends; the app it shows is the loading frame,
-//! then [`state::HostState`]'s LightCraft UI with the [`services`] Android provides. The pure parts
-//! ([`Exit`], [`exit_code`], [`try_start`], and every module but the eframe app) compile and are
-//! tested on every target; the Android-only dependencies (eframe,
+//! then [`state::HostState`]'s LightCraft UI with the [`services`] Android provides. A wrapper
+//! around eframe's event handler saves, trims and leaves the loop as the Activity comes and goes
+//! ([`lifecycle_core`]). The pure parts ([`Exit`], [`exit_code`], [`try_start`], and every module
+//! but the eframe app and the wrapper) compile and are tested on every target; the Android-only
+//! dependencies (eframe,
 //! winit, android-activity) sit behind `cfg(target_os = "android")`, so `cargo test -p
 //! lightcraft-android-host` builds on Linux without them. No `unsafe`: the entry symbol lives in
 //! `apps/lightcraft-android` and JNI in `crates/android-sys`.
@@ -15,6 +17,9 @@
 #[cfg(target_os = "android")]
 mod app;
 pub mod input;
+#[cfg(target_os = "android")]
+mod lifecycle;
+pub mod lifecycle_core;
 pub mod loader;
 pub mod memory;
 pub mod paths;

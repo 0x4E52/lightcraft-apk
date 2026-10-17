@@ -11,9 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Why `run` returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Exit {
-    /// The Activity was destroyed (by the system, or after the user removed it from recents).
-    /// Not produced yet: eframe's loop ends the same way for both, so `run` returns
-    /// [`Exit::Closed`]; APK-18's lifecycle wrapper, which sees the destroy, maps it here.
+    /// The Activity was destroyed or is finishing (by the system, or after the user removed it
+    /// from recents): the lifecycle wrapper noticed and left the event loop.
     Destroyed,
     /// The user closed LightCraft (File ▸ Quit or the window closing).
     Closed,
@@ -49,9 +48,11 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 /// work happens here: the logger, the folders, the memory budget, the panic hook and the settings
 /// file. The library opens on a worker ([`crate::loader`]) behind a loading frame.
 ///
-/// Every normal end is `Ok(Exit::Closed)` until APK-18 tells a destroy apart. A start error
-/// (no internal storage folder, a folder that cannot be created) is an `Err` returned before any
-/// window exists: the entry crate logs it (logcat) and exits.
+/// eframe runs inside the host's lifecycle wrapper (`lifecycle.rs`) on an event loop built here,
+/// so focus loss saves, the background trims, and a destroyed Activity ends the loop:
+/// `Ok(Exit::Destroyed)` then, `Ok(Exit::Closed)` for any other end. A start error (no internal
+/// storage folder, a folder that cannot be created, no event loop) is an `Err` returned before
+/// any window exists: the entry crate logs it (logcat) and exits.
 #[cfg(target_os = "android")]
 pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     use lightcraft_ui_egui::host::{log_file, prefs};
@@ -111,10 +112,17 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     };
     let loader = crate::loader::open_library(paths.library.clone());
 
+    // our own event loop, so the lifecycle wrapper sees every callback (eframe's `run_native`
+    // would build and run it out of reach)
+    use winit::platform::android::EventLoopBuilderExtAndroid as _;
+    let event_loop = winit::event_loop::EventLoop::<eframe::UserEvent>::with_user_event()
+        .with_android_app(app.clone())
+        .build()
+        .map_err(|e| format!("LightCraft could not start its event loop: {e}"))?;
     let slot: crate::app::Slot = std::rc::Rc::new(std::cell::RefCell::new(None));
     let options = eframe::NativeOptions { android_app: Some(app.clone()), renderer: eframe::Renderer::Wgpu, ..Default::default() };
     let app_slot = slot.clone();
-    eframe::run_native(
+    let eframe_app = eframe::create_native(
         "LightCraft",
         options,
         Box::new(move |cc| {
@@ -123,9 +131,19 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
             cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
             Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen)))
         }),
-    )
-    .map(|()| Exit::Closed)
-    .map_err(|e| format!("LightCraft could not open its window: {e}"))
+        &event_loop,
+    );
+    let core = crate::lifecycle_core::CoreState::new(activity_probe(&app));
+    let mut handler = crate::lifecycle::Lifecycle::new(eframe_app, slot, core);
+    event_loop.run_app(&mut handler).map_err(|e| format!("LightCraft's event loop failed: {e}"))?;
+    Ok(if handler.left() { Exit::Destroyed } else { Exit::Closed })
+}
+
+/// Asks the Activity whether it is finishing or destroyed, on the calling thread (android_main).
+#[cfg(target_os = "android")]
+fn activity_probe(app: &android_activity::AndroidApp) -> crate::lifecycle_core::Probe {
+    let app = app.clone();
+    Box::new(move || lightcraft_android_sys::activity::activity_state(&app).map_err(|e| e.to_string()))
 }
 
 /// Back at the root: `Activity.moveTaskToBack(true)`, posted to the Java main thread and not
