@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-12).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-13).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -28,7 +28,8 @@ the maintainer.
 | The Android host opens the UI (eframe, wgpu) on the procedural demo library in internal storage (`files/{config,library,logs,inbox}`), the session opened on a worker behind an "Opening library…" frame, with a phone memory budget (MemTotal / 8, 256–768 MiB, also what Settings' "Automatic" means: `engine::memory::set_default_budget`), the device's RAM injected for export/merge fit checks (`engine::memory::set_total_ram`), the log file, the panic log and file/PNG writers | ✅ APK-11, compiled and linted for `aarch64-linux-android` (first run on a device or emulator: APK-16) |
 | The first start tells once that uninstalling or Clear data deletes the library (`Services::library_notice`, flag `UiState::library_notice_shown`); Object and Describe masks are off with "Needs a device with 8 GB of memory" below `Services::min_ram_for_sam` (7 GiB MemTotal, which is what an 8 GB phone reads); Try Again in the library problem window reopens the library on the loader's worker behind the "Opening library…" frame (`Services::reopen_library`); export's and merge's memory messages say "this device" on a phone (`memory::set_handheld`) | ✅ APK-11b (the device checks stay in the card, unticked) |
 | `cargo xtask android so [--abi arm64-v8a\|x86_64]…` links `liblightcraft_android.so` with the NDK's clang (no `cargo ndk`; the 16 KB page flag below NDK r28), copies it to `target/android/jniLibs/<abi>/` and checks `LOAD` alignment, the `android_main` / `ANativeActivity_onCreate` exports and system-only `NEEDED` libraries | ✅ APK-12, unit-tested on canned `llvm-readelf` output; no NDK here, so the first real link is the APK-16 workflow |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-13 … APK-43 below |
+| `packaging/android/AndroidManifest.xml` (NativeActivity, `hasCode=false`, `allowBackup=false`, `extractNativeLibs=false`, the Back opt-out, full `configChanges`, minSdk 30 / targetSdk 36) filled by `cargo xtask android manifest [--release]` (`.debug` application id suffix for debug); `version_code` from the workspace version (alpha < beta < rc < release) | ✅ APK-13, unit-tested; `aapt2` has not read it yet (APK-15, APK-16 `aapt2 dump badging`) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-14 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1512,3 +1513,13 @@ Agents use the default until the maintainer decides (execution-plan §7).
   libc, libm, libdl, liblog, libandroid, libnativewindow, libvulkan, libEGL or libGLESv2. Not run here (no NDK:
   `dl.google.com` is refused); the APK-16 workflow runs it and is the first real link. A release profile build is not
   part of this card (APK-40).
+- 2026-10-17 (APK-13): `packaging/android/AndroidManifest.xml` (template with `${APPLICATION_ID}`, `${APP_LABEL}`,
+  `${VERSION_CODE}`, `${VERSION_NAME}`, `${MIN_SDK}`, `${TARGET_SDK}`) and `xtask/src/android/manifest.rs`: `fill`,
+  `version_code` and a small `cargo xtask android manifest [--release]` step that writes the filled file to
+  `target/android/AndroidManifest.xml` (APK-15 calls `fill` directly; the step makes the module reachable and lets
+  the maintainer look at the result). The template adds `package`, `versionCode`, `versionName` and `<uses-sdk>`
+  (`TARGET_SDK` 36 is a new constant next to `MIN_SDK` in `sdk.rs`). `version_code`: alpha, beta and rc take N in
+  1..=3 (the card names the range for rc only; the same slots keep the stages from overlapping), a number with a
+  leading zero is an error, and a code over Google Play's 2_100_000_000 is an error. The label is escaped as an XML
+  attribute. Tests parse the filled template with a small attribute scanner (xtask has no XML dependency). Not yet
+  checked by `aapt2` (APK-15/APK-16).

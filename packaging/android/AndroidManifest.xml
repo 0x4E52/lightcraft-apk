@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Template for the Android manifest. `cargo xtask android manifest` fills the placeholders
+  (xtask/src/android/manifest.rs); nothing here is edited by hand per build.
+  Permissions arrive with the features that need them (docs/android-port.md: APK-21, APK-22).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="${APPLICATION_ID}"
+    android:versionCode="${VERSION_CODE}"
+    android:versionName="${VERSION_NAME}">
+
+    <uses-sdk
+        android:minSdkVersion="${MIN_SDK}"
+        android:targetSdkVersion="${TARGET_SDK}" />
+
+    <!-- hasCode=false: the app is pure Rust through NativeActivity, no Java classes.
+         allowBackup=false: Auto Backup would copy the catalog to Drive.
+         extractNativeLibs=false: the stored, 16 KB-aligned library is mapped in place.
+         enableOnBackInvokedCallback=false, always: Back reaches native code only as KEYCODE_BACK,
+         which targetSdk 36 stops dispatching without this opt-out. -->
+    <application
+        android:label="${APP_LABEL}"
+        android:hasCode="false"
+        android:allowBackup="false"
+        android:extractNativeLibs="false"
+        android:enableOnBackInvokedCallback="false">
+
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode|fontWeightAdjustment|grammaticalGender">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="lightcraft_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

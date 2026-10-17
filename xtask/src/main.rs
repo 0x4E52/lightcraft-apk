@@ -27,6 +27,8 @@ commands:
                   without the target)
   android so [--abi arm64-v8a|x86_64]...
                   link liblightcraft_android.so with the NDK, check its alignment, symbols and libraries
+  android manifest [--release]
+                  fill packaging/android/AndroidManifest.xml into target/android/
   assets          every image/icon/font/media file is attributed in assets/ATTRIBUTION.md; no Adobe assets
   bench [FILE] [--strict] [--threshold PCT]
                   run the render benchmark, append to target/bench/history.jsonl, compare CPU time with

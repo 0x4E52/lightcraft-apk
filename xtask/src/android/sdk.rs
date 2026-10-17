@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 /// wrapper that links the `.so` is named after it.
 pub const MIN_SDK: u32 = 30;
 
+/// The API level the app targets and the platform it is linked against (decision 3 in
+/// docs/android-port.md: Play's rule for new apps and updates since 2026-08-31).
+pub const TARGET_SDK: u32 = 36;
+
 /// An NDK revision, `major.minor.patch` (a `-beta1` suffix is dropped).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NdkVersion {
