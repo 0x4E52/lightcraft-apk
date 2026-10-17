@@ -82,8 +82,11 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     if let Some(Err(in_use)) = gpu_choice_in_force {
         log::warn!("graphics backend choice already fixed ({in_use:?}); debug.lightcraft.gpu_backend ignored");
     }
-    let paths = crate::paths::Paths::from_internal(&crate::paths::internal_dir(app.internal_data_path())?);
+    let files_dir = crate::paths::internal_dir(app.internal_data_path())?;
+    let paths = crate::paths::Paths::from_internal(&files_dir);
     paths.create()?;
+    // the debug control server: only with `debug.lightcraft.control`, and only with a token
+    let control = crate::control::prepare(diag.control, &crate::control::token_path(&files_dir), crate::control::random_bytes);
     if let Err(in_use) = lightcraft_engine::config::use_dir(paths.config.clone()) {
         log::warn!("settings folder already set to {}", in_use.display());
     }
@@ -152,7 +155,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     // the renderer's start: a panic is caught here, so the dialog below can still say why
     let app_created = std::rc::Rc::new(std::cell::Cell::new(false));
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_eframe(&app, Eframe { renderer, files: files.clone(), app_created: app_created.clone(), loader, start, reopen })
+        run_eframe(&app, Eframe { renderer, files: files.clone(), app_created: app_created.clone(), loader, start, reopen, control })
     }));
     let app_created = app_created.get();
     let (result, reason) = match ran {
@@ -196,6 +199,8 @@ struct Eframe {
     loader: crate::loader::Loader,
     start: crate::state::Start,
     reopen: crate::state::Reopen,
+    /// The debug control server to start with the window (`None`: off).
+    control: Option<crate::control::Server>,
 }
 
 /// Builds the event loop, starts eframe on `renderer` (its marker armed first) and runs the loop
@@ -203,7 +208,7 @@ struct Eframe {
 /// Activity went away, `Ok(false)` for any other end, `Err` when the event loop failed.
 #[cfg(target_os = "android")]
 fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, String> {
-    let Eframe { renderer, files, app_created, loader, start, reopen } = e;
+    let Eframe { renderer, files, app_created, loader, start, reopen, control } = e;
     // our own event loop, so the lifecycle wrapper sees every callback (eframe's `run_native`
     // would build and run it out of reach)
     use winit::platform::android::EventLoopBuilderExtAndroid as _;
@@ -236,7 +241,9 @@ fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, Str
             // egui's own Ctrl+Q would close the window and end the one event loop, the loading
             // frame included (the app turns it off again once it runs: `Services::quit_disabled`)
             cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
-            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen)))
+            let control_rx =
+                control.map(|server| lightcraft_ui_egui::host::control_server::start(server.port, cc.egui_ctx.clone(), Some(server.token)));
+            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen, control_rx)))
         }),
         &event_loop,
     );

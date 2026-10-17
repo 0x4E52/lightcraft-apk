@@ -13,9 +13,12 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+
+use lightcraft_ui_egui::ControlRequest;
 
 use crate::lifecycle_core::Host;
 use crate::loader::Loader;
@@ -40,12 +43,15 @@ pub struct HostApp {
     /// Try Again in the library problem window asks here (off android_main: the library opens on
     /// the loader's worker behind the loading frame, as at the start).
     reopen: Reopen,
+    /// The debug control server's requests, until a state takes them (and again after Try Again
+    /// replaced that state).
+    control: Option<Receiver<ControlRequest>>,
     last_flush: Instant,
 }
 
 impl HostApp {
-    pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen) -> HostApp {
-        HostApp { slot, loader, start, reopen, last_flush: Instant::now() }
+    pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen, control: Option<Receiver<ControlRequest>>) -> HostApp {
+        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now() }
     }
 
     /// A reopen request: the state over the library problem ends (its session is empty and in
@@ -53,6 +59,9 @@ impl HostApp {
     fn reopen_if_asked(&mut self, slot: &mut Option<HostState>, ctx: &egui::Context) -> bool {
         let Some(path) = self.reopen.take() else { return false };
         let library = std::path::PathBuf::from(path);
+        if let Some(rx) = slot.as_mut().and_then(|state| state.app.take_control()) {
+            self.control = Some(rx);
+        }
         self.start.reopening(slot.take(), library.clone());
         self.loader = crate::loader::open_library(library);
         ctx.request_repaint();
@@ -82,7 +91,11 @@ impl eframe::App for HostApp {
             self.start.prefs_warning = None;
             self.start.gpu_notice = None;
             self.start.renderer_notice = None;
-            *slot = Some(HostState::new(opened, start));
+            let mut state = HostState::new(opened, start);
+            if let Some(rx) = self.control.take() {
+                state.app.set_control(rx);
+            }
+            *slot = Some(state);
             self.last_flush = Instant::now();
         }
         let Some(state) = slot.as_mut() else { return };

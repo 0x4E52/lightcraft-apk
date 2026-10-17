@@ -6,6 +6,10 @@
 //! one error reply and the connection is closed, so nothing after it is executed. Lines are
 //! bounded ([`MAX_LINE`]) and so is the number of open connections ([`MAX_CONNECTIONS`]); junk
 //! never reaches the UI thread. See `docs/control-protocol.md`.
+//!
+//! With a token ([`start`]) every request must carry it as a top-level `"token"` string, else it
+//! gets `{"ok": false, "error": "bad token"}` and the connection is closed. The Android app needs
+//! this because every app on the device shares loopback; the desktop passes `None`.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -14,7 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-use lightcraft_ui_egui::ControlRequest;
+use crate::ControlRequest;
 use serde_json::{Value, json};
 
 /// Longest accepted request line (bytes, without the newline). Requests are small JSON objects;
@@ -23,7 +27,13 @@ pub const MAX_LINE: usize = 4 * 1024 * 1024;
 /// Connections served at once; further ones get an error line and are closed.
 pub const MAX_CONNECTIONS: usize = 16;
 
-pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
+/// The error reply for a request without the right token.
+pub const BAD_TOKEN: &str = "bad token";
+
+/// Start the server on 127.0.0.1:`port`; the requests it accepts arrive on the returned channel.
+/// With `token`, a request must carry the same `"token"` string (see the module docs); `None`
+/// accepts every well-formed request. A port that can't be bound is logged and nothing serves.
+pub fn start(port: u16, ctx: egui::Context, token: Option<String>) -> Receiver<ControlRequest> {
     let (tx, rx) = channel::<ControlRequest>();
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
@@ -33,11 +43,11 @@ pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
         }
     };
     log::info!("control server listening on 127.0.0.1:{port}");
-    std::thread::spawn(move || accept_loop(listener, tx, ctx));
+    std::thread::spawn(move || accept_loop(listener, tx, ctx, token.map(Arc::<str>::from)));
     rx
 }
 
-fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context) {
+fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context, token: Option<Arc<str>>) {
     let open = Arc::new(AtomicUsize::new(0));
     for mut stream in listener.incoming().flatten() {
         if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
@@ -48,8 +58,9 @@ fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Con
         let tx = tx.clone();
         let ctx = ctx.clone();
         let open = Arc::clone(&open);
+        let token = token.clone();
         std::thread::spawn(move || {
-            serve(stream, &tx, &ctx);
+            serve(stream, &tx, &ctx, token.as_deref());
             open.fetch_sub(1, Ordering::SeqCst);
         });
     }
@@ -66,9 +77,9 @@ const NO_FRAMES_AFTER: Duration = Duration::from_secs(5);
 pub const HIDDEN_WINDOW_ERROR: &str = "the app drew no frame for 5 s, so the request was not run: its window is probably not visible \
 (on Wayland a window on a hidden workspace or minimized is not redrawn, which pauses the app). Bring the window on screen and send it again";
 
-fn serve(stream: TcpStream, tx: &Sender<ControlRequest>, ctx: &egui::Context) {
+fn serve(stream: TcpStream, tx: &Sender<ControlRequest>, ctx: &egui::Context, token: Option<&str>) {
     let Ok(read) = stream.try_clone() else { return };
-    serve_lines(read, stream, |method, params| {
+    serve_lines(read, stream, token, |method, params| {
         let (req, rrx) = ControlRequest::new(method, params);
         let state = Arc::clone(&req.state);
         tx.send(req).ok()?;
@@ -101,7 +112,7 @@ fn await_reply(
         if now != last {
             (last, since) = (now, std::time::Instant::now());
         }
-        let taken = state.load(Ordering::SeqCst) == lightcraft_ui_egui::control::TAKEN;
+        let taken = state.load(Ordering::SeqCst) == crate::control::TAKEN;
         if !taken && since.elapsed() >= no_frames && ControlRequest::abandon(state) {
             return json!({"ok": false, "error": HIDDEN_WINDOW_ERROR});
         }
@@ -120,6 +131,8 @@ enum Line {
         id: Value,
         method: String,
         params: Value,
+        /// The top-level `"token"` field, if it is a string.
+        token: Option<String>,
     },
     Blank,
     /// Not a request: reply with this error and close the connection.
@@ -148,7 +161,16 @@ fn parse_line(bytes: &[u8]) -> Line {
         id: obj.get("id").cloned().unwrap_or(Value::Null),
         method: method.to_string(),
         params: obj.get("params").cloned().unwrap_or(json!({})),
+        token: obj.get("token").and_then(Value::as_str).map(str::to_owned),
     }
+}
+
+/// Whether `given` is `want`, compared without stopping at the first difference.
+fn token_matches(given: Option<&str>, want: &str) -> bool {
+    let Some(given) = given else { return false };
+    let (given, want) = (given.as_bytes(), want.as_bytes());
+    let differs = given.iter().zip(want).fold(0u8, |acc, (a, b)| acc | (a ^ b));
+    given.len() == want.len() && differs == 0
 }
 
 /// Read one `\n`-terminated line of at most `max` bytes into `buf` (newline stripped).
@@ -176,9 +198,10 @@ fn read_bounded_line(reader: &mut impl BufRead, buf: &mut Vec<u8>, max: usize) -
 }
 
 /// Serve requests from `read`, answering on `out`, until the peer closes, sends something that is
-/// not a request, or `handle` returns `None` (app gone). `handle` gets `(method, params)` and
-/// returns the reply object (the request's `id` is added here).
-fn serve_lines<R: Read, W: Write>(read: R, mut out: W, mut handle: impl FnMut(String, Value) -> Option<Value>) {
+/// not a request, sends a request without the right `token` (when one is required), or `handle`
+/// returns `None` (app gone). `handle` gets `(method, params)` and returns the reply object (the
+/// request's `id` is added here).
+fn serve_lines<R: Read, W: Write>(read: R, mut out: W, token: Option<&str>, mut handle: impl FnMut(String, Value) -> Option<Value>) {
     let mut reader = BufReader::new(read);
     let mut buf = Vec::new();
     loop {
@@ -188,12 +211,15 @@ fn serve_lines<R: Read, W: Write>(read: R, mut out: W, mut handle: impl FnMut(St
             Ok(true) => match parse_line(&buf) {
                 Line::Blank => continue,
                 Line::Reject(e) => e,
-                Line::Request { id, method, params } => {
-                    let Some(mut r) = handle(method, params) else { return };
+                Line::Request { id, method, params, token: given } => {
+                    let allowed = token.is_none_or(|want| token_matches(given.as_deref(), want));
+                    let Some(mut r) = (if allowed { handle(method, params) } else { Some(json!({"ok": false, "error": BAD_TOKEN})) }) else {
+                        return;
+                    };
                     if let Some(o) = r.as_object_mut() {
                         o.insert("id".into(), id);
                     }
-                    if writeln!(out, "{r}").and_then(|()| out.flush()).is_err() {
+                    if writeln!(out, "{r}").and_then(|()| out.flush()).is_err() || !allowed {
                         return;
                     }
                     continue;
@@ -257,7 +283,7 @@ mod tests {
     fn run(input: &[u8]) -> (Vec<Value>, Vec<String>) {
         let mut out = Vec::new();
         let mut calls = Vec::new();
-        serve_lines(input, &mut out, |m, _p| {
+        serve_lines(input, &mut out, None, |m, _p| {
             calls.push(m);
             Some(json!({"ok": true, "result": null}))
         });
@@ -273,6 +299,61 @@ mod tests {
         assert_eq!(r[0]["id"], 1);
         assert_eq!(r[1]["id"], 2);
         assert_eq!(r[2]["id"], Value::Null);
+    }
+
+    fn run_with_token(input: &[u8], token: Option<&str>) -> (Vec<Value>, Vec<String>) {
+        let mut out = Vec::new();
+        let mut calls = Vec::new();
+        serve_lines(input, &mut out, token, |m, _p| {
+            calls.push(m);
+            Some(json!({"ok": true, "result": null}))
+        });
+        let replies = String::from_utf8(out).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect();
+        (replies, calls)
+    }
+
+    /// With a token, a request without one (or with another) runs nothing, is told so, and the
+    /// connection is closed, so the requests after it are not served either.
+    #[test]
+    fn rejects_request_without_token() {
+        for input in [
+            &b"{\"id\":1,\"method\":\"a\"}\n{\"id\":2,\"method\":\"b\",\"token\":\"s3cret\"}\n"[..],
+            b"{\"id\":1,\"method\":\"a\",\"token\":\"nope\"}\n{\"id\":2,\"method\":\"b\",\"token\":\"s3cret\"}\n",
+            b"{\"id\":1,\"method\":\"a\",\"token\":\"s3cre\"}\n",
+            b"{\"id\":1,\"method\":\"a\",\"token\":\"s3crets\"}\n",
+            b"{\"id\":1,\"method\":\"a\",\"token\":7}\n",
+            // a token inside `params` is not the request's token
+            b"{\"id\":1,\"method\":\"a\",\"params\":{\"token\":\"s3cret\"}}\n",
+        ] {
+            let (r, calls) = run_with_token(input, Some("s3cret"));
+            assert!(calls.is_empty(), "nothing may run: {calls:?}");
+            assert_eq!(r.len(), 1, "{r:?}");
+            assert_eq!(r[0]["ok"], false);
+            assert_eq!(r[0]["error"], BAD_TOKEN);
+            assert_eq!(r[0]["id"], 1);
+        }
+    }
+
+    #[test]
+    fn the_right_token_is_served_and_no_token_asked_means_none_needed() {
+        let (r, calls) =
+            run_with_token(b"{\"id\":1,\"method\":\"a\",\"token\":\"s3cret\"}\n{\"id\":2,\"method\":\"b\",\"token\":\"s3cret\"}\n", Some("s3cret"));
+        assert_eq!(calls, ["a", "b"]);
+        assert!(r.iter().all(|v| v["ok"] == true));
+        // the desktop: no token configured, a stray one is ignored
+        let (r, calls) = run_with_token(b"{\"id\":1,\"method\":\"a\"}\n{\"id\":2,\"method\":\"b\",\"token\":\"x\"}\n", None);
+        assert_eq!(calls, ["a", "b"]);
+        assert_eq!(r.len(), 2);
+    }
+
+    #[test]
+    fn token_comparison_needs_the_whole_token() {
+        assert!(token_matches(Some("abc"), "abc"));
+        assert!(!token_matches(Some("abd"), "abc"));
+        assert!(!token_matches(Some("ab"), "abc"));
+        assert!(!token_matches(Some("abcd"), "abc"));
+        assert!(!token_matches(Some(""), "abc"));
+        assert!(!token_matches(None, "abc"));
     }
 
     #[test]
@@ -317,7 +398,7 @@ mod tests {
         let endless = std::io::repeat(b'x');
         let mut out = Vec::new();
         let mut ran = false;
-        serve_lines(endless, &mut out, |_, _| {
+        serve_lines(endless, &mut out, None, |_, _| {
             ran = true;
             None
         });
@@ -345,7 +426,7 @@ mod tests {
         let server = std::thread::spawn(move || {
             let (s, _) = listener.accept().unwrap();
             let read = s.try_clone().unwrap();
-            serve_lines(read, s, |_, _| Some(json!({"ok": true})));
+            serve_lines(read, s, None, |_, _| Some(json!({"ok": true})));
         });
         let mut c = TcpStream::connect(addr).unwrap();
         c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();

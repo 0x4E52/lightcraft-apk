@@ -17,6 +17,7 @@
 
 #[cfg(target_os = "android")]
 mod app;
+pub mod control;
 pub mod input;
 #[cfg(target_os = "android")]
 mod lifecycle;

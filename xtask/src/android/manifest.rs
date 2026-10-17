@@ -244,6 +244,19 @@ mod tests {
     }
 
     #[test]
+    fn manifest_requests_internet() {
+        // model downloads and the debug control server's loopback socket need it
+        let xml = fill(&template(), "1.2.3", Build::Debug).unwrap();
+        let permissions: Vec<String> = elements(&xml)
+            .into_iter()
+            .filter(|(e, _)| e == "uses-permission")
+            .filter_map(|(_, attrs)| attrs.into_iter().find(|(k, _)| k == "android:name"))
+            .map(|(_, v)| v)
+            .collect();
+        assert!(permissions.iter().any(|p| p == "android.permission.INTERNET"), "{permissions:?}");
+    }
+
+    #[test]
     fn debug_build_uses_debug_suffix() {
         let debug = fill(&template(), "0.1.0", Build::Debug).unwrap();
         assert_eq!(attr(&debug, "manifest", "package"), "io.github.n0x4e52.lightcraft.debug");

@@ -34,3 +34,5 @@ serde_json = { workspace = true }
 eframe = { workspace = true, features = ["wgpu", "android-native-activity", "default_fonts"] }
 winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
 android-activity = { workspace = true }
+# 128-bit token of the debug control server (the version Cargo.lock holds)
+getrandom = "0.3"

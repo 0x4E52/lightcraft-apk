@@ -615,10 +615,21 @@ impl LightcraftApp {
     }
 
     pub fn with_control(mut self, rx: Receiver<ControlRequest>) -> Self {
+        self.set_control(rx);
+        self
+    }
+
+    /// Serve the control channel's requests from `rx` (see [`Self::with_control`]).
+    pub fn set_control(&mut self, rx: Receiver<ControlRequest>) {
         self.control_rx = Some(rx);
         // keep CPU copies of photo textures so `ui.screenshot {"headless": true}` can draw them
         self.renderer.keep_pixels = true;
-        self
+    }
+
+    /// Take the control channel's receiver back, for a host that replaces the app (the library
+    /// opened again) and hands the channel to the new one.
+    pub fn take_control(&mut self) -> Option<Receiver<ControlRequest>> {
+        self.control_rx.take()
     }
 
     /// The open person page, the way back to it, and the photo it was opened from follow a rename.

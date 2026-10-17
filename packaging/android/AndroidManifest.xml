@@ -13,6 +13,10 @@
         android:minSdkVersion="${MIN_SDK}"
         android:targetSdkVersion="${TARGET_SDK}" />
 
+    <!-- INTERNET: model downloads (crates/fetch) and the debug control server on loopback, which is
+         off unless `debug.lightcraft.control` is set and then needs a token (docs/android.md). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- hasCode=false: the app is pure Rust through NativeActivity, no Java classes.
          allowBackup=false: Auto Backup would copy the catalog to Drive.
          extractNativeLibs=false: the stored, 16 KB-aligned library is mapped in place.

@@ -12,10 +12,14 @@
 //! - [`gpu_markers`]: the files that remember a GPU or window renderer start that died, so the
 //!   next start avoids it and says why.
 //!
+//! - [`control_server`]: the loopback JSON-lines control channel (`--control` on the desktop, the
+//!   `debug.lightcraft.control` property with a token on Android).
+//!
 //! Every folder (settings, library) is a parameter: the host decides where they are (the desktop
 //! from the platform's folders or `LIGHTCRAFT_CONFIG_DIR`, Android from its internal storage).
 //! Desktop-only parts (file dialogs, the Windows renderer probe, relaunching) stay in the app.
 
+pub mod control_server;
 pub mod flush;
 pub mod gpu_markers;
 pub mod log_file;

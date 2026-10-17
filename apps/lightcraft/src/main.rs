@@ -26,7 +26,6 @@ mod alloc_release;
 mod appearance;
 #[cfg(target_os = "linux")]
 mod colord;
-mod control_server;
 mod dialog_filter;
 mod editors;
 mod hdr_display;
@@ -671,7 +670,7 @@ fn main() -> eframe::Result {
                     app.notices.push(notice);
                 }
                 if let Some(port) = control_port {
-                    let rx = control_server::start(port, cc.egui_ctx.clone());
+                    let rx = lightcraft_ui_egui::host::control_server::start(port, cc.egui_ctx.clone(), None);
                     app = app.with_control(rx);
                 }
                 if let Some(mut p) = problem {

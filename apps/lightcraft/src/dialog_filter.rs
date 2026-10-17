@@ -137,9 +137,8 @@ mod tests {
     /// `add_filter`.
     #[test]
     fn no_dialog_bypasses_the_helper() {
-        for (file, src) in [("main.rs", include_str!("main.rs")), ("control_server.rs", include_str!("control_server.rs"))] {
-            assert!(!src.contains(".add_filter("), "{file} calls rfd's add_filter; use add_filter_nocase");
-        }
+        let src = include_str!("main.rs");
+        assert!(!src.contains(".add_filter("), "main.rs calls rfd's add_filter; use add_filter_nocase");
         assert!(include_str!("main.rs").contains(".add_filter_nocase("));
     }
 }

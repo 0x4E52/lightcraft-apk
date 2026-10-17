@@ -3112,6 +3112,7 @@ dependencies = [
  "android-activity",
  "eframe",
  "egui",
+ "getrandom 0.3.4",
  "lightcraft-android-sys",
  "lightcraft-codecs",
  "lightcraft-engine",

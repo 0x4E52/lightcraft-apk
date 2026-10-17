@@ -24,9 +24,9 @@ optional; blank lines are skipped). Anything else — text that isn't JSON, a JS
 it on that connection runs. This keeps an HTTP request (for example a web page's cross-origin `fetch` to
 `127.0.0.1:<port>`) from smuggling a command in its body: its request line is rejected first. Junk never reaches the
 UI thread, and at most 16 connections are served at once (further ones get an error line and are closed). Clients
-that hit an error reply should reconnect. The port has no authentication, so only enable it when you need it. The MCP server's connect
+that hit an error reply should reconnect. The desktop's port has no authentication, so only enable it when you need it. On Android the server starts only with `debug.lightcraft.control` and every request must carry the token the app wrote to `files/control-token` as a top-level `"token"` string (else `{"ok": false, "error": "bad token"}` and the connection is closed; `docs/showcase/run.py --token`, see [android.md](android.md)). The MCP server's connect
 mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
-`crates/ui-egui/src/control.rs` (methods) and `apps/lightcraft/src/control_server.rs` (transport).
+`crates/ui-egui/src/control.rs` (methods) and `crates/ui-egui/src/host/control_server.rs` (transport, shared by the desktop and Android hosts).
 
 ## Isolated automation profiles
 

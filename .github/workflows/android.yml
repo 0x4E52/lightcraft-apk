@@ -141,7 +141,10 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash packaging/android/smoke.sh apk/lightcraft-debug.apk "$APP_ID" smoke
+          # the second line is the debug control server check (APK-21): property, restart, token, ui.inspect
+          script: |
+            bash packaging/android/smoke.sh apk/lightcraft-debug.apk "$APP_ID" smoke
+            bash packaging/android/control-check.sh "$APP_ID" smoke
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -149,4 +152,5 @@ jobs:
           path: |
             smoke/shot.png
             smoke/logcat.txt
+            smoke/control.txt
           if-no-files-found: warn

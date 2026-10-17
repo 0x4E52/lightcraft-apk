@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-20).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-21).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -35,8 +35,9 @@ the maintainer.
 | Back and Quit: Android's Back key becomes Escape (`input::browser_back_to_escape` in the host's `raw_input_hook`), so open menus, popups and text fields take it first and `view.back` runs its cascade unchanged; its new last step, `Services::move_to_back`, posts `Activity.moveTaskToBack(true)` to the Java main thread (`android-sys` `activity.rs`, not awaited). `Services::quit_disabled` (Android) refuses `app.quit` (command, Cmd+Q, control channel), leaves Quit out of the menus and the library problem window, opens no quit prompt and clears egui's own Ctrl+Q (`Options::quit_shortcuts`), so nothing ends the one event loop | ✅ APK-17, headless tests with a fake service; the JNI call has not run here (device check in `docs/android.md`) |
 | Lifecycle: eframe runs through `eframe::create_native` on the host's own event loop inside a wrapper (`lifecycle.rs`) that maps winit's callbacks to the pure `lifecycle_core::on_event`: focus lost → full save; suspended → `trim()` (`Session::trim_caches`, `gpu::trim_pool(0)`) and a quick save only when focus loss didn't save; `memory_warning` → `trim()`; while away, each `about_to_wait` asks the Activity (`android-sys` `activity_state`: `isFinishing`/`isDestroyed`) and a destroyed one ends the loop (`Exit::Destroyed`), so `onDestroy` doesn't hang | ✅ APK-18, pure core and engine trim tested here; the wrapper and the JNI calls have not run (Device checklist: smoke run, kill/rotate/"Don't keep activities") |
 | Renderer failure: the window starts on Vulkan, then GL (`renderer::order` over `window_renderer_order`), its marker (`gpu_markers::Files`) armed before eframe and cleared by the app creator, which also installs the logging error handler and logs the adapter; a renderer that fails (an error eframe only logs, found as "app creator never ran" plus `log_file::last_error`, or a caught panic) gets an `AlertDialog` (`android-sys` `dialog.rs`) that android_main waits on (`renderer::wait_until`, polling the Activity's commands) before `run` returns `Err`, so the next start tries the other renderer; the desktop's GPU crash and GPU-lost sentinels turn GPU compute off with a notice | ✅ APK-19, pure parts tested here; the dialog and the JNI calls have not run (Device checklist: the adapter line in the CI logcat) |
-| Diagnostics switches without environment variables: `debug.lightcraft.{profile,log,gpu_backend,control}` system properties (`android-sys` `props::settings_from`, pure; `props::read` on Android) applied first thing in `run` (log filter, `lightcraft_profile::set_enabled`, `backend::set_choice`, the forced window renderer); `.control` is read, its server is APK-21 | ✅ APK-20, pure parts tested here; the property reads have not run on a device (Device checklist) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-21 … APK-43 below |
+| Diagnostics switches without environment variables: `debug.lightcraft.{profile,log,gpu_backend,control}` system properties (`android-sys` `props::settings_from`, pure; `props::read` on Android) applied first thing in `run` (log filter, `lightcraft_profile::set_enabled`, `backend::set_choice`, the forced window renderer); `.control` starts the server (next row) | ✅ APK-20, pure parts tested here; the property reads have not run on a device (Device checklist) |
+| Debug control server: `host::control_server` (moved from `apps/lightcraft`, shared with the desktop) takes `token: Option<String>`; the Android host starts it only when `debug.lightcraft.control=<port>` is set, after writing a random 128-bit token (`getrandom`) to `files/control-token`, and a request without the token gets `bad token` and a closed connection; the manifest requests `INTERNET`; `control-check.sh` in the `emulator` job reads the token and sends `ui.inspect` over the forwarded port | ✅ APK-21, server and token file tested here; the property read, `getrandom` and the CI step have not run (Device checklist) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-22 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1654,3 +1655,11 @@ Agents use the default until the maintainer decides (execution-plan §7).
   property cannot trap the user in a failing renderer (the device check "tap the icon once" needs it). Tests:
   `props_map_to_settings`, `unknown_values_are_ignored`, `forced_backend_from_props_goes_first`. `docs/android.md`
   gains "Diagnostics switches"; the device lines are added unticked.
+- 2026-10-17 (APK-21): the control server moved from `apps/lightcraft` to `lightcraft_ui_egui::host::control_server`
+  with `start(port, ctx, token: Option<String>)`; a request needs the matching top-level `"token"` string when one is
+  set, else `bad token` and the connection is closed (desktop passes `None`). The Android host
+  (`crates/android-host/src/control.rs`) starts it only with `debug.lightcraft.control`, after writing a random token
+  (`getrandom` 0.3, the locked 0.3.4) to `files/control-token` (0600; a stale one is deleted when the property is
+  unset; no token, no server). `LightcraftApp::{set_control, take_control}` let the host hand the channel to the app
+  built after Try Again. Manifest: `INTERNET`. `packaging/android/control-check.sh` runs after the smoke test in
+  `android.yml` (property, restart, forward, token, `ui.inspect`, and a refused request without the token).
