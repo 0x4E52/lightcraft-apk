@@ -1070,6 +1070,9 @@ right after their number, in letter order.
 
 ## Phase 3: touch UI
 
+The target behaviour (layout, gestures, tools) follows Lightroom on a phone and is specified in
+[`android-touch-ui.md`](android-touch-ui.md); each Phase 3 card implements its part and says where it deviates.
+
 #### APK-29 `ui.touch` control request
 - **Goal:** tests can express pinch, long press and multi-finger pans (`ui.pointer` only synthesises mouse events,
   control.rs:268-286).
