@@ -11,9 +11,11 @@ on:
 permissions:
   contents: read
 
+# Runs queue instead of cancelling each other: a full run takes about an hour and agents push more often, so
+# cancelling would never let one finish. GitHub keeps one pending run per branch, the newest.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   xtask-ci:
