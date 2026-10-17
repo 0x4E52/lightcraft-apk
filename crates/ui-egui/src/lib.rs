@@ -19,6 +19,9 @@ pub mod docking;
 pub mod export_task;
 mod focus_scan;
 pub mod headless;
+/// Host code shared by the native apps (settings file, session opening, log file, flush, GPU markers).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod host;
 pub mod i18n;
 pub mod icons;
 pub mod import;

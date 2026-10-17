@@ -11,11 +11,16 @@
 //!   renderer last; [`relaunch_after_failure`] starts that next launch right away.
 //! - The renderer that worked is remembered (`<config>/window-renderer`, Windows only) and tried
 //!   first next time. `LIGHTCRAFT_GPU_BACKEND=dx12|vulkan|gl|glow` (or `WGPU_BACKEND`) forces one.
+//!
+//! The marker files ([`Files`]) are shared with the Android host (`lightcraft_ui_egui::host::
+//! gpu_markers`), and so are the device's error handler and pipeline check
+//! (`lightcraft_engine::gpu::window`); the probe, the choice and the relaunch stay here.
 
 use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
 use eframe::wgpu;
 use lightcraft_engine::gpu::backend::{self, Backends, WindowRenderer};
-use std::path::PathBuf;
+use lightcraft_engine::gpu::window::{check_pipeline, install_error_handler};
+pub use lightcraft_ui_egui::host::gpu_markers::Files;
 
 /// Environment variable counting automatic relaunches after a failed start (bounds the chain).
 const RETRY_VAR: &str = "LIGHTCRAFT_WINDOW_RETRY";
@@ -31,65 +36,12 @@ pub struct Chosen {
     pub notice: Option<String>,
 }
 
-/// Files under the settings folder (`None` dir: write nothing — `--memory`, `LIGHTCRAFT_NO_PREFS`).
-pub struct Files {
-    dir: Option<PathBuf>,
-}
-
-impl Files {
-    pub fn new(dir: Option<PathBuf>) -> Self {
-        Self { dir }
-    }
-    fn marker(&self) -> Option<PathBuf> {
-        self.dir.as_ref().map(|d| d.join("window-init.marker"))
-    }
-    fn remembered(&self) -> Option<PathBuf> {
-        self.dir.as_ref().map(|d| d.join("window-renderer"))
-    }
-    fn read(p: Option<PathBuf>) -> Option<WindowRenderer> {
-        std::fs::read_to_string(p?).ok().as_deref().and_then(WindowRenderer::parse)
-    }
-    fn write(p: Option<PathBuf>, r: WindowRenderer) {
-        let Some(p) = p else { return };
-        if let Some(d) = p.parent() {
-            let _ = std::fs::create_dir_all(d);
-        }
-        if let Err(e) = std::fs::write(&p, format!("{}\n", r.name())) {
-            log::warn!("window: could not write {}: {e}", p.display());
-        }
-    }
-    /// The renderer the last start died in (marker left behind), removing the marker.
-    pub fn take_failed(&self) -> Option<WindowRenderer> {
-        let m = self.marker()?;
-        let r = Self::read(Some(m.clone()));
-        let _ = std::fs::remove_file(m);
-        r
-    }
-    /// Before the window opens: record what is being started.
-    pub fn arm(&self, r: WindowRenderer) {
-        Self::write(self.marker(), r);
-    }
-    /// The window's renderer is up: clear the marker and (Windows) remember it.
-    pub fn started(&self, r: WindowRenderer) {
-        if let Some(m) = self.marker() {
-            let _ = std::fs::remove_file(m);
-        }
-        if cfg!(windows) {
-            Self::write(self.remembered(), r);
-        }
-    }
-    /// The marker is still there: the window never came up.
-    pub fn armed(&self) -> bool {
-        self.marker().is_some_and(|m| m.exists())
-    }
-}
-
 /// The renderer for this start: see the module docs.
 pub fn choose(files: &Files) -> Chosen {
     let forced =
         backend::forced_window_renderer(std::env::var("LIGHTCRAFT_GPU_BACKEND").ok().as_deref(), std::env::var("WGPU_BACKEND").ok().as_deref());
     let failed = files.take_failed();
-    let remembered = if cfg!(windows) { Files::read(files.remembered()) } else { None };
+    let remembered = if cfg!(windows) { files.remembered_renderer() } else { None };
     let compiled = wgpu::Instance::enabled_backend_features();
     let os = std::env::consts::OS;
     let order = backend::window_renderer_order(forced, remembered, failed, os, compiled, true);
@@ -194,26 +146,6 @@ fn probe(backends: Backends) -> Result<WgpuSetupExisting, String> {
     Ok(WgpuSetupExisting { instance, adapter, device, queue })
 }
 
-/// wgpu's default handler for errors outside an error scope panics ("Handling wgpu errors as
-/// fatal by default"); this one logs.
-pub fn install_error_handler(device: &wgpu::Device) {
-    device.on_uncaptured_error(std::sync::Arc::new(|e| log::error!("window: wgpu error: {e}")));
-}
-
-/// Run `build` inside validation, internal and out-of-memory error scopes: the first error is
-/// returned instead of reaching the uncaptured-error handler.
-pub fn check_pipeline(device: &wgpu::Device, build: impl FnOnce(&wgpu::Device)) -> Result<(), String> {
-    let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-    let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
-    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
-    build(device);
-    let errors = [pollster::block_on(validation.pop()), pollster::block_on(internal.pop()), pollster::block_on(oom.pop())];
-    match errors.into_iter().flatten().next() {
-        Some(e) => Err(e.to_string()),
-        None => Ok(()),
-    }
-}
-
 /// The start failed (error or panic) before the window's renderer came up: start the app again,
 /// which then tries the next renderer. `false`: not relaunched (it came up, nothing written to
 /// disk, or the retries are used up).
@@ -240,39 +172,20 @@ pub fn relaunch_after_failure(files: &Files) -> bool {
 mod tests {
     use super::*;
 
-    fn dir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("app-window-gpu-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        d
-    }
-
-    /// The marker names the renderer being started; left behind, the next start reads it as the
-    /// failed one (and removes it); a good start removes it and remembers the renderer (Windows).
+    /// Without a settings folder no marker is written, so a failed start never relaunches (the
+    /// chain is bounded by what is on disk).
     #[test]
-    fn marker_records_the_failed_renderer() {
-        let d = dir("marker");
-        let f = Files::new(Some(d.clone()));
-        let dx = WindowRenderer::Wgpu(Backends::DX12);
-        f.arm(dx);
-        assert!(f.armed());
-        assert_eq!(f.take_failed(), Some(dx));
-        assert!(!f.armed());
-        assert_eq!(f.take_failed(), None);
-        f.arm(WindowRenderer::Glow);
-        f.started(WindowRenderer::Glow);
-        assert!(!f.armed());
-        assert_eq!(Files::read(f.remembered()), cfg!(windows).then_some(WindowRenderer::Glow));
-        // nothing written without a settings folder
+    fn no_settings_folder_never_relaunches() {
         let none = Files::new(None);
-        none.arm(dx);
+        none.arm(WindowRenderer::Wgpu(Backends::DX12));
         assert!(!none.armed() && !relaunch_after_failure(&none));
-        let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// The crash report: a pipeline that fails validation must come back as an error, never as
-    /// wgpu's default panic. Needs an adapter; skipped where there is none (CI without a GPU).
+    /// egui's own pipeline builds cleanly under the shared pipeline check (the crash report:
+    /// FXC failing on it must come back as an error). Needs an adapter; skipped where there is
+    /// none (CI without a GPU).
     #[test]
-    fn pipeline_errors_are_captured_not_panics() {
+    fn egui_pipeline_builds_cleanly() {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: backend::window_backends(),
             ..wgpu::InstanceDescriptor::new_without_display_handle()
@@ -286,31 +199,9 @@ mod tests {
             return;
         };
         install_error_handler(&device);
-        // a shader that does not validate, then a pipeline using it (like a failed FXC compile)
-        let r = check_pipeline(&device, |d| {
-            let m = d.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("broken"),
-                source: wgpu::ShaderSource::Wgsl("@vertex fn vs_main() -> @builtin(position) vec4<f32> { return undefined_thing; }".into()),
-            });
-            let _ = d.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("egui_pipeline"),
-                layout: None,
-                vertex: wgpu::VertexState { module: &m, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                fragment: None,
-                multiview_mask: None,
-                cache: None,
-            });
-        });
-        assert!(r.is_err(), "{r:?}");
-        // egui's own pipeline builds cleanly here
         check_pipeline(&device, |d| {
             drop(eframe::egui_wgpu::Renderer::new(d, wgpu::TextureFormat::Bgra8Unorm, eframe::egui_wgpu::RendererOptions::default()));
         })
         .unwrap();
-        // outside a scope: logged by our handler, not a panic
-        let _ = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: None, source: wgpu::ShaderSource::Wgsl("not wgsl".into()) });
     }
 }

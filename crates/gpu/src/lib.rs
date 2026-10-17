@@ -19,6 +19,9 @@
 //! compiles to the CPU fallback on wasm32.
 //!
 //! Before the process ends: [`begin_shutdown`], then [`wait_idle`] (issue #620, see `exit.rs`).
+//!
+//! The window's own device (egui-wgpu's, created by the host): [`window`] logs its uncaptured
+//! errors and checks a pipeline build instead of letting wgpu panic.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -43,6 +46,8 @@ pub mod nn;
 mod params;
 #[cfg(not(target_arch = "wasm32"))]
 mod render;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod window;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use render::GpuStages;

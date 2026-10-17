@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-6).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-7).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -21,7 +21,8 @@ the maintainer.
 | Full `cargo xtask ci` on GitHub for every push (`.github/workflows/ci.yml`), fast gate per task here | ✅ maintainer decision 2026-10-17 |
 | `cargo xtask android check`: clippy `-D warnings` for every crate the APK links, for `aarch64-linux-android`, a step of `ci` (skipped, and reported as skipped, without the target) | ✅ APK-5 |
 | A host without `HOME` can place settings (`engine::config::use_dir`), the export folder (`Services::default_export_dir`) and the Local sidebar roots (`Services::local_roots`) | ✅ APK-6 |
-| Host crates, packaging, CI, touch UI, release | ⏳ APK-7 … APK-43 below |
+| Desktop host code the Android host also needs is shared (`lightcraft_ui_egui::host`: settings file, session opening, log file with the last error, flush, GPU markers; `lightcraft_engine::gpu::window`) | ✅ APK-7 |
+| Host crates, packaging, CI, touch UI, release | ⏳ APK-8 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1422,3 +1423,9 @@ Agents use the default until the maintainer decides (execution-plan §7).
   `temp_dir()`); `Services::default_export_dir` and `Services::local_roots` replace the `HOME`-based export folder
   and Local list when set. Audit: of the production `temp_dir()` uses only `profile.import`'s no-library copy was
   reachable on Android (now `scratch_dir`); the MCP server's and the desktop panic log's stay.
+- 2026-10-17 (APK-7): `lightcraft_ui_egui::host` (`prefs`, `session_open`, `log_file`, `flush`, `gpu_markers`;
+  native only) and `lightcraft_engine::gpu::window` (`install_error_handler`, `check_pipeline`) hold what
+  `apps/lightcraft` had and the Android host needs, every folder a parameter; `flush_periodic` never ends an open
+  interaction, `flush_leaving` commits it first (desktop `on_exit` calls it before `close_library`);
+  `log_file::install_with(spec)` and `last_error()`; the GPU crash notice takes the host's `how_to_force` sentence.
+  `docs/showcase/run.py` takes `--port` and `--token`.
