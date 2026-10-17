@@ -462,6 +462,9 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
             }
         }
         "app.quit" => {
+            if app.services.quit_disabled {
+                return err(crate::menus::QUIT_DISABLED);
+            }
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             ok(Value::Null)
         }

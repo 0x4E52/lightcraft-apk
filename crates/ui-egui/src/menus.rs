@@ -640,6 +640,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                     }
                     _ => app.ui.view = ViewMode::PhotoGrid,
                 }
+            } else if let Some(move_to_back) = app.services.move_to_back.as_mut() {
+                // nothing left to close or leave: the host's own Back (Android: to the background)
+                return Some(move_to_back(&mut app.session));
             }
             Ok(Value::Null)
         }
@@ -1548,6 +1551,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
         }
         "app.quit" => {
+            if app.services.quit_disabled {
+                return Some(Err(QUIT_DISABLED.into()));
+            }
             app.ui.quit = true;
             Ok(Value::Null)
         }
@@ -2122,6 +2128,9 @@ fn thumb_size_view(app: &LightcraftApp) -> bool {
     matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid | ViewMode::People)
 }
 
+/// Why `app.quit` is refused where the host can't quit ([`crate::Services::quit_disabled`]).
+pub const QUIT_DISABLED: &str = "Quit isn't available here: the system closes LightCraft. Press Back or Home to leave it.";
+
 pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
     match id {
         "library.selectOnlyActive" => app.session.active().is_some(),
@@ -2166,6 +2175,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "app.openLibrary" | "app.newLibrary" => app.services.pick_folder.is_some() && crate::panels::settings::can_switch_library(app).is_ok(),
         "file.addFolder" => app.services.pick_folder.is_some() && !crate::lightroom_import::is_running(app),
         "file.backupLibrary" => app.services.backup_library.is_some(),
+        "app.quit" => !app.services.quit_disabled,
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "app.clearRecentLibraries" => !app.ui.settings.recent_libraries.is_empty(),

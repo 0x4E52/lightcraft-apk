@@ -3111,6 +3111,7 @@ version = "0.8.0"
 dependencies = [
  "android-activity",
  "eframe",
+ "egui",
  "lightcraft-android-sys",
  "lightcraft-codecs",
  "lightcraft-engine",

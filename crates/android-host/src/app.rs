@@ -92,6 +92,8 @@ impl eframe::App for HostApp {
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // Back is Escape: popups and text fields take it first, then the Back cascade
+        crate::input::browser_back_to_escape(&mut raw.events);
         match self.slot.try_borrow_mut() {
             Ok(mut slot) => {
                 if let Some(state) = slot.as_mut() {

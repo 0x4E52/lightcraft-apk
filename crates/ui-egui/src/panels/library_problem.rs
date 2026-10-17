@@ -1,7 +1,7 @@
 //! The library couldn't be opened at launch (issue #100): never a silent in-memory session. A
 //! blocking window says which library and why, and offers Try Again, Choose Another Library…,
-//! Continue Without Saving and Quit. Continuing shows a banner under the top bar for as long as the
-//! session is temporary.
+//! Continue Without Saving and Quit (not where the host can't quit: Android). Continuing shows a
+//! banner under the top bar for as long as the session is temporary.
 
 use egui::{Align2, RichText, vec2};
 use serde_json::json;
@@ -146,7 +146,10 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                 button(ui, "libraryRetry", "Try Again", problem.can_retry && !problem.path.is_empty(), Choice::Retry);
                 button(ui, "libraryChoose", "Choose Another Library…", app.services.pick_folder.is_some(), Choice::Choose);
                 button(ui, "libraryTemporary", "Continue Without Saving", true, Choice::Temporary);
-                button(ui, "libraryQuit", "Quit", true, Choice::Quit);
+                // a host that can't quit (Android) offers no Quit that would do nothing
+                if !app.services.quit_disabled {
+                    button(ui, "libraryQuit", "Quit", true, Choice::Quit);
+                }
             });
         });
     match choice {

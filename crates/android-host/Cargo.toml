@@ -20,6 +20,8 @@ lightcraft-engine = { workspace = true, features = ["sam"] }
 lightcraft-ui-egui = { workspace = true }
 lightcraft-codecs = { workspace = true }
 lightcraft-raster = { workspace = true }
+# egui's input types for the pure input rewrites (the same crate eframe re-exports on Android)
+egui = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]

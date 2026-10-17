@@ -277,6 +277,8 @@ fn host_supports(app: &LightcraftApp, id: &str) -> bool {
     match id {
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
+        // the system ends the app where it can't quit itself (Android)
+        "app.quit" => !app.services.quit_disabled,
         "photo.restore" | "photo.deletePermanently" => selection_deleted(app),
         "photo.delete" => !selection_deleted(app),
         // only in an album that holds its photos (not a smart one)

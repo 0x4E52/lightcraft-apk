@@ -107,15 +107,40 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         log_file: log_path,
         library: paths.library.clone(),
         reopen: Some(reopen.clone()),
+        move_to_back: Some(move_to_back(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
 
     let slot: crate::app::Slot = std::rc::Rc::new(std::cell::RefCell::new(None));
     let options = eframe::NativeOptions { android_app: Some(app.clone()), renderer: eframe::Renderer::Wgpu, ..Default::default() };
     let app_slot = slot.clone();
-    eframe::run_native("LightCraft", options, Box::new(move |_cc| Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen)))))
-        .map(|()| Exit::Closed)
-        .map_err(|e| format!("LightCraft could not open its window: {e}"))
+    eframe::run_native(
+        "LightCraft",
+        options,
+        Box::new(move |cc| {
+            // egui's own Ctrl+Q would close the window and end the one event loop, the loading
+            // frame included (the app turns it off again once it runs: `Services::quit_disabled`)
+            cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
+            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen)))
+        }),
+    )
+    .map(|()| Exit::Closed)
+    .map_err(|e| format!("LightCraft could not open its window: {e}"))
+}
+
+/// Back at the root: `Activity.moveTaskToBack(true)`, posted to the Java main thread and not
+/// awaited; what it answered is logged there.
+#[cfg(target_os = "android")]
+fn move_to_back(app: &android_activity::AndroidApp) -> crate::services::MoveToBack {
+    let app = app.clone();
+    std::rc::Rc::new(move || {
+        lightcraft_android_sys::activity::move_task_to_back(&app, |moved| match moved {
+            Ok(true) => {}
+            Ok(false) => log::warn!("Back: Android did not move LightCraft to the background"),
+            Err(e) => log::warn!("Back: {e}"),
+        });
+        Ok(())
+    })
 }
 
 #[cfg(test)]

@@ -64,6 +64,8 @@ pub struct Start {
     /// Where Try Again in the problem window asks to open the library again (`None`: the
     /// desktop's command runs it on the UI thread).
     pub reopen: Option<Reopen>,
+    /// What Back does when nothing in the app is left to close (`None` in tests: nothing).
+    pub move_to_back: Option<crate::services::MoveToBack>,
 }
 
 impl Start {
@@ -107,7 +109,10 @@ impl HostState {
                 (session.with_default_sam3_model(), Some(LibraryProblem::new(start.library.to_string_lossy(), e)))
             }
         };
-        let mut app = LightcraftApp::new(session, crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref()));
+        let mut app = LightcraftApp::new(
+            session,
+            crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref(), start.move_to_back.as_ref()),
+        );
         if let Some(ui) = start.prefs {
             app.ui = ui;
         }

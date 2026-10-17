@@ -66,7 +66,15 @@ pub fn gpu_notice(reason: Option<&str>, enabled: bool) -> Option<String> {
 /// The window may close now (`true`), or the quit prompt is shown (`false`). Running tasks that
 /// can be cancelled (an import, an export…) are asked about first; then changes that couldn't be
 /// written are retried — the log, then a snapshot of everything in memory.
+///
+/// A host that can't quit ([`crate::Services::quit_disabled`], Android) never asks: its Quit is
+/// refused before this runs, a prompt's Quit Anyway would end nothing, and the host saves on its
+/// own. So no prompt opens and the answer is `false`.
 pub fn may_close(app: &mut LightcraftApp) -> bool {
+    if app.services.quit_disabled {
+        app.quit_prompt = None;
+        return false;
+    }
     if app.quit_confirmed {
         return true;
     }

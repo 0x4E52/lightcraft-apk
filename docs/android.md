@@ -73,3 +73,6 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] `android.yml` run green; the screenshot shows the LightCraft UI (APK-16): the run's `lightcraft-smoke` artifact
   holds `shot.png` and `logcat.txt`. The job fails on a dead process or a panic, but it does not judge the picture.
 - [ ] The CI APK (APK-16) installs on an arm64 phone and opens on the demo library.
+- [ ] Back (APK-17) with gesture navigation on Android 16 (targetSdk 36): an open menu closes first, then Back walks
+  back to the grid, then moves LightCraft to the background; Home → reopen and Back to the root → reopen both return
+  to where it was. File has no Quit, and Ctrl+Q on a hardware keyboard closes nothing.

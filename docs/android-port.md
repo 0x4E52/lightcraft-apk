@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-16).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-17).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -32,7 +32,8 @@ the maintainer.
 | Launcher and adaptive icons (`packaging/android/res/`: legacy, foreground and monochrome PNGs for mdpi to xxxhdpi, `mipmap-anydpi-v26/ic_launcher.xml`, background colour `#f2a516`) generated from `assets/app-icon/lightcraft.svg` by `packaging/android/icons.sh`; the manifest names them (`android:icon`, `android:roundIcon`) | ✅ APK-14, attributed; `aapt2 compile` and `link` read them in `cargo xtask android apk` (APK-15), first run in the APK-16 workflow (`application-icon-` check); the foreground's chest runs off the 72 dp viewport so no mask shows a cut, but the ear tuft tips reach 43.5 dp from the centre (measured), beyond the 33 dp safe circle; how it looks under real launcher masks and as a themed icon is a device check (APK-14 card) |
 | `cargo xtask android apk`: `aapt2 compile`/`link --debug-mode`, aapt2's entries raw-copied and the `.so` appended Stored at 16 KB alignment (`zip_lib.rs`), `zipalign -P 16`, `apksigner` with the debug key made by `keytool` when missing (`signing.rs`), `zipalign -c`; `docs/android.md` (build, install, debugging, Device checklist) | ✅ APK-15, argument builders and the zip step unit-tested; no SDK here, so the first real packaging is the APK-16 workflow |
 | `.github/workflows/android.yml` (pushes touching Android paths, `workflow_dispatch`): `android check`, `so` for arm64-v8a and x86_64 (sizes in the job summary), `apk`, `aapt2 dump badging` must show the id, SDK levels, `application-label:'LightCraft'` and `application-icon-`; an x86_64 API 35 emulator job installs the APK, starts the NativeActivity, takes a screenshot and fails on a dead or restarted process or `panicked` / `fatal` (`packaging/android/smoke.sh`) | ✅ APK-16 committed, YAML parsed here; no run has been seen yet (the first link, packaging and start are in it): the Device checklist lines stay unticked |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-17 … APK-43 below |
+| Back and Quit: Android's Back key becomes Escape (`input::browser_back_to_escape` in the host's `raw_input_hook`), so open menus, popups and text fields take it first and `view.back` runs its cascade unchanged; its new last step, `Services::move_to_back`, posts `Activity.moveTaskToBack(true)` to the Java main thread (`android-sys` `activity.rs`, not awaited). `Services::quit_disabled` (Android) refuses `app.quit` (command, Cmd+Q, control channel), leaves Quit out of the menus and the library problem window, opens no quit prompt and clears egui's own Ctrl+Q (`Options::quit_shortcuts`), so nothing ends the one event loop | ✅ APK-17, headless tests with a fake service; the JNI call has not run here (device check in `docs/android.md`) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-18 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -115,6 +116,7 @@ crates/android-host         package lightcraft-android-host, rlib, #![forbid(uns
   ├─ loader.rs              opens the Session on a worker; hands it over to the UI thread              (APK-11)
   ├─ state.rs               HostState { app, prefs }: flush_leaving/flush_dirty/trim (impl Host)      (APK-11/18)
   ├─ app.rs                 eframe::App wrapper: loading frame, logic, raw_input_hook, ui, on_exit    (APK-11 …)
+  ├─ input.rs               pure: the Back key becomes Escape (browser_back_to_escape)                (APK-17)
   ├─ services.rs            fills ui_egui::Services (writer, png, android-sys services)               (APK-11 …)
   ├─ lifecycle_core.rs      pure: HostEvent, trait Host, on_event() → Continue | Exit                  (APK-18)
   ├─ lifecycle.rs           android only: ApplicationHandler forwarding to EframeWinitApplication      (APK-18)
@@ -1583,3 +1585,18 @@ Agents use the default until the maintainer decides (execution-plan §7).
   after 45 s (crash and relaunch) and saves `files/config/panic.log` and `files/logs` via `run-as`. Checked
   here: YAML parse, `bash -n`, `actionlint` 1.7.12 with `shellcheck` (clean); no run yet. The two Device checklist lines (run
   green with a screenshot showing the UI; CI APK on an arm64 phone) are added unticked.
+- 2026-10-17 (APK-17): Back and Quit. `crates/android-host/src/input.rs` (pure, tested on x86_64) rewrites
+  `Key::BrowserBack` into `Key::Escape` in `HostApp::raw_input_hook`; the `view.back` cascade gains one last arm,
+  `Services::move_to_back` (a `HostAction`), which the host fills with `lightcraft_android_sys::activity::move_task_to_back`
+  (`Activity.moveTaskToBack(true)` posted with `run_on_java_main_thread`, the answer only logged). `Services::quit_disabled`
+  (default false: desktop unchanged) makes `ui_enabled("app.quit")` false, refuses the command and the control
+  `app.quit` with `menus::QUIT_DISABLED`, hides Quit in the menu bar (`host_supports`) and the library problem window,
+  makes `ui.quit` close nothing and `notices::may_close` open no prompt. Found on the way: egui closes the window by
+  itself on Cmd+Q/Ctrl+Q (`Options::quit_shortcuts`, run in `end_pass`), which would have ended the one event loop
+  from a hardware keyboard; the app clears it when `quit_disabled`, and the Android creator clears it before the
+  loading frame. `android-host` gains an `egui` dependency (the crate eframe re-exports) for the pure rewrite. Tests:
+  `back_at_root_moves_to_back`, `back_order_unchanged_on_desktop`, `back_closes_open_context_menu_first`,
+  `quit_refused_when_disabled`, `library_problem_has_no_quit_when_disabled` (ui-egui `tests_back_quit.rs`),
+  `browser_back_becomes_escape` and `back_at_the_root_calls_the_host` (android-host). The device check (Back with
+  gesture navigation walks back to the grid, then to the background; Home and reopen) is in the Device checklist,
+  unticked.

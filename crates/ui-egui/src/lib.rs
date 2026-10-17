@@ -61,6 +61,8 @@ mod tests_album_remove;
 #[cfg(test)]
 mod tests_appearance;
 #[cfg(test)]
+mod tests_back_quit;
+#[cfg(test)]
 mod tests_before_after;
 #[cfg(test)]
 mod tests_browse_active;
@@ -331,6 +333,14 @@ pub struct Services {
     /// The library problem window's Try Again goes through this instead of `app.openLibrary` on the
     /// UI thread. `None` = the command (the desktop).
     pub reopen_library: Option<ReopenLibrary>,
+    /// The last step of Back (`view.back`, Escape), taken when nothing else was left to close or
+    /// leave: Android moves the app to the background, as its Back does at an app's root. `None` =
+    /// Back at the root does nothing (the desktop).
+    pub move_to_back: Option<HostAction>,
+    /// The app can't be quit from inside (Android: the system ends the Activity, and the process's
+    /// one event loop can't start again). Quit is refused and left out of the menus, the library
+    /// problem window has no Quit button, and `ui.quit` closes nothing. `false` = the desktop.
+    pub quit_disabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1144,6 +1154,11 @@ impl LightcraftApp {
         }
         self.sync_theme(ctx);
         panels::notices::logic(self);
+        // egui closes the window on Cmd+Q by itself (`Options::quit_shortcuts`): not where the host
+        // can't quit (Android: a keyboard's Ctrl+Q would end the process's one event loop)
+        if self.services.quit_disabled && ctx.options(|o| !o.quit_shortcuts.is_empty()) {
+            ctx.options_mut(|o| o.quit_shortcuts.clear());
+        }
         // closing the window (or Quit) with changes only in memory: retry, else ask first
         if ctx.input(|i| i.viewport().close_requested()) && !panels::notices::may_close(self) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1492,7 +1507,7 @@ impl LightcraftApp {
         }
         panels::dialogs::prepare(self, ui);
         let t0 = now_ms();
-        if std::mem::take(&mut self.ui.quit) {
+        if std::mem::take(&mut self.ui.quit) && !self.services.quit_disabled {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         self.library_changed(&ctx);

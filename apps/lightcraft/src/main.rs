@@ -460,6 +460,8 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         library_notice: None,
         min_ram_for_sam: None,
         reopen_library: None,
+        move_to_back: None,
+        quit_disabled: false,
     }
 }
 
