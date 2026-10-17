@@ -92,7 +92,27 @@ adapter … (Vulkan, …), driver …`).
   `gpu-lost.marker`, as on the desktop): the next start renders photos on the CPU and says why;
   Settings ▸ Performance ▸ Use the GPU for rendering turns the GPU back on.
 
-Forcing a backend with `adb shell setprop debug.lightcraft.gpu_backend gl` comes with APK-20.
+Forcing a backend: `adb shell setprop debug.lightcraft.gpu_backend gl` (see "Diagnostics switches" below). A forced
+renderer that the last start died in is not tried first again, so the next tap on the icon opens on the other one even
+though the property is still set.
+
+## Diagnostics switches (system properties)
+
+An app gets no environment variables, so the desktop's switches are system properties. Only the shell can set a
+`debug.*` property, so other apps cannot. They are read once, when LightCraft starts (before the first log line); set
+one, then start LightCraft again (`adb shell am force-stop io.github.n0x4e52.lightcraft.debug`). `adb shell setprop
+<name> ""` clears one. A value that means nothing is ignored.
+
+| Property | Values | Same as on the desktop |
+|---|---|---|
+| `debug.lightcraft.profile` | `1`, `true`, `on` or `yes` | `LIGHTCRAFT_PROFILE`: per-stage pipeline timings in logcat |
+| `debug.lightcraft.log` | `debug`, `info` or `warn` | `LIGHTCRAFT_LOG`: the level of LightCraft's own crates |
+| `debug.lightcraft.gpu_backend` | `vulkan`, `gl`, `auto`, `off`, or a list such as `vulkan,gl` | `LIGHTCRAFT_GPU_BACKEND`: the window uses the one renderer named (a list, `auto` and `off` leave the window's Vulkan, then GL order alone); GPU compute uses the backends listed, or none for `off` |
+| `debug.lightcraft.control` | a port, 1 to 65535 | `--control <port>`: read now, the server comes with APK-21 |
+
+The code is `crates/android-sys/src/props.rs` (`settings_from` is pure and tested; `read` asks the system) and the
+start of `run` in `crates/android-host/src/run.rs`; the log line `diagnostics from system properties: …` shows what was
+applied.
 
 ## Device checklist
 
@@ -124,3 +144,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   20k-photo library: no ANR.
 - [ ] Renderer start (APK-19): the CI logcat (`lightcraft-smoke` artifact) shows the adapter line (`window: adapter
   …`) after `window: renderer …`, and no failure dialog.
+- [ ] Diagnostics switches (APK-20): `adb shell setprop debug.lightcraft.gpu_backend gl`, restart: logcat shows
+  `window: renderer gl` and the UI runs on GL; `setprop … vulkan` again: Vulkan. `setprop debug.lightcraft.log debug`:
+  logcat shows debug lines of LightCraft's crates. `setprop debug.lightcraft.profile 1`: per-stage timings appear.
+- [ ] Renderer failure (APK-19, needs APK-20): make the first renderer fail (an emulator image without Vulkan with
+  `debug.lightcraft.gpu_backend vulkan`), the failure dialog shows, dismiss it, tap the icon **once**: the app opens on
+  GL, with the notice that the window could not start with its Vulkan renderer last time.

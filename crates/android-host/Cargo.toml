@@ -16,6 +16,7 @@ denoise = ["lightcraft-engine/denoise"]
 # Compiled on every target, so `cargo test -p lightcraft-android-host` runs the pure parts on x86_64.
 [dependencies]
 lightcraft-android-sys = { workspace = true }
+lightcraft-profile = { workspace = true }
 lightcraft-engine = { workspace = true, features = ["sam"] }
 lightcraft-ui-egui = { workspace = true }
 lightcraft-codecs = { workspace = true }

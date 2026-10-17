@@ -38,11 +38,14 @@ pub const WAIT_LIMIT: Duration = Duration::from_secs(10 * 60);
 /// Activity's lifecycle commands blocks).
 pub const WAIT_TICK: Duration = Duration::from_millis(200);
 
-/// The window's renderers in the order to try them on Android: `forced` first (a system property,
-/// APK-20), then Vulkan and GL, the one the last start died in (`failed`) last. Only the backends
+/// The window's renderers in the order to try them on Android: `forced` first (the system property
+/// `debug.lightcraft.gpu_backend`, APK-20, unless the last start died in it), then Vulkan and GL, the one the last start died in (`failed`) last. Only the backends
 /// in `compiled` (`wgpu::Instance::enabled_backend_features()`); eframe's glow renderer is not in
 /// the Android build.
 pub fn order(forced: Option<WindowRenderer>, failed: Option<WindowRenderer>, compiled: Backends) -> Vec<WindowRenderer> {
+    // a forced renderer that was the last start's death goes last like any other: forcing it
+    // must not trap the user in the failure (the property stays set until a developer clears it)
+    let forced = forced.filter(|f| Some(*f) != failed);
     // (no remembered renderer: that is Windows-only on the desktop too)
     backend::window_renderer_order(forced, None, failed, "android", compiled, false)
 }
@@ -232,6 +235,28 @@ mod tests {
         assert_eq!(backends_of(next[0]), Backends::GL);
         assert_eq!(files.take_failed(), None, "the marker is read once");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `debug.lightcraft.gpu_backend` goes first, whichever renderer that is; once a start with it
+    /// died (its marker is left), the other renderer is tried, though the property is still set.
+    #[test]
+    fn forced_backend_from_props_goes_first() {
+        use lightcraft_android_sys::props::{GPU_BACKEND, settings_from};
+        let compiled = Backends::VULKAN | Backends::GL;
+        let forced = |value: &'static str| {
+            settings_from(|name| (name == GPU_BACKEND).then(|| value.to_owned())).gpu_backend.as_deref().and_then(WindowRenderer::parse)
+        };
+        assert_eq!(order(forced("gl"), None, compiled), [GL, VULKAN]);
+        assert_eq!(order(forced("vulkan"), None, compiled), [VULKAN, GL]);
+        // not a renderer name (a list, `auto`, `off`, a typo): the usual order
+        for other in ["vulkan,gl", "auto", "off", "vulcan"] {
+            assert_eq!(order(forced(other), None, compiled), [VULKAN, GL], "{other}");
+        }
+        // a forced renderer the last start died in is not tried first again
+        assert_eq!(order(forced("vulkan"), Some(VULKAN), compiled), [GL, VULKAN]);
+        assert_eq!(order(forced("gl"), Some(VULKAN), compiled), [GL, VULKAN]);
+        // one this build lacks is skipped
+        assert_eq!(order(forced("gl"), None, Backends::VULKAN), [VULKAN]);
     }
 
     /// Never glow (not built for Android), never a backend this build lacks, never empty.

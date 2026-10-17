@@ -15,3 +15,4 @@ workspace = true
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { workspace = true }
 android-activity = { workspace = true }
+android-properties = { workspace = true }

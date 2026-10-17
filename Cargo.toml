@@ -110,6 +110,8 @@ web-time = "1"
 # Pinned to the versions winit 0.30 pulls in, so `AndroidApp` and the JVM singleton are eframe's.
 # Used only under `[target.'cfg(target_os = "android")'.dependencies]`.
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
+# system properties (debug.lightcraft.*); already in the lock through android-activity
+android-properties = "=0.2.2"
 jni = "=0.22.4"
 
 # web (apps/lightcraft-web)

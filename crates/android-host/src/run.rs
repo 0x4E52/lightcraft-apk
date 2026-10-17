@@ -66,9 +66,22 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     use lightcraft_ui_egui::host::{gpu_markers, log_file, prefs};
 
     try_start(&STARTED)?;
+    // the diagnostics switches (`adb shell setprop debug.lightcraft.*`) stand in for the
+    // environment variables an app does not get: they are applied before any record is logged
+    // or any switch is read
+    let diag = lightcraft_android_sys::props::read();
+    lightcraft_profile::set_enabled(diag.profile);
+    let gpu_choice = diag.gpu_backend.as_deref().and_then(lightcraft_engine::gpu::backend::parse_backends);
+    let gpu_choice_in_force = gpu_choice.map(lightcraft_engine::gpu::backend::set_choice);
     // stderr reaches logcat (android-activity forwards it); the file follows once its folder exists
-    let logger = log_file::install_with(&log_file::filter_spec(None, None));
+    let logger = log_file::install_with(&log_file::filter_spec(diag.log.as_deref(), None));
     log::info!("LightCraft {} started", env!("CARGO_PKG_VERSION"));
+    if diag != lightcraft_android_sys::props::DiagSettings::default() {
+        log::info!("diagnostics from system properties: {diag:?}");
+    }
+    if let Some(Err(in_use)) = gpu_choice_in_force {
+        log::warn!("graphics backend choice already fixed ({in_use:?}); debug.lightcraft.gpu_backend ignored");
+    }
     let paths = crate::paths::Paths::from_internal(&crate::paths::internal_dir(app.internal_data_path())?);
     paths.create()?;
     if let Err(in_use) = lightcraft_engine::config::use_dir(paths.config.clone()) {
@@ -115,7 +128,8 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     let files = std::rc::Rc::new(gpu_markers::Files::new(Some(paths.config.clone())));
     let failed = files.take_failed();
     let compiled = eframe::wgpu::Instance::enabled_backend_features();
-    let order = crate::renderer::order(None, failed, compiled);
+    let forced = diag.gpu_backend.as_deref().and_then(lightcraft_engine::gpu::backend::WindowRenderer::parse);
+    let order = crate::renderer::order(forced, failed, compiled);
     let Some(&renderer) = order.first() else { return Err("LightCraft has no graphics renderer to start".to_owned()) };
     log::info!("window: renderer {} (order {:?})", renderer.name(), order.iter().map(|r| r.name()).collect::<Vec<_>>());
     let renderer_notice =
@@ -164,7 +178,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     }
     // the window never came up and its marker stays: the next start tries the next renderer
     let retry_with = (!app_created && files.armed())
-        .then(|| crate::renderer::order(None, Some(renderer), compiled).first().copied())
+        .then(|| crate::renderer::order(forced, Some(renderer), compiled).first().copied())
         .flatten()
         .filter(|next| *next != renderer);
     // returning finishes the Activity and the dialog with it: wait until it was read

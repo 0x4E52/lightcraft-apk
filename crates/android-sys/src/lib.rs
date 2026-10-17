@@ -12,5 +12,6 @@
 pub mod activity;
 pub mod dialog;
 pub mod jni_env;
+pub mod props;
 
 pub use jni_env::{Error, user_message};

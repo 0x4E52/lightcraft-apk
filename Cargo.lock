@@ -3115,6 +3115,7 @@ dependencies = [
  "lightcraft-android-sys",
  "lightcraft-codecs",
  "lightcraft-engine",
+ "lightcraft-profile",
  "lightcraft-raster",
  "lightcraft-ui-egui",
  "log",
@@ -3127,6 +3128,7 @@ name = "lightcraft-android-sys"
 version = "0.8.0"
 dependencies = [
  "android-activity",
+ "android-properties",
  "jni",
 ]
 

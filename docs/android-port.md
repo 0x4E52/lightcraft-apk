@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-19).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-20).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -35,7 +35,8 @@ the maintainer.
 | Back and Quit: Android's Back key becomes Escape (`input::browser_back_to_escape` in the host's `raw_input_hook`), so open menus, popups and text fields take it first and `view.back` runs its cascade unchanged; its new last step, `Services::move_to_back`, posts `Activity.moveTaskToBack(true)` to the Java main thread (`android-sys` `activity.rs`, not awaited). `Services::quit_disabled` (Android) refuses `app.quit` (command, Cmd+Q, control channel), leaves Quit out of the menus and the library problem window, opens no quit prompt and clears egui's own Ctrl+Q (`Options::quit_shortcuts`), so nothing ends the one event loop | ✅ APK-17, headless tests with a fake service; the JNI call has not run here (device check in `docs/android.md`) |
 | Lifecycle: eframe runs through `eframe::create_native` on the host's own event loop inside a wrapper (`lifecycle.rs`) that maps winit's callbacks to the pure `lifecycle_core::on_event`: focus lost → full save; suspended → `trim()` (`Session::trim_caches`, `gpu::trim_pool(0)`) and a quick save only when focus loss didn't save; `memory_warning` → `trim()`; while away, each `about_to_wait` asks the Activity (`android-sys` `activity_state`: `isFinishing`/`isDestroyed`) and a destroyed one ends the loop (`Exit::Destroyed`), so `onDestroy` doesn't hang | ✅ APK-18, pure core and engine trim tested here; the wrapper and the JNI calls have not run (Device checklist: smoke run, kill/rotate/"Don't keep activities") |
 | Renderer failure: the window starts on Vulkan, then GL (`renderer::order` over `window_renderer_order`), its marker (`gpu_markers::Files`) armed before eframe and cleared by the app creator, which also installs the logging error handler and logs the adapter; a renderer that fails (an error eframe only logs, found as "app creator never ran" plus `log_file::last_error`, or a caught panic) gets an `AlertDialog` (`android-sys` `dialog.rs`) that android_main waits on (`renderer::wait_until`, polling the Activity's commands) before `run` returns `Err`, so the next start tries the other renderer; the desktop's GPU crash and GPU-lost sentinels turn GPU compute off with a notice | ✅ APK-19, pure parts tested here; the dialog and the JNI calls have not run (Device checklist: the adapter line in the CI logcat) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-20 … APK-43 below |
+| Diagnostics switches without environment variables: `debug.lightcraft.{profile,log,gpu_backend,control}` system properties (`android-sys` `props::settings_from`, pure; `props::read` on Android) applied first thing in `run` (log filter, `lightcraft_profile::set_enabled`, `backend::set_choice`, the forced window renderer); `.control` is read, its server is APK-21 | ✅ APK-20, pure parts tested here; the property reads have not run on a device (Device checklist) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-21 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -1646,3 +1647,10 @@ Agents use the default until the maintainer decides (execution-plan §7).
   `waits_for_dismissal_then_returns`, `jni_error_ends_wait`, `gpu_notices_reach_the_app_once` (android-host),
   `dialog_status_follows_the_posted_dialog` (android-sys). `docs/android.md` explains the renderer start and its
   failure; the adapter line in the CI logcat is added to the Device checklist, unticked.
+- 2026-10-17: APK-20 done. `android-sys` `props.rs` (`DiagSettings`, pure `settings_from`, Android-only `read` over
+  `android-properties`, now a pinned workspace dependency that was already in the lock); `run` reads the properties
+  before the logger exists and applies log filter, profile switch and backend choice, and passes the named window
+  renderer as `forced` to `renderer::order`. `order` drops a forced renderer that the last start died in, so the
+  property cannot trap the user in a failing renderer (the device check "tap the icon once" needs it). Tests:
+  `props_map_to_settings`, `unknown_values_are_ignored`, `forced_backend_from_props_goes_first`. `docs/android.md`
+  gains "Diagnostics switches"; the device lines are added unticked.
