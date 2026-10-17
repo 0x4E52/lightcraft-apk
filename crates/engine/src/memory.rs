@@ -6,7 +6,7 @@
 //! report more. A binary built with a heap profiler installs [`set_heap_stats`] (e.g.
 //! `lightcraft-cli` with `--features dhat-heap`) to add live/peak heap bytes.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 
 use serde::Serialize;
@@ -71,6 +71,29 @@ static TOTAL_RAM: OnceLock<usize> = OnceLock::new();
 /// refused with `Err(the value in use)`, and the first one stays.
 pub fn set_total_ram(bytes: usize) -> Result<(), usize> {
     set_once_in(&TOTAL_RAM, bytes)
+}
+
+/// Whether the host runs on a handheld device (a phone), set by [`set_handheld`].
+static HANDHELD: AtomicBool = AtomicBool::new(false);
+
+/// Tell the engine the host is a phone, so the messages that name the machine ("more than this
+/// computer has") say "this device". Call it once at start-up (the Android host).
+pub fn set_handheld() {
+    HANDHELD.store(true, Ordering::Relaxed);
+}
+
+/// Whether [`set_handheld`] was called.
+pub fn is_handheld() -> bool {
+    HANDHELD.load(Ordering::Relaxed)
+}
+
+/// How a message names the machine: "this device" on a phone, else "this computer".
+pub fn this_device() -> &'static str {
+    this_device_for(is_handheld())
+}
+
+fn this_device_for(handheld: bool) -> &'static str {
+    if handheld { "this device" } else { "this computer" }
 }
 
 /// [`set_total_ram`] / [`set_default_budget`] on a given cell (tests use a local one, never the
@@ -389,12 +412,26 @@ mod tests {
         assert_eq!(set_once_in(&cell, 8 * GB), Err(4 * GB), "the first value stays");
         let ram = total_ram_in(&cell, || Some(64 * GB));
         assert_eq!(ram, Some(4 * GB), "the injected value wins over the platform probe");
-        let why = crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, ram).unwrap();
+        let why = crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, ram, "this computer").unwrap();
         assert!(why.contains("more than this computer has (4 GB)"), "{why}");
-        assert_eq!(crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, total_ram_in(&OnceLock::new(), || None)), None);
+        let why = crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, ram, this_device_for(true)).unwrap();
+        assert!(why.contains("more than this device has (4 GB)"), "{why}");
+        assert_eq!(
+            crate::export::too_big_for_memory((27713, 18475), 24_000_000, 20 * GB, total_ram_in(&OnceLock::new(), || None), "this computer"),
+            None
+        );
         let pano = lightcraft_merge::PanoOptions::default();
         let fitted = crate::merge::fit_in_memory(&pano, 100e6, ram);
         assert!(fitted.max_megapixels < crate::merge::fit_in_memory(&pano, 100e6, Some(64 * GB)).max_megapixels);
+    }
+
+    /// Messages name the machine as the host is: a computer unless it said it is a phone. (The
+    /// process-wide flag is never set here; the pure choice is.)
+    #[test]
+    fn messages_name_the_device_for_a_phone() {
+        assert_eq!(this_device_for(false), "this computer");
+        assert_eq!(this_device_for(true), "this device");
+        assert_eq!(this_device(), "this computer", "nothing in the test run says it is a phone");
     }
 
     /// "Automatic" is the host's budget when it gave one (Android's phone budget), not a quarter

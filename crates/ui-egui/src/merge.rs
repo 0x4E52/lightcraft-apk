@@ -336,6 +336,12 @@ pub fn poll(app: &mut LightcraftApp, ctx: &egui::Context) {
 fn added_message(what: &str, info: &Value) -> String {
     let size = |k: &str| info[k].as_f64().map(|mp| format!("{mp:.0} MP"));
     match (info["limit"].as_str(), size("megapixels"), size("nativeMegapixels")) {
+        (Some("memory"), Some(mp), Some(full)) if lightcraft_engine::memory::is_handheld() => crate::i18n::tr_format!(
+            "{what} merge added at {mp}: its full size, {full}, needs more memory than this device has",
+            what = what,
+            mp = mp,
+            full = full
+        ),
         (Some("memory"), Some(mp), Some(full)) => crate::i18n::tr_format!(
             "{what} merge added at {mp}: its full size, {full}, needs more memory than this computer has",
             what = what,

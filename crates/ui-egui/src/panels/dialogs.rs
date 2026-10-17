@@ -269,6 +269,8 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         Dialog::RemoveFolder { disk: true, .. } => "Remove Disk from Library",
         Dialog::RemoveFolder { .. } => "Remove Folder from Library",
         Dialog::SynchronizeFolder { .. } => "Synchronize Folder",
+        // (a device without the memory for the model: the dialog says so)
+        Dialog::SamModel { .. } if app.sam_unavailable_reason().is_some() => "Object and Describe Masks",
         // (nothing to download from in this build: the dialog explains the manual install)
         Dialog::SamModel { .. } if sam_by_hand(&app.session.segmenter) => "Install the SAM 3 Model",
         Dialog::SamModel { .. } => "Download the SAM 3 Model?",
@@ -1305,7 +1307,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                 let sam = &app.session.segmenter;
                 let (sam_installed, sam_running, sam_failed) = (sam.installed(), sam.download_status().running, sam.download_status().error.is_some());
                 // no download location in this build: nothing to offer but the manual install
-                let sam_nowhere = sam_by_hand(sam);
+                let sam_nowhere = sam_by_hand(sam) || app.sam_unavailable_reason().is_some();
                 let cancel = match &dlg {
                     Dialog::SamModel { .. } if sam_running || sam_installed || sam_nowhere => "Close",
                     Dialog::SamModel { .. } => "Not Now",
@@ -1340,7 +1342,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     Dialog::RemoveFolder { .. } => "Remove",
                     Dialog::LightroomCatalog { .. } => "Import Lightroom Catalog…",
                     Dialog::SynchronizeFolder { .. } => "Synchronize",
-                    Dialog::SamModel { then: Some(_), .. } if sam_installed => "Continue",
+                    Dialog::SamModel { then: Some(_), .. } if sam_installed && app.sam_unavailable_reason().is_none() => "Continue",
                     Dialog::SamModel { .. } if sam_installed || sam_running || sam_nowhere => "",
                     Dialog::SamModel { error, .. } if error.is_some() || sam_failed => "Try Again",
                     Dialog::SamModel { .. } => "Download",
@@ -1606,6 +1608,17 @@ pub(crate) fn show_model_folder(app: &mut LightcraftApp) -> Result<serde_json::V
 fn sam_model_body(app: &mut LightcraftApp, ui: &mut egui::Ui, error: Option<&str>) {
     use lightcraft_engine::segment::{LICENSE_NAME, LICENSE_URL, MODEL_BYTES};
     let t = Tokens::get(ui.ctx());
+    // not enough memory on this device: no download, no install, only the reason
+    if let Some(reason) = app.sam_unavailable_reason() {
+        ui.label(reason);
+        ui.label(
+            egui::RichText::new(crate::i18n::tr(
+                "Object and Describe masks use a model that holds several GB of memory. Everything else works without it.",
+            ))
+            .color(t.text_dim),
+        );
+        return;
+    }
     let seg = &app.session.segmenter;
     let d = seg.download_status();
     if seg.installed() {
@@ -1715,6 +1728,9 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             Ok(serde_json::Value::Null)
         }
         Dialog::SamModel { then, .. } => {
+            if let Some(reason) = app.sam_unavailable_reason() {
+                return Err(reason.to_string());
+            }
             if app.session.segmenter.installed() {
                 // installed: start what the user was doing
                 if let Some((kind, op)) = then {

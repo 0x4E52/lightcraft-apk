@@ -457,6 +457,9 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         // the desktop's HOME-based defaults
         default_export_dir: None,
         local_roots: Vec::new(),
+        library_notice: None,
+        min_ram_for_sam: None,
+        reopen_library: None,
     }
 }
 

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use crate::loader::Loader;
-use crate::state::{HostState, Start};
+use crate::state::{HostState, Reopen, Start};
 
 /// The slot the eframe app and the lifecycle wrapper share.
 pub type Slot = Rc<RefCell<Option<HostState>>>;
@@ -33,30 +33,51 @@ const LOADING_POLL: Duration = Duration::from_millis(100);
 pub struct HostApp {
     slot: Slot,
     loader: Loader,
-    /// Taken when the session arrives.
-    start: Option<Start>,
+    /// What the next state is built from; refreshed when the library is opened again.
+    start: Start,
+    /// Try Again in the library problem window asks here (off android_main: the library opens on
+    /// the loader's worker behind the loading frame, as at the start).
+    reopen: Reopen,
     last_flush: Instant,
 }
 
 impl HostApp {
-    pub fn new(slot: Slot, loader: Loader, start: Start) -> HostApp {
-        HostApp { slot, loader, start: Some(start), last_flush: Instant::now() }
+    pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen) -> HostApp {
+        HostApp { slot, loader, start, reopen, last_flush: Instant::now() }
+    }
+
+    /// A reopen request: the state over the library problem ends (its session is empty and in
+    /// memory) and the library opens on a worker again; the loading frame shows meanwhile.
+    fn reopen_if_asked(&mut self, slot: &mut Option<HostState>, ctx: &egui::Context) -> bool {
+        let Some(path) = self.reopen.take() else { return false };
+        let library = std::path::PathBuf::from(path);
+        self.start.reopening(slot.take(), library.clone());
+        self.loader = crate::loader::open_library(library);
+        ctx.request_repaint();
+        true
     }
 }
 
 impl eframe::App for HostApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let Ok(mut slot) = self.slot.try_borrow_mut() else {
+        // (the slot's own handle: the borrow must not hold `self`, which the reopen changes)
+        let shared = self.slot.clone();
+        let Ok(mut slot) = shared.try_borrow_mut() else {
             log::warn!("frame skipped: the app state is in use");
             return;
         };
+        if self.reopen_if_asked(&mut slot, ctx) {
+            return;
+        }
         if slot.is_none() {
             let Some(opened) = self.loader.poll() else {
                 ctx.request_repaint_after(LOADING_POLL);
                 return;
             };
             // the app's first `logic` runs in this frame: its fonts and theme go in at once
-            *slot = Some(HostState::new(opened, self.start.take().unwrap_or_default()));
+            let start = self.start.clone();
+            self.start.prefs_warning = None;
+            *slot = Some(HostState::new(opened, start));
             self.last_flush = Instant::now();
         }
         let Some(state) = slot.as_mut() else { return };
@@ -90,6 +111,9 @@ impl eframe::App for HostApp {
             Some(state) if state.app.fonts_ready() => {
                 state.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
                 state.app.ui(ui);
+                if self.reopen.is_pending() {
+                    ui.ctx().request_repaint();
+                }
             }
             // the loading label until the app's fonts and theme are in (a frame or two after the
             // session arrives), never a blank screen

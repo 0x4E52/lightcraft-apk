@@ -54,7 +54,7 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 /// window exists: the entry crate logs it (logcat) and exits.
 #[cfg(target_os = "android")]
 pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
-    use lightcraft_ui_egui::host::{log_file, prefs, session_open};
+    use lightcraft_ui_egui::host::{log_file, prefs};
 
     try_start(&STARTED)?;
     // stderr reaches logcat (android-activity forwards it); the file follows once its folder exists
@@ -82,6 +82,8 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     if let Err(in_use) = lightcraft_engine::memory::set_default_budget(crate::memory::budget_for(&meminfo)) {
         log::warn!("automatic memory budget already set to {} MiB", in_use >> 20);
     }
+    // messages that name the machine say "this device"
+    lightcraft_engine::memory::set_handheld();
     let budget = lightcraft_engine::memory::set_budget(lightcraft_engine::memory::default_budget());
     let total = crate::memory::mem_total(&meminfo).and_then(|b| usize::try_from(b).ok());
     if let Some(total) = total
@@ -96,6 +98,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         lightcraft_ui_egui::i18n::set_language(ui.language);
     }
     lightcraft_engine::gpu::set_enabled(saved_ui.as_ref().is_none_or(|u| u.settings.gpu));
+    let reopen = crate::state::Reopen::default();
     let start = crate::state::Start {
         prefs: saved_ui,
         prefs_warning,
@@ -103,18 +106,14 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         prefs_path: prefs::prefs_path(Some(&paths.config)),
         log_file: log_path,
         library: paths.library.clone(),
+        reopen: Some(reopen.clone()),
     };
-    let library = paths.library.clone();
-    let loader = crate::loader::Loader::start(move || {
-        // a new library starts with the procedural demo photos
-        let (session, problem) = session_open::open_session(false, Some(library), true);
-        (session.with_default_sam3_model(), problem)
-    });
+    let loader = crate::loader::open_library(paths.library.clone());
 
     let slot: crate::app::Slot = std::rc::Rc::new(std::cell::RefCell::new(None));
     let options = eframe::NativeOptions { android_app: Some(app.clone()), renderer: eframe::Renderer::Wgpu, ..Default::default() };
     let app_slot = slot.clone();
-    eframe::run_native("LightCraft", options, Box::new(move |_cc| Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start)))))
+    eframe::run_native("LightCraft", options, Box::new(move |_cc| Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen)))))
         .map(|()| Exit::Closed)
         .map_err(|e| format!("LightCraft could not open its window: {e}"))
 }

@@ -139,6 +139,8 @@ mod tests_open_lightroom;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
+mod tests_phone_limits;
+#[cfg(test)]
 mod tests_preset_import;
 #[cfg(test)]
 mod tests_preview_limit;
@@ -227,6 +229,10 @@ pub type CheckEditorFn = Box<dyn Fn(&str) -> Result<(), String>>;
 /// Something the host does with the session (web: back up or restore the library in browser
 /// storage); the work may finish asynchronously.
 pub type HostAction = Box<dyn FnMut(&mut Session) -> Result<Value, String>>;
+/// Reopen the library at a folder off the UI thread (Android, where the UI thread is the process's
+/// main thread and a large library's replay would block it): `Ok` once the host has started
+/// opening it and will replace the session when it is open, `Err` with why it could not start.
+pub type ReopenLibrary = Box<dyn FnMut(&str) -> Result<(), String>>;
 
 /// The system's dark/light appearance where egui doesn't report one (Linux desktops whose
 /// windowing layer says nothing, e.g. many Wayland compositors). The host answers from what it
@@ -311,6 +317,20 @@ pub struct Services {
     /// Folders for the Library sidebar's Local section, as `(label, path)`. Empty = Pictures, Desktop,
     /// Downloads and Home under `HOME` (those that exist). Not empty = exactly these (those that exist).
     pub local_roots: Vec<(String, std::path::PathBuf)>,
+    /// Told to the user once, the first time the app runs with a library open (in the notices
+    /// panel; `UiState::library_notice_shown` remembers it). Android: where the library lives and
+    /// that uninstalling deletes it. `None` = nothing to say (the desktop).
+    pub library_notice: Option<String>,
+    /// The device memory (bytes) below which Object and Describe masks (SAM 3, which holds several
+    /// GB) are disabled with the reason. `None` = no limit (the desktop). The memory is
+    /// [`lightcraft_engine::memory::total_ram`], which the Android host injects; a device whose
+    /// memory is unknown counts as below the limit. The reason shown ("Needs a device with 8 GB of
+    /// memory", `masking::sam_ram_reason`) names the 8 GB class: a host asking for another size
+    /// changes that text with it.
+    pub min_ram_for_sam: Option<u64>,
+    /// The library problem window's Try Again goes through this instead of `app.openLibrary` on the
+    /// UI thread. `None` = the command (the desktop).
+    pub reopen_library: Option<ReopenLibrary>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -375,6 +395,9 @@ pub struct LightcraftApp {
     pub headless_host: bool,
     /// Warnings to show one at a time (damaged settings files…, issue #103).
     pub notices: Vec<String>,
+    /// The host's first-start information ([`Services::library_notice`]), shown in its own window
+    /// after the warnings: it is not a problem, so it never goes in `notices`.
+    pub library_notice: Option<String>,
     /// Quitting was stopped to ask first: changes couldn't be saved, or tasks are running.
     pub quit_prompt: Option<QuitPrompt>,
     /// Quit Anyway was chosen: the window may close with unsaved changes.
@@ -510,6 +533,7 @@ impl LightcraftApp {
             text_focus: false,
             headless_host: false,
             notices: vec![],
+            library_notice: None,
             quit_prompt: None,
             quit_confirmed: false,
             control_rx: None,
@@ -611,6 +635,9 @@ impl LightcraftApp {
     /// [`LightcraftApp::run`], keeping what kind of error a refusal is: for code that decides on it
     /// (offer a model's download, treat a cancel as one) instead of reading the message.
     pub fn run_typed(&mut self, id: &str, params: Value) -> Result<Value, CommandError> {
+        if let Some(reason) = self.sam_command_refusal(id, &params) {
+            return Err(CommandError::from(reason.to_string()));
+        }
         if let Some(result) = model_setup::intercept(self, id, &params) {
             return result.map_err(CommandError::from);
         }
@@ -884,6 +911,25 @@ impl LightcraftApp {
         } else {
             self.toast_error(ctx, e.message);
         }
+    }
+
+    /// Why Object and Describe masks are off on this device (too little memory for SAM 3), if they
+    /// are: the host's [`Services::min_ram_for_sam`] against the device's memory.
+    pub fn sam_unavailable_reason(&self) -> Option<&'static str> {
+        panels::masking::sam_ram_reason(self.services.min_ram_for_sam, lightcraft_engine::memory::total_ram().map(|b| b as u64))
+    }
+
+    /// Whether `id` with `params` is one of the Object / Describe commands (mask creation of those
+    /// kinds, even with a precomputed `seg`, their clicks and refinement, the model download) on a
+    /// device without the memory for SAM 3: the reason, so every way of dispatching by id (control
+    /// channel, MCP, menus) is refused like the tiles. Deliberately broad: one rule, no exceptions.
+    pub fn sam_command_refusal(&self, id: &str, params: &Value) -> Option<&'static str> {
+        let ai = match id {
+            "mask.add" | "mask.addComponent" => matches!(params.get("kind").and_then(Value::as_str), Some("object" | "prompt")),
+            "mask.objectPoint" | "mask.refineDetail" | "segment.prepare" | "segment.model.download" => true,
+            _ => false,
+        };
+        if ai { self.sam_unavailable_reason() } else { None }
     }
 
     /// Open the dialog offering the SAM 3 download (never downloads by itself).

@@ -23,6 +23,15 @@ const _: fn() = || {
     is_send::<Opened>();
 };
 
+/// Start opening the library at `library` (a new one starts with the procedural demo photos) on a
+/// worker, with the folders and the SAM model of the desktop's `open_session`.
+pub fn open_library(library: std::path::PathBuf) -> Loader {
+    Loader::start(move || {
+        let (session, problem) = lightcraft_ui_egui::host::session_open::open_session(false, Some(library), true);
+        (session.with_default_sam3_model(), problem)
+    })
+}
+
 /// The worker opening the session, until it answered once.
 pub struct Loader {
     state: State,

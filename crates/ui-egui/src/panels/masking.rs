@@ -116,11 +116,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         let (cols, tile, size) = tile_layout(ui.available_width(), widest);
         egui::Grid::new("mask-tiles").spacing(vec2(TILE_GAP, TILE_GAP)).show(ui, |ui| {
             for (i, (kind, label, icon)) in tiles.iter().enumerate() {
-                let (r, resp) = ui.allocate_exact_size(vec2(tile, 52.0), Sense::click());
+                // Object and Describe need SAM 3: off, with the reason, on a device without the memory
+                let off = matches!(*kind, "object" | "prompt").then(|| app.sam_unavailable_reason()).flatten();
+                let (r, resp) = ui.allocate_exact_size(vec2(tile, 52.0), if off.is_some() { Sense::hover() } else { Sense::click() });
                 crate::widgets::announce(&resp, crate::i18n::tr(label));
                 register(ui.ctx(), format!("maskNew:{kind}"), r);
-                ui.painter().rect_filled(r, 4.0, if resp.hovered() { t.hover } else { t.inset });
-                paint(ui.painter(), Rect::from_center_size(r.center() - vec2(0.0, 7.0), vec2(20.0, 20.0)), *icon, t.text_label);
+                ui.painter().rect_filled(r, 4.0, if resp.hovered() && off.is_none() { t.hover } else { t.inset });
+                let icon_color = if off.is_some() { t.text_dim.gamma_multiply(0.5) } else { t.text_label };
+                paint(ui.painter(), Rect::from_center_size(r.center() - vec2(0.0, 7.0), vec2(20.0, 20.0)), *icon, icon_color);
                 // (cut short only in a panel too narrow for the label: the full name on hover)
                 let label = crate::i18n::tr(label);
                 let g = one_line(ui.painter(), label, t.font(size), t.text_dim, tile - 2.0 * TILE_PAD);
@@ -128,8 +131,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                 let at = pos2(r.center().x, r.bottom() - 9.0) - g.size() / 2.0;
                 register(ui.ctx(), format!("maskNewLabel:{kind}"), Rect::from_min_size(at, g.size()));
                 ui.painter().galley(at, g, t.text_dim);
-                let resp = if elided { resp.on_hover_text(label) } else { resp };
-                if resp.clicked() {
+                let resp = match off {
+                    Some(reason) => resp.on_hover_text(reason),
+                    None if elided => resp.on_hover_text(label),
+                    None => resp,
+                };
+                if resp.clicked() && off.is_none() {
                     match *kind {
                         "colorRange" => {
                             // an empty colour range; clicking the photo samples it
@@ -701,9 +708,25 @@ fn component_row_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: u32, k: 
     }
 }
 
+/// Why Object and Describe masks are off for a device with `total` bytes of memory when the host
+/// asks for at least `min` (`Services::min_ram_for_sam`): SAM 3's model holds several GB, and a
+/// phone's low-memory killer ends the process without a word. `None` = on: no limit asked for.
+/// A device that can't tell its memory is off when a limit is asked for.
+pub fn sam_ram_reason(min: Option<u64>, total: Option<u64>) -> Option<&'static str> {
+    let min = min?;
+    if total.is_some_and(|total| total >= min) {
+        return None;
+    }
+    Some(crate::i18n::tr("Needs a device with 8 GB of memory"))
+}
+
 /// Whether the SAM 3 model is missing in a build that could use it: then the download is
-/// offered (with `then` to start afterwards) instead of starting an AI mask.
+/// offered (with `then` to start afterwards) instead of starting an AI mask. A device without the
+/// memory for it starts nothing (the tiles are disabled; this guards the other ways in).
 fn needs_model(app: &mut LightcraftApp, kind: &str, op: &str) -> bool {
+    if app.sam_unavailable_reason().is_some() {
+        return true;
+    }
     let seg = &app.session.segmenter;
     let missing = lightcraft_engine::segment::Segmenter::AVAILABLE && seg.remote_endpoint().is_none() && seg.dir.is_some() && !seg.installed();
     if missing {
@@ -813,12 +836,15 @@ fn describe_field(app: &mut LightcraftApp, ui: &mut egui::Ui, new_mask: bool) {
 }
 
 fn component_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, op: &str) {
-    let b = ui.button(crate::i18n::tr("Object"));
+    let off = app.sam_unavailable_reason();
+    let b = ui.add_enabled(off.is_none(), egui::Button::new(crate::i18n::tr("Object")));
+    let b = off.map_or(b.clone(), |reason| b.on_disabled_hover_text(reason));
     register(ui.ctx(), format!("maskComp:{op}:object"), b.rect);
     if b.clicked() {
         start_object(app, ui.ctx(), op);
     }
-    let b = ui.button(crate::i18n::tr("Describe…"));
+    let b = ui.add_enabled(off.is_none(), egui::Button::new(crate::i18n::tr("Describe…")));
+    let b = off.map_or(b.clone(), |reason| b.on_disabled_hover_text(reason));
     register(ui.ctx(), format!("maskComp:{op}:prompt"), b.rect);
     if b.clicked() {
         start_describe(app, op);

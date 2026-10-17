@@ -639,6 +639,8 @@ pub struct UiState {
     /// a later save succeeds).
     #[serde(skip)]
     pub unsaved_seen: bool,
+    /// The host's first-start notice (`Services::library_notice`) was shown; it is told once.
+    pub library_notice_shown: bool,
     pub view: ViewMode,
     pub left_panel: bool,
     pub right: RightPanel,
@@ -1268,6 +1270,7 @@ impl Default for UiState {
             language: crate::i18n::default_language(),
             preview_build_seen: None,
             unsaved_seen: false,
+            library_notice_shown: false,
             luminance_map_restore: None,
             view: ViewMode::Detail,
             left_panel: false,

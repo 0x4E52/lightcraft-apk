@@ -2206,7 +2206,7 @@ pub fn menu_entries(app: &LightcraftApp) -> Vec<MenuEntry> {
                 label: c.label.into(),
                 menu: c.menu.iter().map(|s| s.to_string()).collect(),
                 shortcut: crate::shortcuts::shortcut_of(&app.ui.settings.keymap, c.id).map(str::to_string),
-                enabled: c.enabled,
+                enabled: c.enabled && app.sam_command_refusal(c.id, &Value::Null).is_none(),
             });
         }
     }

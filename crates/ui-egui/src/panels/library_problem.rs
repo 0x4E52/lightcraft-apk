@@ -48,6 +48,16 @@ enum Choice {
 /// Open `path` (`None`: ask for a folder) through `app.openLibrary`; on success the problem is
 /// over (and command-line files are imported), else it shows the new error.
 fn open(app: &mut LightcraftApp, path: Option<String>) {
+    // a host that opens libraries off the UI thread (Android) does it behind its loading frame
+    if let (Some(p), Some(reopen)) = (&path, app.services.reopen_library.as_mut()) {
+        if let Err(e) = reopen(p)
+            && let Some(problem) = app.library_problem.as_mut()
+        {
+            problem.error = e;
+            problem.dismissed = false;
+        }
+        return;
+    }
     let params = match &path {
         Some(p) => json!({"path": p}),
         None => json!({}),
@@ -186,5 +196,67 @@ pub fn banner(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         });
     if reopen && let Some(p) = app.library_problem.as_mut() {
         p.dismissed = false;
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::Services;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn problem_app(services: Services) -> LightcraftApp {
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::new(), services);
+        app.library_problem = Some(LibraryProblem::new("/data/user/0/x/files/library", "replay failed"));
+        app
+    }
+
+    /// Try Again goes through the host's reopen hook (a phone opens the library behind its loading
+    /// frame, not on the UI thread): the hook gets the library's path, `app.openLibrary` is not
+    /// run, and the window stays until the host's new session replaces this one. A hook that
+    /// can't start shows why.
+    #[test]
+    fn try_again_uses_reopen_hook() {
+        let dir = std::env::temp_dir().join(format!("lc-problem-hook-{}", std::process::id()));
+        let path = dir.join("library").to_string_lossy().into_owned();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let log = calls.clone();
+        let mut app = problem_app(Services {
+            reopen_library: Some(Box::new(move |path| {
+                log.borrow_mut().push(path.to_string());
+                Ok(())
+            })),
+            ..Default::default()
+        });
+        open(&mut app, Some(path.clone()));
+        assert_eq!(*calls.borrow(), vec![path.clone()]);
+        let problem = app.library_problem.as_ref().unwrap();
+        assert_eq!(problem.error, "replay failed", "app.openLibrary did not run (it would have changed the error)");
+        assert!(app.session.library.is_none());
+
+        app.services.reopen_library = Some(Box::new(|_| Err("the library is already being opened".into())));
+        open(&mut app, Some(path));
+        assert_eq!(app.library_problem.as_ref().unwrap().error, "the library is already being opened");
+        assert_eq!(calls.borrow().len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Without a hook (the desktop) Try Again runs `app.openLibrary` as before: here a path that
+    /// is a file, so it fails with its own error.
+    #[test]
+    fn try_again_without_hook_opens_the_library() {
+        let dir = std::env::temp_dir().join(format!("lc-problem-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("not-a-folder");
+        std::fs::write(&file, b"x").unwrap();
+        let mut app = problem_app(Services::default());
+        open(&mut app, Some(file.to_string_lossy().into_owned()));
+        let problem = app.library_problem.as_ref().unwrap();
+        assert_ne!(problem.error, "replay failed", "app.openLibrary ran");
+        assert_eq!(problem.path, file.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-11).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-11b).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -26,7 +26,8 @@ the maintainer.
 | `safe_file` temp names keep the target's extension (`.lightcraft-<pid>-<n>-tmp.<ext>`, `.tmp` without one or with one over 16 bytes), as MediaProvider requires in `Pictures/` (device check: APK-27) | ✅ APK-9 |
 | The three Android crates exist and lint clean for `aarch64-linux-android` (`lightcraft-android` entry symbol with a process exit after `run`, `lightcraft-android-host` start guard and `Exit`, `lightcraft-android-sys` `with_activity` and Java error mapping); `cargo xtask android check` derives its set from `lightcraft-android` | ✅ APK-10 (no `.so` linked or run yet: APK-12, APK-16) |
 | The Android host opens the UI (eframe, wgpu) on the procedural demo library in internal storage (`files/{config,library,logs,inbox}`), the session opened on a worker behind an "Opening library…" frame, with a phone memory budget (MemTotal / 8, 256–768 MiB, also what Settings' "Automatic" means: `engine::memory::set_default_budget`), the device's RAM injected for export/merge fit checks (`engine::memory::set_total_ram`), the log file, the panic log and file/PNG writers | ✅ APK-11, compiled and linted for `aarch64-linux-android` (first run on a device or emulator: APK-16) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-11b … APK-43 below |
+| The first start tells once that uninstalling or Clear data deletes the library (`Services::library_notice`, flag `UiState::library_notice_shown`); Object and Describe masks are off with "Needs a device with 8 GB of memory" below `Services::min_ram_for_sam` (7 GiB MemTotal, which is what an 8 GB phone reads); Try Again in the library problem window reopens the library on the loader's worker behind the "Opening library…" frame (`Services::reopen_library`); export's and merge's memory messages say "this device" on a phone (`memory::set_handheld`) | ✅ APK-11b (the device checks stay in the card, unticked) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-12 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -563,14 +564,14 @@ right after their number, in letter order.
   deletes the library; back it up with File ▸ Export…". 2. `min_ram_for_sam`: when `memory::total_ram()` (injected by
   APK-11) is below it, the AI-mask commands' `enabled()` is false with the tooltip "Needs a device with 8 GB of
   memory", and the setup dialog shows the same reason. Default `None` = desktop unchanged. 3. Android: pure
-  `sam_allowed(mem_total) -> bool` (≥ 8 GiB) in memory.rs; `min_ram_for_sam = Some(8 GiB)`. 4. Try Again off
+  `sam_allowed(mem_total) -> bool` in memory.rs and `min_ram_for_sam = Some(SAM_MIN_RAM)`, where `SAM_MIN_RAM` is 7 GiB (an interpretation of decision 10's "8 GB", flagged there for the maintainer): a phone sold with 8 GB reads 7.2 to 7.9 GiB in `MemTotal` (a literal 8 GiB would exclude every 8 GB phone) and a 6 GB phone about 5.5 GiB; the text still says "8 GB". A device that cannot tell its memory counts as below the limit. 4. Try Again off
   android_main: the library problem window's Try Again (`panels/library_problem.rs`) runs `app.openLibrary` on the
   UI thread, which on Android is android_main (Ground rules (2): a large library's replay there blocks the event
   loop, the ANR APK-11 avoided for the first open); give `Services` a reopen hook the Android host fills with a
   `Loader` behind the "Opening library…" frame (desktop unchanged when `None`). 5. Wording on a phone: export's
   `too_big_for_memory` ("more than this computer has") and the merge note ("than this computer has", ui-egui
   merge.rs) say "this device" (new catalog keys in `crates/ui-egui/locales/*-formats.json`), and "Opening library…"
-  gets its `locales/*.json` entries with the next translation update.
+  gets its `locales/*.json` entries with the next translation update (as do the new notice, reason and dialog strings).
 - **Tests:** headless `library_notice_shown_once`, `sam_disabled_below_min_ram` (fake service, injected RAM through
   the pure check, not the global), `try_again_uses_reopen_hook` (a fake hook is called and `app.openLibrary` is
   not); android-host `sam_allowed_for_phone_meminfo`.
@@ -578,8 +579,9 @@ right after their number, in letter order.
   lightcraft-android-host -- sam_allowed && cargo xtask android check && cargo xtask ci`
 - **Depends on:** APK-11  **Needs:** rust-target  **Model:** sonnet — three `Services` fields on existing patterns.
 - **Done when:** tests pass; desktop unchanged.
-- **Maintainer checks on a device:** first start shows the notice once; on a phone with < 8 GB the AI mask command is
-  disabled with the reason.
+- **Maintainer checks on a device:** first start shows the notice once (and again after a kill before OK was pressed);
+  on a phone with < 8 GB the AI mask command is disabled with the reason; Try Again in the library problem window
+  reopens the library behind the "Opening library…" frame without an ANR.
 
 #### APK-12 `cargo xtask android so`: link the library
 - **Goal:** build `liblightcraft_android.so` with the NDK and check its symbols and page alignment.
@@ -1377,7 +1379,7 @@ Agents use the default until the maintainer decides (execution-plan §7).
 | 7 | **System destroy and re-entry.** When the Activity is destroyed while the process lives ("Don't keep activities", a missed configChange, removal from recents), the host detects it (APK-18), leaves the event loop and exits the process, so the next launch is fresh. Option "restart": before exit, `startActivity(Intent.makeRestartActivityTask(launchComponent))` via JNI (no Java class) so one tap reopens when the destroy came from a relaunch. | exit when the destroy is detected; start guard exits as backstop | APK-18 |
 | 8 | **Text input.** After APK-35: NativeActivity's limits, GameActivity (full IME, but C++ via `cc`), or a small Java InputConnection (decision 2). | NativeActivity + dialog fallback | phase 3 follow-ups |
 | 9 | **Library location.** Internal storage (private, `allowBackup="false"`, **deleted on uninstall or "Clear data"** with every edit and Copy-imported original) vs app-specific external or `Pictures/` (survives less, visible to others). | internal, with a first-start notice saying uninstall deletes the library and how to back it up | APK-11b |
-| 10 | **SAM on Android.** The SAM worker model holds several GB (engine/src/segment/worker.rs:9). | ship `sam`; the command is enabled only when MemTotal ≥ 8 GB, otherwise disabled with an explanation | APK-11b |
+| 10 | **SAM on Android.** The SAM worker model holds several GB (engine/src/segment/worker.rs:9). | ship `sam`; the command is enabled only when MemTotal ≥ 8 GB, otherwise disabled with an explanation. *Implemented as 7 GiB MemTotal (the agent's reading of "8 GB": an 8 GB phone reads 7.2 to 7.9 GiB; the text says 8 GB): maintainer to confirm (APK-11b).* | APK-11b |
 | 11 | **craft-fonts in the APK.** CJK faces add tens of MB. | release builds embed them (as desktop) with their licences (APK-38) | APK-40 |
 
 ## Risks
@@ -1481,3 +1483,19 @@ Agents use the default until the maintainer decides (execution-plan §7).
   model-folder opener and the `~/.local/share/icc` hint, none of which applies on a phone. Found and given to
   APK-11b: Try Again in the library problem window opens the library on android_main, and export's and merge's
   memory messages say "this computer".
+- 2026-10-17 (APK-11b): `Services` gains `library_notice` (shown once through the notices panel when a library is
+  open and no problem window is up, in its own "Your Library" window and not among the settings-file problems;
+  `UiState::library_notice_shown` is set when the user presses OK, so a kill before that tells it again, and is saved with `ui.json`; the text goes through `i18n::tr` when shown, so a `locales/*.json` entry for it is used), `min_ram_for_sam`
+  (the Object and Describe tiles and the component menu entries are disabled with a tooltip, `start_object` /
+  `start_describe` start nothing, the SAM dialog shows the reason and confirms nothing, and `run_typed` refuses
+  `mask.add` / `mask.addComponent` of kind object or prompt (even with a precomputed `seg`), `mask.objectPoint`, `mask.refineDetail`,
+  `segment.prepare` and `segment.model.download` with the reason, which the command lists report as disabled; the
+  reason text names 8 GB, so another limit changes it with the limit) and `reopen_library` (Try Again
+  hands the path to the host). The Android host fills them: the notice text, `SAM_MIN_RAM` (7 GiB, the agent's reading of decision 10's "8 GB", left for the maintainer to confirm; a literal
+  8 GiB would exclude 8 GB phones) and a `Reopen` request that `HostApp` answers by closing the
+  problem session and starting a new `Loader` behind the loading frame, with the settings as they are. Engine:
+  `memory::set_handheld()` (called by `run`) makes `memory::this_device()` say "this device"; export's
+  `too_big_for_memory` takes the noun and the merge note has a second catalog key (`locales/*-formats.json`, all 13
+  languages). "Opening library…", the notice text, "Needs a device with 8 GB of memory", the SAM dialog's body and its title
+  "Object and Describe Masks" have no `locales/*.json` entry yet (next translation update). Try Again carries no
+  pending command-line import (the phone has none). The device checks in the card stay unticked.

@@ -1651,7 +1651,7 @@ fn prepare_guarded(
         let gain_map = o.hdr_output() && o.format == ExportFormat::Jpeg;
         let job = session.export_job(id, w, h, o.effective_space(), o.effective_depth())?;
         let weight = render_weight(full_px, long, job.level, w.saturating_mul(h));
-        if let Some(why) = too_big_for_memory((w, h), native_px, weight, crate::memory::total_ram()) {
+        if let Some(why) = too_big_for_memory((w, h), native_px, weight, crate::memory::total_ram(), crate::memory::this_device()) {
             return Err(format!("{label}: {why}"));
         }
         let hdr_job = if gain_map { Some(session.export_job(id, w, h, o.effective_space(), OutputDepth::F32Hdr)?) } else { None };
@@ -1697,19 +1697,21 @@ fn original_folder(source: &lightcraft_catalog::Source) -> Option<String> {
 /// can't be made on a computer with `ram` bytes, given its working memory `weight`: an export
 /// enlarged past the photo's size that needs more memory than the computer has would fail to
 /// allocate, which ends the process rather than the export. Full-size and smaller exports, and
-/// computers whose memory isn't known, are never refused.
-pub(crate) fn too_big_for_memory(out: (usize, usize), native_px: usize, weight: usize, ram: Option<usize>) -> Option<String> {
+/// computers whose memory isn't known, are never refused. `device` names the machine in the
+/// message ([`crate::memory::this_device`]: "this computer" or, on a phone, "this device").
+pub(crate) fn too_big_for_memory(out: (usize, usize), native_px: usize, weight: usize, ram: Option<usize>, device: &str) -> Option<String> {
     let ram = ram?;
     if out.0.saturating_mul(out.1) <= native_px || weight <= ram {
         return None;
     }
     let gb = |b: usize| b as f64 / (1u64 << 30) as f64;
     Some(format!(
-        "exporting at {} × {} needs about {:.0} GB of memory, more than this computer has ({:.0} GB); choose a smaller size",
+        "exporting at {} × {} needs about {:.0} GB of memory, more than {device} has ({:.0} GB); choose a smaller size",
         out.0,
         out.1,
         gb(weight).ceil(),
-        gb(ram)
+        gb(ram),
+        device = device
     ))
 }
 
@@ -2815,12 +2817,12 @@ mod tests {
     #[test]
     fn enlarged_exports_must_fit_the_computers_memory() {
         let gb = 1usize << 30;
-        let why = too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, Some(16 * gb)).unwrap();
+        let why = too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, Some(16 * gb), "this computer").unwrap();
         assert!(why.contains("27713 × 18475") && why.contains("20 GB") && why.contains("16 GB") && why.contains("smaller size"), "{why}");
-        assert_eq!(too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, Some(32 * gb)), None, "fits");
-        assert_eq!(too_big_for_memory((6000, 4000), 24_000_000, 20 * gb, Some(gb)), None, "full size is never refused");
-        assert_eq!(too_big_for_memory((3000, 2000), 24_000_000, 20 * gb, Some(gb)), None, "nor a smaller export");
-        assert_eq!(too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, None), None, "unknown memory");
+        assert_eq!(too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, Some(32 * gb), "this computer"), None, "fits");
+        assert_eq!(too_big_for_memory((6000, 4000), 24_000_000, 20 * gb, Some(gb), "this computer"), None, "full size is never refused");
+        assert_eq!(too_big_for_memory((3000, 2000), 24_000_000, 20 * gb, Some(gb), "this computer"), None, "nor a smaller export");
+        assert_eq!(too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, None, "this computer"), None, "unknown memory");
     }
 
     #[test]

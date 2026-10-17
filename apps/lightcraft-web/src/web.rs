@@ -242,6 +242,9 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         // no folders in the browser: exports download, and Local is not offered
         default_export_dir: None,
         local_roots: Vec::new(),
+        library_notice: None,
+        min_ram_for_sam: None,
+        reopen_library: None,
     }
 }
 

@@ -14,6 +14,18 @@ pub const MIN_BUDGET: usize = 256 << 20;
 /// The largest budget, whatever the device has.
 pub const MAX_BUDGET: usize = 768 << 20;
 
+/// The least `MemTotal` that gets Object and Describe masks (SAM 3's model holds several GB, and
+/// the low-memory killer ends the process without a word). The UI says "8 GB": a phone sold with
+/// 8 GB reads 7.2 to 7.9 GiB here (the kernel and firmware keep the rest), so the line is 7 GiB,
+/// which still keeps out the 6 GB phones (about 5.5 GiB).
+pub const SAM_MIN_RAM: u64 = 7 << 30;
+
+/// Whether a device with this `MemTotal` (bytes; `None` = unreadable) gets SAM-based masks. A
+/// device that can't tell its memory does not.
+pub fn sam_allowed(mem_total: Option<u64>) -> bool {
+    mem_total.is_some_and(|total| total >= SAM_MIN_RAM)
+}
+
 /// `MemTotal` from the text of `/proc/meminfo`, in bytes; `None` when it is missing or garbled.
 pub fn mem_total(meminfo: &str) -> Option<u64> {
     let line = meminfo.lines().find_map(|l| l.strip_prefix("MemTotal:"))?;
@@ -59,6 +71,25 @@ mod tests {
         // hostile numbers neither overflow nor panic
         assert_eq!(mem_total(&format!("MemTotal: {} kB\n", u64::MAX)), None);
         assert_eq!(budget_for(&format!("MemTotal: {} kB\n", u64::MAX / 1024)), 768 * MIB);
+    }
+
+    #[test]
+    fn sam_allowed_for_phone_meminfo() {
+        // 12 GB, 8 GB (reads about 7.5 GiB) and 16 GB phones: allowed
+        for kb in [12u64 << 20, 7_700_000, 16 << 20] {
+            assert!(sam_allowed(mem_total(&meminfo(kb))), "{kb} kB");
+        }
+        // 6 GB (about 5.5 GiB), 4 GB and 2 GB phones: not
+        for kb in [5_800_000u64, 4 << 20, 2 << 20] {
+            assert!(!sam_allowed(mem_total(&meminfo(kb))), "{kb} kB");
+        }
+        // unreadable: not, and the edge is exact
+        assert!(!sam_allowed(mem_total("garbage")));
+        assert!(sam_allowed(Some(SAM_MIN_RAM)) && !sam_allowed(Some(SAM_MIN_RAM - 1)));
+        // the UI's check agrees with the host's for the same memory
+        let reason = |kb: u64| lightcraft_ui_egui::panels::masking::sam_ram_reason(Some(SAM_MIN_RAM), mem_total(&meminfo(kb)));
+        assert!(reason(12 << 20).is_none() && reason(4 << 20).is_some());
+        assert!(lightcraft_ui_egui::panels::masking::sam_ram_reason(Some(SAM_MIN_RAM), None).is_some());
     }
 
     #[test]

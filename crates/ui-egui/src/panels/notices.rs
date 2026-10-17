@@ -13,6 +13,7 @@ use crate::{LightcraftApp, QuitPrompt};
 pub fn logic(app: &mut LightcraftApp) {
     let new = app.session.take_library_warnings();
     app.notices.extend(new);
+    library_notice(app);
     use lightcraft_engine::gpu;
     if app.gpu_notice && app.gpu_applied == Some(true) && gpu::ready() {
         app.gpu_notice = false;
@@ -20,6 +21,28 @@ pub fn logic(app: &mut LightcraftApp) {
             app.notices.extend(gpu_notice(gpu::unavailable_reason().as_deref(), app.ui.settings.gpu));
         }
     }
+}
+
+/// The host's first-start information (`Services::library_notice`), once ever: when a library is open
+/// (not while the problem window is up, which may be about that very library) and the settings
+/// don't yet say it was shown. It is queued here; the flag is set when the user closes the window
+/// ([`library_notice_ok`]), so a process killed before they read it tells it again next start.
+pub fn library_notice(app: &mut LightcraftApp) {
+    if app.ui.library_notice_shown || app.library_notice.is_some() || app.library_problem.is_some() || app.session.library.is_none() {
+        return;
+    }
+    app.library_notice = app.services.library_notice.clone();
+}
+
+/// The user closed the library notice: it was read, so the settings (saved with `ui.json`) remember it.
+pub fn library_notice_ok(app: &mut LightcraftApp) {
+    app.library_notice = None;
+    app.ui.library_notice_shown = true;
+}
+
+/// The notice as shown: the host's text is a built-in label, translated through the catalogs.
+pub fn library_notice_text(text: &str) -> String {
+    crate::i18n::tr(text).to_owned()
 }
 
 /// What to tell the user when GPU rendering is on (`enabled`) but the GPU could not be used for `reason`: only when no
@@ -166,6 +189,12 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         let buttons = [("noticeOk", "OK", Choice::Ok)];
         if window(ctx, "settings-notice", "Settings file problem", &text, &buttons).is_some() {
             app.notices.remove(0);
+        }
+    } else if let Some(text) = app.library_notice.clone() {
+        // information, not a problem: its own title, after any warning has been dealt with
+        let buttons = [("libraryNoticeOk", "OK", Choice::Ok)];
+        if window(ctx, "library-notice", "Your Library", &library_notice_text(&text), &buttons).is_some() {
+            library_notice_ok(app);
         }
     }
 }

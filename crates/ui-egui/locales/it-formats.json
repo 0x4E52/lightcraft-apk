@@ -255,6 +255,7 @@
   "{n} preset{}": "{n} preset{}",
   " — kept but not applied: {}": " — kept but not applied: {}",
   "{what} merge added at {mp}: its full size, {full}, needs more memory than this computer has": "{what} merge added at {mp}: its full size, {full}, needs more memory than this computer has",
+  "{what} merge added at {mp}: its full size, {full}, needs more memory than this device has": "{what} merge added at {mp}: its full size, {full}, needs more memory than this device has",
   "Saved template {name}": "Saved template {name}",
   "LightCraft stopped unexpectedly: {e}": "LightCraft stopped unexpectedly: {e}",
   "Renames {n} face{} across the library. The files are not changed.": "Renames {n} face{} across the library. The files are not changed.",

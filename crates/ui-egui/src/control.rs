@@ -85,6 +85,9 @@ pub fn all_commands(app: &LightcraftApp) -> Value {
             let mut v = serde_json::to_value(&c).unwrap_or_default();
             if let Some(o) = v.as_object_mut() {
                 o.insert("shortcut".into(), json!(crate::shortcuts::shortcut_of(keymap, c.id)));
+                if app.sam_command_refusal(c.id, &Value::Null).is_some() {
+                    o.insert("enabled".into(), json!(false));
+                }
             }
             v
         })
