@@ -197,6 +197,8 @@ mod tests {
         assert_eq!(a("uses-sdk", "minSdkVersion"), "30");
         assert_eq!(a("uses-sdk", "targetSdkVersion"), "36");
         assert_eq!(a("application", "label"), "LightCraft");
+        assert_eq!(a("application", "icon"), "@mipmap/ic_launcher");
+        assert_eq!(a("application", "roundIcon"), "@mipmap/ic_launcher");
         assert_eq!(a("application", "hasCode"), "false");
         assert_eq!(a("application", "allowBackup"), "false");
         assert_eq!(a("application", "extractNativeLibs"), "false");

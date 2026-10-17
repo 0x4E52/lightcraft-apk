@@ -20,6 +20,8 @@
          which targetSdk 36 stops dispatching without this opt-out. -->
     <application
         android:label="${APP_LABEL}"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:hasCode="false"
         android:allowBackup="false"
         android:extractNativeLibs="false"

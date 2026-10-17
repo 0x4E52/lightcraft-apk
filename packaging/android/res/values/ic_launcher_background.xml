@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The field colour of assets/app-icon/lightcraft.svg. -->
+<resources>
+    <color name="ic_launcher_background">#f2a516</color>
+</resources>

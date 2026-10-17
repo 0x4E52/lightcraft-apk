@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-13).* Revision history at the end.
+*Last updated: 2026-10-17 (after APK-14).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -29,7 +29,8 @@ the maintainer.
 | The first start tells once that uninstalling or Clear data deletes the library (`Services::library_notice`, flag `UiState::library_notice_shown`); Object and Describe masks are off with "Needs a device with 8 GB of memory" below `Services::min_ram_for_sam` (7 GiB MemTotal, which is what an 8 GB phone reads); Try Again in the library problem window reopens the library on the loader's worker behind the "Opening library…" frame (`Services::reopen_library`); export's and merge's memory messages say "this device" on a phone (`memory::set_handheld`) | ✅ APK-11b (the device checks stay in the card, unticked) |
 | `cargo xtask android so [--abi arm64-v8a\|x86_64]…` links `liblightcraft_android.so` with the NDK's clang (no `cargo ndk`; the 16 KB page flag below NDK r28), copies it to `target/android/jniLibs/<abi>/` and checks `LOAD` alignment, the `android_main` / `ANativeActivity_onCreate` exports and system-only `NEEDED` libraries | ✅ APK-12, unit-tested on canned `llvm-readelf` output; no NDK here, so the first real link is the APK-16 workflow |
 | `packaging/android/AndroidManifest.xml` (NativeActivity, `hasCode=false`, `allowBackup=false`, `extractNativeLibs=false`, the Back opt-out, full `configChanges`, minSdk 30 / targetSdk 36) filled by `cargo xtask android manifest [--release]` (`.debug` application id suffix for debug); `version_code` from the workspace version (alpha < beta < rc < release) | ✅ APK-13, unit-tested; `aapt2` has not read it yet (APK-15, APK-16 `aapt2 dump badging`) |
-| Host UI, packaging, CI, touch UI, release | ⏳ APK-14 … APK-43 below |
+| Launcher and adaptive icons (`packaging/android/res/`: legacy, foreground and monochrome PNGs for mdpi to xxxhdpi, `mipmap-anydpi-v26/ic_launcher.xml`, background colour `#f2a516`) generated from `assets/app-icon/lightcraft.svg` by `packaging/android/icons.sh`; the manifest names them (`android:icon`, `android:roundIcon`) | ✅ APK-14, attributed; `aapt2` has not linked them yet (APK-15, APK-16 `application-icon-` check); the foreground's chest runs off the 72 dp viewport so no mask shows a cut, but the ear tuft tips reach 43.5 dp from the centre (measured), beyond the 33 dp safe circle; how it looks under real launcher masks and as a themed icon is a device check (APK-14 card) |
+| Host UI, packaging, CI, touch UI, release | ⏳ APK-15 … APK-43 below |
 
 ## Ground rules for the port
 
@@ -646,11 +647,11 @@ right after their number, in letter order.
   android:roundIcon="@mipmap/ic_launcher">`), `xtask/src/android/manifest.rs` (`manifest_has_required_keys` asserts
   both).
 - **Steps:** install `cargo install resvg --locked`. The SVG is a 512 tile clipped to `rx=112` with a full-bleed
-  `#f2a516` field and one paper `<path>`. Background = colour resource `#f2a516`. Foreground = the SVG with the
-  `clip-path` group attribute and the background `<rect>` removed and the viewBox widened by `sed` to `-128 -128 768
-  768` (the paper fits the 72/108 safe zone), each `sed` followed by a `grep -q` guard as in `packaging/icons.sh:22-23`.
-  Monochrome = the same path filled `#000000`. Legacy `ic_launcher.png` = the original tile. Sizes 48/72/96/144/192
-  px (foreground layers 108/162/216/324/432 px). ATTRIBUTION row for `packaging/android/res/` ("derived from
+  `#f2a516` field, a paper and an ink `<path>`. Background = colour resource `#f2a516`. Foreground = the SVG with
+  the `clip-path` group attribute and the background `<rect>` removed and the viewBox widened by `sed` to `-128 -128
+  768 768`, each `sed` followed by a `grep -q` guard as in `packaging/icons.sh:22-23`. Monochrome = the paper path
+  filled `#000000` (a silhouette: themed icons use only alpha). Legacy `ic_launcher.png` = the original tile.
+  Sizes 48/72/96/144/192 px (foreground layers 108/162/216/324/432 px). ATTRIBUTION row for `packaging/android/res/` ("derived from
   assets/app-icon/lightcraft.svg", MIT OR Apache-2.0, original work). Nothing from `docs/brand/`, no
   `ai.storyteller.lightcraft` id. A 512 px store icon goes in APK-42.
   Add `android:icon` / `android:roundIcon` to the manifest.
@@ -660,6 +661,8 @@ right after their number, in letter order.
   xxxhdpi foreground PNG to look at it.
 - **Depends on:** APK-13  **Needs:** none  **Model:** sonnet — asset generation with a spelled-out recipe.
 - **Done when:** icons committed with attribution.
+- **Maintainer checks on a device:** the launcher icon under circle and squircle masks (ear tufts and shoulder not
+  cut) and as a themed (monochrome) icon; APK-15 puts the line in `docs/android.md` → Device checklist, unticked.
 
 #### APK-15 `cargo xtask android apk`: package a debug APK
 - **Goal:** one command turns the `.so`, manifest and resources into an installable, 16 KB-aligned debug APK.
@@ -680,7 +683,7 @@ right after their number, in letter order.
   -keysize 2048 -validity 10000`, never inside the repo; apksigner gets `--ks-pass pass:android` (debug only).
   4. `zipalign -P 16 -f 4` → `apksigner sign` → `zipalign -c -P 16 -v 4`. Pure argument builders for each tool.
   5. `docs/android.md`: install, `adb shell run-as <id> cat files/config/panic.log`, logs, and the Device checklist
-  heading.
+  heading, with APK-14's unticked launcher-icon line (masks and themed icon).
 - **Tests:** `aapt2_link_args_debug_mode` (includes linking `res/`), `zipalign_args_use_16k_pages`,
   `debug_keystore_created_when_missing_args`, `so_entry_is_stored_uncompressed` and `so_entry_data_is_16k_aligned`
   (build a zip from a fake aapt2 output in a temp dir, read it back), `copied_entries_unchanged`.
@@ -1523,3 +1526,21 @@ Agents use the default until the maintainer decides (execution-plan §7).
   leading zero is an error, and a code over Google Play's 2_100_000_000 is an error. The label is escaped as an XML
   attribute. Tests parse the filled template with a small attribute scanner (xtask has no XML dependency). Not yet
   checked by `aapt2` (APK-15/APK-16).
+- 2026-10-17 (APK-14): `packaging/android/icons.sh` renders the launcher icons with resvg from
+  `assets/app-icon/lightcraft.svg` (two paths: the paper `#efe9dc` and the ink `#0b0b0c`): the legacy
+  `ic_launcher.png` is the original tile (48 to 192 px), the foreground is the SVG without its clip-path group and
+  background rect (108 to 432 px layers), the monochrome layer is the same drawing with the paper filled black, a
+  solid silhouette since themed icons use only alpha; each `sed` is followed by a `grep` guard, including one for the
+  ink path. The card's viewBox `-128 -128 768 768` is kept: the artwork's right and bottom edges are straight cuts
+  where the original tile clipped the chest and shoulder (tile x/y 505), and at that scale they land at 89 dp, at the
+  edge of the 72 dp viewport, so every mask hides them. An alpha scan of the xxxhdpi layer gives a bbox of x
+  30.75-89.25, y 18.75-89.25 dp. The ear tufts are the farthest points, up to 43.5 dp from the centre, outside the
+  33 dp radius of the 66 dp safe circle, so a circle mask clips the tuft tips (composited and looked at). A wider
+  viewBox (tried: `-272 -272 1056 1056`) pulls the tufts inside the circle but leaves the straight cuts visible
+  about 10 dp inside the icon under every mask, so it was not kept; whether the tuft tips matter is left to the
+  device check. The adaptive XML and the `#f2a516`
+  background colour resource are hand-written. The manifest gains `android:icon` and
+  `android:roundIcon` (`@mipmap/ic_launcher`), asserted by `manifest_has_required_keys`; `assets/ATTRIBUTION.md` has
+  the row for `packaging/android/res/`. The 512 px store icon stays with APK-42. Looked at the xxxhdpi foreground
+  and legacy PNGs; the launcher masks and the themed icon on a device are unchecked (the card's device line, which
+  APK-15 moves to the Device checklist).
