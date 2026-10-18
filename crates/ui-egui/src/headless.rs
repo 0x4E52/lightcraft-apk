@@ -4719,4 +4719,95 @@ mod tests {
         h.request("ui.touch", json!({"events": [touch(1, "end", 0.5, 0.5, 0.0)]}), t);
         assert!(!h.view.ctx.input(|i| i.pointer.primary_down()));
     }
+
+    /// Finger gestures through `ui.touch` (APK-30): each reaches the loupe or the grid as it does by mouse.
+    mod gesture {
+        use super::*;
+
+        fn loupe() -> Headless {
+            let mut h = demo([1400.0, 900.0]);
+            let t = Duration::from_secs(10);
+            h.request("ui.set", json!({"view": "detail", "right": "none", "left": "none"}), t);
+            assert!(h.settle(SETTLE));
+            h
+        }
+
+        fn send(h: &mut Headless, events: Vec<Value>) {
+            let r = h.request("ui.touch", json!({"events": events}), Duration::from_secs(10));
+            assert_eq!(r["ok"], true, "{r}");
+            h.settle(SETTLE);
+        }
+
+        #[test]
+        fn pinch_zooms_loupe() {
+            let mut h = loupe();
+            assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Fit));
+            send(
+                &mut h,
+                vec![
+                    touch(1, "start", 0.45, 0.5, 0.0),
+                    touch(2, "start", 0.55, 0.5, 0.0),
+                    touch(1, "move", 0.35, 0.5, 0.1),
+                    touch(2, "move", 0.65, 0.5, 0.1),
+                    touch(1, "move", 0.25, 0.5, 0.2),
+                    touch(2, "move", 0.75, 0.5, 0.2),
+                    touch(1, "end", 0.25, 0.5, 0.3),
+                    touch(2, "end", 0.75, 0.5, 0.3),
+                ],
+            );
+            assert!(!matches!(h.app.ui.zoom, crate::state::Zoom::Fit), "pinching out leaves Fit: {:?}", h.app.ui.zoom);
+        }
+
+        #[test]
+        fn double_tap_toggles_fit() {
+            let mut h = loupe();
+            let tap = |t0: f64| vec![touch(1, "start", 0.5, 0.5, t0), touch(1, "end", 0.5, 0.5, t0 + 0.05)];
+            let mut ev = tap(0.0);
+            ev.extend(tap(0.15));
+            send(&mut h, ev);
+            assert!(!matches!(h.app.ui.zoom, crate::state::Zoom::Fit), "double tap zooms in: {:?}", h.app.ui.zoom);
+            let mut ev = tap(1.0);
+            ev.extend(tap(1.15));
+            send(&mut h, ev);
+            assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Fit), "and back to Fit: {:?}", h.app.ui.zoom);
+        }
+
+        #[test]
+        fn one_finger_pan_when_zoomed() {
+            let mut h = loupe();
+            h.app.run("view.navigate", json!({"zoom": {"percent": 300.0}, "pan": [0.5, 0.5]})).unwrap();
+            h.settle(SETTLE);
+            let before = h.app.ui.pan;
+            // `ui.touch` fractions are of the image rect, which a zoomed photo has far beyond the canvas
+            let img = h.app.image_rect.expect("a photo is shown");
+            let c = h.app.canvas_rect.expect("a canvas").center();
+            let at = |dx: f32| ((f64::from(c.x + dx - img.left()) / f64::from(img.width())), f64::from(c.y - img.top()) / f64::from(img.height()));
+            let pts: Vec<(f64, f64)> = [60.0, 30.0, 0.0, -30.0, -60.0].into_iter().map(at).collect();
+            let mut ev = vec![touch(1, "start", pts[0].0, pts[0].1, 0.0)];
+            for (i, p) in pts.iter().enumerate().skip(1) {
+                ev.push(touch(1, "move", p.0, p.1, 0.05 * i as f64));
+            }
+            ev.push(touch(1, "end", pts[4].0, pts[4].1, 0.25));
+            send(&mut h, ev);
+            assert_ne!(h.app.ui.pan, before, "a one-finger drag pans a zoomed photo");
+            assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(_)), "and stays zoomed");
+        }
+
+        #[test]
+        fn long_press_opens_grid_menu() {
+            let mut h = demo([1400.0, 900.0]);
+            let t = Duration::from_secs(10);
+            h.request("ui.set", json!({"view": "grid"}), t);
+            assert!(h.settle(SETTLE));
+            let id = h.app.session.visible_cloned()[0];
+            let r = h.app.widgets.iter().find(|(w, _)| *w == format!("thumb:{}", id.0)).map(|(_, r)| *r).expect("grid cell");
+            let (x, y) = (f64::from(r.center().x) / 1400.0, f64::from(r.center().y) / 900.0);
+            let menu_open = |h: &Headless| egui::Popup::is_any_open(&h.view.ctx);
+            assert!(!menu_open(&h));
+            send(&mut h, vec![touch(1, "start", x, y, 0.0), touch(1, "move", x, y, 1.0), touch(1, "move", x, y, 1.2)]);
+            h.step();
+            h.step();
+            assert!(menu_open(&h), "holding a cell opens its context menu");
+        }
+    }
 }

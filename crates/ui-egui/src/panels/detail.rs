@@ -1458,7 +1458,10 @@ fn general_interaction(
     }
     // click toggles Fit ↔ the chosen click-zoom ratio at the clicked point; drag pans when zoomed
     let zoomed = img.width() > canvas.width() + 1.0 || img.height() > canvas.height() + 1.0;
-    if resp.double_clicked() || (resp.clicked() && !zoomed) {
+    // The second click of a double click / double tap is not a toggle of its own: the first one already was, and
+    // toggling twice left a double tap (the touch way to zoom, APK-30) where it started.
+    let toggle = resp.clicked() && !resp.double_clicked();
+    if toggle && !zoomed {
         if let Some(q) = resp.interact_pointer_pos() {
             let u = ((q.x - img.left()) / img.width()).clamp(0.0, 1.0);
             let v = ((q.y - img.top()) / img.height()).clamp(0.0, 1.0);
@@ -1466,7 +1469,7 @@ fn general_interaction(
         }
         app.ui.zoom = if matches!(app.ui.zoom, Zoom::Fit) { Zoom::Percent(app.ui.click_zoom as f32) } else { Zoom::Fit };
         app.ui.zoom_anim = true;
-    } else if resp.clicked() && zoomed {
+    } else if toggle && zoomed {
         app.ui.zoom = Zoom::Fit;
         app.ui.zoom_anim = true;
     }
