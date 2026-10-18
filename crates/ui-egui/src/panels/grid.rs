@@ -173,6 +173,9 @@ fn show_inner(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if app.ui.filter_bar {
         super::filterbar::show(app, ui);
     }
+    if app.ui.select_mode {
+        select_bar(app, ui, &t);
+    }
     app.canvas_rect = Some(ui.max_rect());
     if ids.is_empty() {
         if !chips.is_empty() {
@@ -242,7 +245,9 @@ fn show_inner(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let scroll_rect = ui.available_rect_before_wrap();
     crate::widgets::register(ui.ctx(), "grid:scroll", scroll_rect);
     let wheel = wheel_step(ui, egui::Id::new("grid-wheel"), scroll_rect, scroll_rect.height(), false);
-    egui::ScrollArea::vertical().id_salt("grid-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+    // under touch the finger scrolls from the first touch (egui's own OnTouch waits to see one first)
+    let source = if app.ui.touch_mode { egui::scroll_area::ScrollSource::ALL } else { egui::scroll_area::ScrollSource::default() };
+    egui::ScrollArea::vertical().id_salt("grid-scroll").scroll_source(source).auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
         if wheel != egui::Vec2::ZERO {
             ui.scroll_with_delta_animation(wheel, egui::style::ScrollAnimation::none());
         }
@@ -605,7 +610,9 @@ pub const BACKGROUND_THUMB_PRIORITY: u32 = 3;
 fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool, onscreen: bool, ppp: f32) {
     let t = Tokens::get(ui.ctx());
     let Some(photo) = app.session.catalog.photo(id).cloned() else { return };
-    let resp = ui.interact(r, egui::Id::new(("cell", id.0)), Sense::click_and_drag());
+    // Under touch a cell only senses clicks: a swipe over it scrolls the grid instead of starting a photo drag
+    let touch = app.ui.touch_mode;
+    let resp = ui.interact(r, egui::Id::new(("cell", id.0)), if touch { Sense::click() } else { Sense::click_and_drag() });
     register(ui.ctx(), format!("thumb:{}", id.0), r);
     let state = app.session.selection.state_of(id);
     let selected = state != lightcraft_engine::SelectionState::NotSelected;
@@ -768,9 +775,17 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
         }
         return;
     }
-    if resp.clicked() {
+    if touch && resp.long_touched() && !app.ui.select_mode {
+        // a long press starts select mode with this photo selected; a tap then toggles photos
+        app.ui.select_mode = true;
+        if !app.session.selection.contains(id) {
+            let _ = app.run("library.select", json!({"ids": [id.0], "mode": "toggle"}));
+        }
+    } else if resp.clicked() {
         let m = ui.input(|i| i.modifiers);
-        let mode = if m.shift {
+        let mode = if app.ui.select_mode {
+            "toggle"
+        } else if m.shift {
             "range"
         } else if m.command {
             "toggle"
@@ -779,7 +794,7 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
         };
         let _ = app.run("library.select", json!({"ids": [id.0], "mode": mode}));
     }
-    if resp.double_clicked() {
+    if resp.double_clicked() && !app.ui.select_mode {
         let _ = app.run("library.select", json!({"ids": [id.0]}));
         let _ = app.run("view.detail", json!({}));
     }
@@ -790,7 +805,33 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
         }
         app.ui.dragging_photos = Some(app.session.selection.ids.iter().map(|p| p.0).collect());
     }
-    resp.context_menu(|ui| context_menu(app, ui, id));
+    if !touch {
+        resp.context_menu(|ui| context_menu(app, ui, id));
+    }
+}
+
+/// The bar shown in select mode (touch): how many photos are selected, and Done / Cancel.
+fn select_bar(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
+    let n = app.session.selection.ids.len();
+    egui::Frame::NONE.fill(t.canvas).inner_margin(egui::Margin::symmetric(16, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("{n} {}", crate::i18n::tr("selected"))).color(t.text));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let done = ui.button(crate::i18n::tr("Done"));
+                register(ui.ctx(), "button:selectDone", done.rect);
+                let cancel = ui.button(crate::i18n::tr("Cancel"));
+                register(ui.ctx(), "button:selectCancel", cancel.rect);
+                if done.clicked() {
+                    app.ui.select_mode = false;
+                }
+                if cancel.clicked() {
+                    app.ui.select_mode = false;
+                    let _ = app.run("library.select", json!({"ids": []}));
+                }
+            });
+        });
+    });
 }
 
 /// The header of a Local folder view: the path as a breadcrumb (each part opens that folder),

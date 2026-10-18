@@ -247,6 +247,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         reopen_library: None,
         move_to_back: None,
         quit_disabled: false,
+        touch: false,
     }
 }
 

@@ -43,6 +43,7 @@ pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_b
             .cloned()
             .map(|f| Box::new(move |_: &mut lightcraft_engine::Session| f().map(|()| Default::default())) as lightcraft_ui_egui::HostAction),
         quit_disabled: true,
+        touch: true,
         ..Services::default()
     }
 }

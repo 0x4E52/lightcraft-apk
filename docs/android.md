@@ -245,3 +245,4 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] CI `ui.inspect` over the forwarded port answers (APK-21): the `android.yml` `emulator` job's `control-check.sh`
   step passes; `smoke/control.txt` in the `lightcraft-smoke` artifact shows `with token: ui.inspect {… "ok": true …}`
   and `without token: … bad token`.
+- [ ] APK-30b: scroll a 1000-photo grid by finger; long press a photo, tap three more, then share them.

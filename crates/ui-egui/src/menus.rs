@@ -615,6 +615,8 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "view.back" => {
             if app.ui.dialog.is_some() {
                 app.ui.dialog = None;
+            } else if app.ui.select_mode {
+                app.ui.select_mode = false;
             } else if app.ui.lights_out != crate::state::LightsOut::On {
                 app.ui.lights_out = crate::state::LightsOut::On;
             } else if app.ui.keyword_painter.is_some() {

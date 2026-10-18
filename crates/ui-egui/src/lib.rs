@@ -341,6 +341,9 @@ pub struct Services {
     /// one event loop can't start again). Quit is refused and left out of the menus, the library
     /// problem window has no Quit button, and `ui.quit` closes nothing. `false` = the desktop.
     pub quit_disabled: bool,
+    /// The host is touch-first (Android): touch mode is on from the first frame. `false` = the
+    /// desktop, where it turns on with the first `egui::Event::Touch`.
+    pub touch: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1461,6 +1464,9 @@ impl LightcraftApp {
             raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
         }
         self.release_touch(raw);
+        if self.services.touch || raw.events.iter().any(|e| matches!(e, egui::Event::Touch { .. })) {
+            self.ui.touch_mode = true;
+        }
         if self.synthetic.is_empty() {
             return;
         }

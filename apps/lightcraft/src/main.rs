@@ -461,6 +461,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         reopen_library: None,
         move_to_back: None,
         quit_disabled: false,
+        touch: false,
     }
 }
 

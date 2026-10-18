@@ -4793,21 +4793,104 @@ mod tests {
             assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(_)), "and stays zoomed");
         }
 
-        #[test]
-        fn long_press_opens_grid_menu() {
+        fn grid() -> Headless {
             let mut h = demo([1400.0, 900.0]);
             let t = Duration::from_secs(10);
             h.request("ui.set", json!({"view": "grid"}), t);
             assert!(h.settle(SETTLE));
-            let id = h.app.session.visible_cloned()[0];
+            h
+        }
+
+        fn cell_at(h: &mut Headless, i: usize) -> (f64, f64) {
+            let id = h.app.session.visible_cloned()[i];
             let r = h.app.widgets.iter().find(|(w, _)| *w == format!("thumb:{}", id.0)).map(|(_, r)| *r).expect("grid cell");
-            let (x, y) = (f64::from(r.center().x) / 1400.0, f64::from(r.center().y) / 900.0);
-            let menu_open = |h: &Headless| egui::Popup::is_any_open(&h.view.ctx);
-            assert!(!menu_open(&h));
-            send(&mut h, vec![touch(1, "start", x, y, 0.0), touch(1, "move", x, y, 1.0), touch(1, "move", x, y, 1.2)]);
+            (f64::from(r.center().x) / 1400.0, f64::from(r.center().y) / 900.0)
+        }
+
+        fn long_press(h: &mut Headless, (x, y): (f64, f64)) {
+            send(h, vec![touch(1, "start", x, y, 0.0), touch(1, "move", x, y, 1.0), touch(1, "move", x, y, 1.2), touch(1, "end", x, y, 1.3)]);
             h.step();
             h.step();
-            assert!(menu_open(&h), "holding a cell opens its context menu");
+        }
+
+        fn tap(h: &mut Headless, (x, y): (f64, f64)) {
+            send(h, vec![touch(1, "start", x, y, 0.0), touch(1, "end", x, y, 0.05)]);
+        }
+
+        #[test]
+        fn swipe_scrolls_grid_not_drags_photo() {
+            let mut h = grid();
+            h.app.ui.thumb_size = 300.0;
+            // a first touch somewhere harmless, as a finger has always touched before it swipes
+            send(&mut h, vec![touch(9, "start", 0.9, 0.05, 0.0), touch(9, "end", 0.9, 0.05, 0.05)]);
+            let (x, y) = cell_at(&mut h, 0);
+            let before = h.app.grid_scroll.unwrap_or(0.0);
+            let mut ev = vec![touch(1, "start", x, y + 0.35, 0.0)];
+            for i in 1..=6 {
+                ev.push(touch(1, "move", x, y + 0.35 - 0.05 * f64::from(i), 0.03 * f64::from(i)));
+            }
+            ev.push(touch(1, "end", x, y + 0.05, 0.25));
+            send(&mut h, ev);
+            h.step();
+            assert!(h.app.ui.dragging_photos.is_none(), "a swipe does not drag a photo");
+            assert!(h.app.grid_scroll.unwrap_or(0.0) > before, "a swipe scrolls the grid: {before} -> {:?}", h.app.grid_scroll);
+        }
+
+        #[test]
+        fn long_press_enters_select_mode_and_tap_toggles() {
+            let mut h = grid();
+            assert!(!h.app.ui.select_mode);
+            let a = cell_at(&mut h, 0);
+            long_press(&mut h, a);
+            assert!(h.app.ui.touch_mode && h.app.ui.select_mode, "holding a cell starts select mode");
+            assert_eq!(h.app.session.selection.ids.len(), 1);
+            let (b, c) = (cell_at(&mut h, 1), cell_at(&mut h, 2));
+            tap(&mut h, b);
+            tap(&mut h, c);
+            assert_eq!(h.app.session.selection.ids.len(), 3, "taps add photos");
+            tap(&mut h, b);
+            assert_eq!(h.app.session.selection.ids.len(), 2, "and a tap on a selected photo removes it");
+            assert!(h.app.ui.select_mode);
+        }
+
+        #[test]
+        fn desktop_grid_drag_still_drags() {
+            let mut h = demo([1300.0, 900.0]);
+            let t = Duration::from_secs(10);
+            h.request("engine.execute", json!({"command": "view.leftPanel"}), t);
+            let r = h.request("engine.execute", json!({"command": "album.create", "params": {"name": "Dropped"}}), t);
+            let album = r["result"]["id"].as_u64().unwrap_or_else(|| panic!("{r}"));
+            h.settle(SETTLE);
+            let rect = |h: &mut Headless, id: &str| {
+                let w = h.request("ui.widgets", json!({"filter": id}), t);
+                let r = w["result"]
+                    .as_array()
+                    .and_then(|a| a.iter().find(|x| x["id"] == id))
+                    .map(|x| x["rect"].clone())
+                    .unwrap_or_else(|| panic!("{id}: {w}"));
+                let f = |i: usize| r[i].as_f64().unwrap();
+                (f(0) + f(2) / 2.0, f(1) + f(3) / 2.0)
+            };
+            let first = h.app.session.visible_cloned()[0].0;
+            let (x, y) = rect(&mut h, &format!("thumb:{first}"));
+            let (tx, ty) = rect(&mut h, &format!("source:album:{album}"));
+            h.request("ui.drag", json!({"x": x, "y": y, "toX": tx, "toY": ty, "steps": 12}), t);
+            h.settle(SETTLE);
+            assert!(!h.app.ui.touch_mode, "a mouse is not touch");
+            let members = h.app.session.catalog.album(lightcraft_catalog::AlbumId(album)).unwrap().photos.clone();
+            assert_eq!(members, vec![lightcraft_catalog::PhotoId(first)], "a mouse drag still drags the photo");
+        }
+
+        #[test]
+        fn back_leaves_select_mode() {
+            let mut h = grid();
+            let a = cell_at(&mut h, 0);
+            long_press(&mut h, a);
+            assert!(h.app.ui.select_mode);
+            h.app.run("view.back", json!({})).unwrap();
+            assert!(!h.app.ui.select_mode, "Back leaves select mode");
+            assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid);
+            assert_eq!(h.app.session.selection.ids.len(), 1, "the selection stays");
         }
     }
 }

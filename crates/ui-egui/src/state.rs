@@ -789,6 +789,13 @@ pub struct UiState {
     /// Close the window on the next frame (File → Quit).
     #[serde(skip)]
     pub quit: bool,
+    /// A finger is the pointer (the host is touch-first, or a touch event was seen): cells scroll
+    /// instead of dragging photos and long press selects.
+    #[serde(skip)]
+    pub touch_mode: bool,
+    /// Select mode (touch): a tap on a grid cell toggles it; Done / Cancel / Back leave it.
+    #[serde(skip)]
+    pub select_mode: bool,
     /// Photos being dragged from the grid (dropped on an album to add them).
     #[serde(skip)]
     pub dragging_photos: Option<Vec<u64>>,
@@ -1337,6 +1344,8 @@ impl Default for UiState {
             sam_downloading: false,
             renaming_component: None,
             quit: false,
+            touch_mode: false,
+            select_mode: false,
             dragging_photos: None,
             reveal_album: None,
             reveal_keyword: None,
