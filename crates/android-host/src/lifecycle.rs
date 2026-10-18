@@ -14,6 +14,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::app::Slot;
+use crate::insets::Dirty;
 use crate::lifecycle_core::{Action, CoreState, HostEvent, on_event};
 
 /// eframe's handler and the host's lifecycle.
@@ -21,11 +22,13 @@ pub struct Lifecycle<'a> {
     eframe: eframe::EframeWinitApplication<'a>,
     slot: Slot,
     core: CoreState,
+    /// Told when the window resized or rescaled or focus came back: the insets may have changed.
+    insets: Dirty,
 }
 
 impl<'a> Lifecycle<'a> {
-    pub fn new(eframe: eframe::EframeWinitApplication<'a>, slot: Slot, core: CoreState) -> Lifecycle<'a> {
-        Lifecycle { eframe, slot, core }
+    pub fn new(eframe: eframe::EframeWinitApplication<'a>, slot: Slot, core: CoreState, insets: Dirty) -> Lifecycle<'a> {
+        Lifecycle { eframe, slot, core, insets }
     }
 
     /// Whether the loop ended because the Activity went away.
@@ -55,6 +58,9 @@ impl ApplicationHandler<UserEvent> for Lifecycle<'_> {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+        if matches!(event, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } | WindowEvent::Focused(true)) {
+            self.insets.set(true);
+        }
         let focus = match event {
             WindowEvent::Focused(true) => Some(HostEvent::FocusGained),
             WindowEvent::Focused(false) => Some(HostEvent::FocusLost),

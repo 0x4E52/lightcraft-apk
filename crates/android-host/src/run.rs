@@ -216,6 +216,7 @@ fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, Str
         .with_android_app(app.clone())
         .build()
         .map_err(|e| format!("LightCraft could not start its event loop: {e}"))?;
+    let insets_dirty = crate::insets::Dirty::default();
     let slot: crate::app::Slot = std::rc::Rc::new(std::cell::RefCell::new(None));
     let options = eframe::NativeOptions {
         android_app: Some(app.clone()),
@@ -224,6 +225,13 @@ fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, Str
         ..Default::default()
     };
     let app_slot = slot.clone();
+    let insets = crate::insets::Tracker::new(
+        {
+            let app = app.clone();
+            Box::new(move || lightcraft_android_sys::insets::request_insets(&app))
+        },
+        insets_dirty.clone(),
+    );
     files.arm(renderer);
     let eframe_app = eframe::create_native(
         "LightCraft",
@@ -243,12 +251,12 @@ fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, Str
             cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
             let control_rx =
                 control.map(|server| lightcraft_ui_egui::host::control_server::start(server.port, cc.egui_ctx.clone(), Some(server.token)));
-            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen, control_rx)))
+            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen, control_rx, insets)))
         }),
         &event_loop,
     );
     let core = crate::lifecycle_core::CoreState::new(activity_probe(app));
-    let mut handler = crate::lifecycle::Lifecycle::new(eframe_app, slot, core);
+    let mut handler = crate::lifecycle::Lifecycle::new(eframe_app, slot, core, insets_dirty);
     event_loop.run_app(&mut handler).map_err(|e| format!("LightCraft's event loop failed: {e}"))?;
     Ok(handler.left())
 }

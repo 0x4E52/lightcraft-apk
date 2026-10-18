@@ -246,3 +246,4 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   step passes; `smoke/control.txt` in the `lightcraft-smoke` artifact shows `with token: ui.inspect {… "ok": true …}`
   and `without token: … bad token`.
 - [ ] APK-30b: scroll a 1000-photo grid by finger; long press a photo, tap three more, then share them.
+- [ ] APK-31: on a phone with a cutout, portrait and landscape: nothing sits under the status bar, cutout or gesture bar; open the keyboard over a text field (e.g. the keyword field) and the field stays visible above it, and the layout returns when the keyboard closes.

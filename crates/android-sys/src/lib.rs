@@ -11,6 +11,7 @@
 
 pub mod activity;
 pub mod dialog;
+pub mod insets;
 pub mod jni_env;
 pub mod props;
 

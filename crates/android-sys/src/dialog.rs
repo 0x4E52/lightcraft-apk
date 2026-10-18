@@ -109,7 +109,7 @@ fn call(
 /// A JNI result; for a thrown exception, the exception's class and message (cleared) instead of
 /// the bare JNI error.
 #[cfg(target_os = "android")]
-fn caught<T>(env: &jni::Env<'_>, answer: jni::errors::Result<T>) -> Result<T, Error> {
+pub(crate) fn caught<T>(env: &jni::Env<'_>, answer: jni::errors::Result<T>) -> Result<T, Error> {
     answer.map_err(|e| match env.exception_catch() {
         Err(java) => java.into(),
         Ok(()) => e.into(),

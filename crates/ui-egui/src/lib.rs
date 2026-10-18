@@ -1562,8 +1562,26 @@ impl LightcraftApp {
         self.fonts_ready
     }
 
-    /// Lay out the whole window.
+    /// Lay out the whole window. A host that reports safe-area insets (a phone's status bar,
+    /// cutout, gesture bar and soft keyboard: `RawInput::safe_area_insets`) gets everything laid
+    /// out inside `content_rect()`, with the chrome colour behind the bars; egui's root `Ui`
+    /// covers the whole viewport, so the inset is applied here.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let (content, viewport) = (ctx.content_rect(), ctx.viewport_rect());
+        if content == viewport {
+            return self.ui_in(ui);
+        }
+        if self.fonts_ready {
+            let chrome = theme::Tokens::get(&ctx).chrome;
+            ui.painter().rect_filled(viewport, 0.0, chrome);
+        }
+        let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(content));
+        self.ui_in(&mut inner);
+    }
+
+    /// [`Self::ui`] inside the rect the host left for it.
+    fn ui_in(&mut self, ui: &mut egui::Ui) {
         i18n::set_language(self.ui.language);
         let ctx = ui.ctx().clone();
         if !self.fonts_ready {

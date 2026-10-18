@@ -245,6 +245,9 @@ pub struct Headless {
     pub window_commands: Vec<ViewportCommand>,
     /// The pointer cursor the last frame asked for (what a real host would show).
     pub last_cursor: egui::CursorIcon,
+    /// Safe-area insets (points) every frame reports, as a phone host does for the status bar,
+    /// the cutout, the gesture bar and the keyboard; `None`: the whole window is safe.
+    pub safe_area: Option<egui::epaint::MarginF32>,
 }
 
 /// A headless run (`lightcraft-cli snapshot`, tests) is a one-shot process: however it ends, it
@@ -285,6 +288,7 @@ impl Headless {
             window_maximized: false,
             window_commands: vec![],
             last_cursor: egui::CursorIcon::Default,
+            safe_area: None,
         }
     }
 
@@ -314,6 +318,7 @@ impl Headless {
         raw.viewports.entry(ViewportId::ROOT).or_default().maximized = Some(self.window_maximized);
         raw.max_texture_side = (self.reported_texture_side != Some(self.max_texture_side)).then_some(self.max_texture_side);
         self.reported_texture_side = Some(self.max_texture_side);
+        raw.safe_area_insets = self.safe_area.map(egui::SafeAreaInsets);
         self.app.raw_input_hook(&mut raw);
         let app = &mut self.app;
         let mut cursor = egui::CursorIcon::Default;
@@ -4891,6 +4896,73 @@ mod tests {
             assert!(!h.app.ui.select_mode, "Back leaves select mode");
             assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid);
             assert_eq!(h.app.session.selection.ids.len(), 1, "the selection stays");
+        }
+    }
+
+    /// Safe-area and keyboard insets (APK-31): the host reports the status bar, cutout, gesture
+    /// bar and soft keyboard as `RawInput::safe_area_insets`, and nothing is laid out under them.
+    mod insets {
+        use super::*;
+        use egui::epaint::{MarginF32, Shape};
+
+        /// A 412x915 dp phone (scale 2.625) with a 28 dp status bar and a 24 dp gesture bar.
+        fn phone() -> Headless {
+            let mut h = demo([412.0, 915.0]);
+            h.pixels_per_point = 2.625;
+            h.safe_area = Some(MarginF32 { left: 0.0, right: 0.0, top: 28.0, bottom: 24.0 });
+            h
+        }
+
+        /// The parts of every text the last frame painted that were visible (not clipped).
+        fn visible_text(h: &Headless) -> Vec<(String, egui::Rect)> {
+            fn walk(shape: &Shape, clip: egui::Rect, out: &mut Vec<(String, egui::Rect)>) {
+                match shape {
+                    Shape::Text(t) => {
+                        let r = t.galley.rect.translate(t.pos.to_vec2()).intersect(clip);
+                        if r.is_positive() {
+                            out.push((t.galley.job.text.clone(), r));
+                        }
+                    }
+                    Shape::Vec(v) => v.iter().for_each(|s| walk(s, clip, out)),
+                    _ => {}
+                }
+            }
+            let mut out = Vec::new();
+            h.view.shapes.iter().for_each(|c| walk(&c.shape, c.clip_rect, &mut out));
+            out
+        }
+
+        #[test]
+        fn no_widget_in_inset_band() {
+            let mut h = phone();
+            h.settle(SETTLE);
+            h.step();
+            let content = h.view.ctx.content_rect();
+            assert_eq!((content.top(), content.bottom()), (28.0, 915.0 - 24.0), "egui took the insets off the window");
+            let text = visible_text(&h);
+            assert!(text.len() > 5, "the UI painted text: {}", text.len());
+            for (t, r) in &text {
+                assert!(r.top() >= content.top() - 0.5 && r.bottom() <= content.bottom() + 0.5, "{t:?} at {r:?} reaches under a bar ({content:?})");
+            }
+        }
+
+        #[test]
+        fn focused_field_stays_above_keyboard_inset() {
+            let mut h = phone();
+            let t = Duration::from_secs(10);
+            h.settle(SETTLE);
+            // the keyboard (about 300 dp) is part of the bottom inset while a field has focus
+            h.safe_area = Some(MarginF32 { left: 0.0, right: 0.0, top: 28.0, bottom: 324.0 });
+            h.app.ui.dialog = Some(crate::state::Dialog::RenameKeyword { from: "travel".into(), to: "travel".into() });
+            h.settle(SETTLE);
+            let r = h.request("ui.inspect", json!({}), t);
+            assert_eq!(r["ok"], true);
+            let field = h.app.widgets.iter().find(|(id, _)| id == "field:keywordName").map(|(_, r)| *r);
+            let field = field.expect("the name field is on screen");
+            let content = h.view.ctx.content_rect();
+            assert_eq!(content.bottom(), 915.0 - 324.0);
+            assert!(field.bottom() <= content.bottom(), "the field {field:?} is above the keyboard ({content:?})");
+            assert!(h.app.text_focus, "the field has the focus");
         }
     }
 }

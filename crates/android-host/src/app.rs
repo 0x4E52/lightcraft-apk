@@ -20,6 +20,7 @@ use eframe::egui;
 
 use lightcraft_ui_egui::ControlRequest;
 
+use crate::insets::{Tracker, insets_px_to_points};
 use crate::lifecycle_core::Host;
 use crate::loader::Loader;
 use crate::state::{HostState, Reopen, Start};
@@ -47,11 +48,13 @@ pub struct HostApp {
     /// replaced that state).
     control: Option<Receiver<ControlRequest>>,
     last_flush: Instant,
+    /// The window's safe-area and keyboard insets (APK-31).
+    insets: Tracker,
 }
 
 impl HostApp {
-    pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen, control: Option<Receiver<ControlRequest>>) -> HostApp {
-        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now() }
+    pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen, control: Option<Receiver<ControlRequest>>, insets: Tracker) -> HostApp {
+        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets }
     }
 
     /// A reopen request: the state over the library problem ends (its session is empty and in
@@ -71,6 +74,10 @@ impl HostApp {
 
 impl eframe::App for HostApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // (polls the answer, never waits; asks again on a resize or while a field has focus)
+        if let Some(after) = self.insets.tick(Instant::now(), ctx.egui_wants_keyboard_input()) {
+            ctx.request_repaint_after(after);
+        }
         // (the slot's own handle: the borrow must not hold `self`, which the reopen changes)
         let shared = self.slot.clone();
         let Ok(mut slot) = shared.try_borrow_mut() else {
@@ -109,7 +116,12 @@ impl eframe::App for HostApp {
         }
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // egui subtracts the insets from the window to get `content_rect()`: the points of the
+        // scale this frame's window will have (native scale times UI zoom)
+        let native = raw.viewports.get(&egui::ViewportId::ROOT).and_then(|v| v.native_pixels_per_point);
+        let scale = native.map_or_else(|| ctx.pixels_per_point(), |n| n * ctx.zoom_factor());
+        raw.safe_area_insets = Some(egui::SafeAreaInsets(insets_px_to_points(self.insets.cached(), scale)));
         // Back is Escape: popups and text fields take it first, then the Back cascade
         crate::input::browser_back_to_escape(&mut raw.events);
         match self.slot.try_borrow_mut() {

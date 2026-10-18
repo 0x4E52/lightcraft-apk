@@ -224,6 +224,13 @@ impl<'a> TextField<'a> {
         let right = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary) || i.pointer.button_released(egui::PointerButton::Secondary));
         let selection = egui::text_edit::TextEditState::load(ui.ctx(), id).and_then(|s| s.cursor.char_range());
         let mut response = ui.add(edit);
+        // Under a soft keyboard (the host's bottom inset is large) a field that takes the focus
+        // or is typed in scrolls into the visible part of its scroll area.
+        let ctx = ui.ctx();
+        let inset = ctx.viewport_rect().bottom() - ctx.content_rect().bottom();
+        if inset > 0.0 && (response.gained_focus() || response.changed()) {
+            response.scroll_to_me(None);
+        }
         // screen readers: the field by its caption, even once it holds text (egui names it by
         // nothing but its contents)
         if let Some(name) = name.filter(|n| !n.trim().is_empty()) {
@@ -770,5 +777,30 @@ mod tests {
         rig.settle();
         rig.type_text("X");
         assert!(rig.text.starts_with("Lisbon") && rig.text.ends_with('X') && rig.text != "X", "{:?}", rig.text);
+    }
+
+    /// A field far down a scroll area comes above the keyboard (the bottom inset) when it takes the focus.
+    #[test]
+    fn focused_field_scrolls_above_bottom_inset() {
+        let mut view = HeadlessView::new();
+        let mut text = String::new();
+        let mut field = Rect::NOTHING;
+        for n in 0..90 {
+            let mut raw = HeadlessView::raw_input(egui::vec2(400.0, 300.0), 1.0, n as f64 / 60.0, vec![]);
+            raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left: 0.0, right: 0.0, top: 0.0, bottom: 100.0 }));
+            view.run(raw, |ui| {
+                let h = ui.ctx().content_rect().height();
+                egui::ScrollArea::vertical().max_height(h).show(ui, |ui| {
+                    ui.add_space(600.0);
+                    let fid = id(FIELD);
+                    if n == 1 {
+                        ui.memory_mut(|m| m.request_focus(fid));
+                    }
+                    field = TextField::singleline(FIELD, &mut text).width(200.0).show(ui).response.rect;
+                    ui.add_space(600.0);
+                });
+            });
+        }
+        assert!(field.bottom() <= 200.5 && field.top() >= 0.0, "the field {field:?} is above the keyboard (content bottom 200)");
     }
 }

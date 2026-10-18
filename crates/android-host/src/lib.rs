@@ -19,6 +19,7 @@
 mod app;
 pub mod control;
 pub mod input;
+pub mod insets;
 #[cfg(target_os = "android")]
 mod lifecycle;
 pub mod lifecycle_core;
