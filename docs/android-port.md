@@ -1220,10 +1220,16 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
 - **Done when:** the allow-list is empty or every remaining line carries a reason.
 
 #### APK-32c Tablet landscape breakpoint
-- **Goal:** usable at 1280×800 pt with touch.
+- **Goal:** usable at 1280×800 pt with touch, and on a phone held sideways (about 915×412 pt).
+- **Maintainer feedback (2026-10-18, phone in landscape):** the filmstrip takes about a third of the height and
+  squeezes the photo. It must fold away: the bottom-bar Filmstrip button (`view.filmstrip`, `/`) already toggles it,
+  but on a short window it should start folded with a visible handle to pull it out, and the choice is remembered.
 - **Files:** changed `crates/ui-egui/src/` layout modules named by the failing test.
-- **Steps:** a width breakpoint in points; panels resizable by touch (drag handles sized by touch density).
+- **Steps:** a width breakpoint in points; panels resizable by touch (drag handles sized by touch density); below a
+  height breakpoint (about 500 pt) the filmstrip starts folded behind a handle on the bottom bar, and
+  `UiState::filmstrip` keeps the user's choice per breakpoint.
 - **Tests:** `tablet_breakpoint_layout` (headless rects at 1280×800: panels fit, no overlap);
+  `filmstrip_folds_on_short_windows` (915×412: folded by default, the handle opens it, the choice is kept);
   `desktop_layout_fingerprint_unchanged` stays green.
 - **Verify:** `cargo test -p lightcraft-ui-egui -- tablet_breakpoint desktop_layout && cargo run -p lightcraft-cli --
   snapshot --demo --size 1280x800 --scale 2 -o target/android/tablet.png`, then Read the PNG.
@@ -1232,6 +1238,12 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
 
 #### APK-33 Phone portrait: side panels as sheets
 - **Goal:** usable at 412×915 pt (2.625 px/pt); side panels become bottom sheets, no second UI.
+- **Maintainer feedback (2026-10-18, phone upright):** the right panel and its 14-icon strip take more than half the
+  width (`RIGHT_WIDTH.min` 250 pt plus the strip, on a ~340 pt screen) and the panel's content is wider than the
+  panel, so the Edit buttons, the histogram's EXIF line, slider ends and values are cut off on the right. The sheet
+  must lay out every panel row to the sheet's width (wrap button rows, elide long labels, sliders fill the width with
+  the value on the label line), and no panel widget may extend past the sheet: a headless check at 412×915 lists any
+  widget rect outside its panel.
 - **Files:** changed `crates/ui-egui/src/` panel host modules, `crates/ui-egui/src/menus.rs` (`view.back` arm);
   new `crates/ui-egui/src/sheet.rs`.
 - **Steps:** below the phone breakpoint (a width in points, for every platform), Library/Develop panels render inside
@@ -1239,7 +1251,8 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
   [`android-touch-ui.md`](android-touch-ui.md) §1 (one scrolling row of icon + label, a tool opens its panel as the
   sheet above it); panel content never clips at the sheet's width; `view.back` (APK-17) closes the sheet first (a new
   arm at the front of the cascade, desktop unaffected).
-- **Tests:** `side_panels_become_sheet_below_breakpoint`, `back_closes_sheet_first`, `min_hit_size_48dp_at_phone`
+- **Tests:** `side_panels_become_sheet_below_breakpoint`, `back_closes_sheet_first`, `no_panel_widget_outside_sheet`
+  (every Edit section expanded, 412×915), `min_hit_size_48dp_at_phone`
   (APK-32b's allow-list check at 412×915 under touch density; new small widgets are fixed, not allow-listed);
   `desktop_layout_fingerprint_unchanged` stays green.
 - **Verify:** `cargo test -p lightcraft-ui-egui -- sheet min_hit_size desktop_layout && cargo run -p lightcraft-cli --
@@ -1712,3 +1725,5 @@ Agents use the default until the maintainer decides (execution-plan §7).
 - 2026-10-17 (after the first start on a phone): responsive and touch first ("Order of the remaining work"),
   breakpoints by width for every platform, APK-33 builds the bottom edit toolbar, new APK-33b (dialogs fit) and
   APK-34b (top bar at narrow widths); "Continuing on a Mac" in `android.md`.
+- 2026-10-18 (maintainer feedback from a phone): APK-32c folds the filmstrip on short (landscape) windows; APK-33
+  lays every panel row out to the sheet's width and tests that no widget extends past it.
