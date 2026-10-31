@@ -440,11 +440,53 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(8.0, 3.0);
         s.spacing.interact_size.y = 22.0;
+        s.spacing.interact_size.x = 40.0;
+        s.spacing.icon_width = 14.0;
+        s.spacing.icon_width_inner = 8.0;
+        s.spacing.combo_height = 200.0;
         s.text_styles.insert(egui::TextStyle::Body, FontId::proportional(13.0));
         s.text_styles.insert(egui::TextStyle::Button, FontId::proportional(13.0));
         s.text_styles.insert(egui::TextStyle::Small, FontId::proportional(11.0));
         s.text_styles.insert(egui::TextStyle::Heading, FontId::new(16.0, FontFamily::Name(FONT_SEMIBOLD.into())));
         s.animation_time = 0.08;
+    });
+    set_density(ctx, density(ctx));
+}
+
+/// Finger-sized hit areas (dp at the 1 pt = 1 dp scale of a phone): Material's 48.
+pub const TOUCH_HIT: f32 = 48.0;
+
+fn density_id() -> egui::Id {
+    egui::Id::new("lightcraft-touch-density")
+}
+
+/// Whether `ctx` is styled for touch (see [`set_density`]); off by default.
+pub fn density(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(density_id())).unwrap_or(false)
+}
+
+/// Switch the hit-area density: under `touch` the interact size, button padding, checkbox
+/// and slider hit areas grow to finger size; off restores exactly the desktop sizes. Theme
+/// changes ([`apply_kind`]) keep the density.
+pub fn set_density(ctx: &egui::Context, touch: bool) {
+    ctx.data_mut(|d| d.insert_temp(density_id(), touch));
+    ctx.all_styles_mut(|s| {
+        let sp = &mut s.spacing;
+        if touch {
+            sp.interact_size = egui::vec2(TOUCH_HIT, TOUCH_HIT);
+            sp.button_padding = egui::vec2(12.0, 10.0);
+            sp.icon_width = 24.0;
+            sp.icon_width_inner = 14.0;
+            sp.combo_height = 300.0;
+            sp.item_spacing = egui::vec2(8.0, 6.0);
+        } else {
+            sp.interact_size = egui::vec2(40.0, 22.0);
+            sp.button_padding = egui::vec2(8.0, 3.0);
+            sp.icon_width = 14.0;
+            sp.icon_width_inner = 8.0;
+            sp.combo_height = 200.0;
+            sp.item_spacing = egui::vec2(6.0, 4.0);
+        }
     });
 }
 
@@ -452,6 +494,23 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
 mod tests {
     use super::*;
     use crate::i18n::{Locale, set_language};
+
+    #[test]
+    fn touch_density_scales_hit_sizes() {
+        let ctx = egui::Context::default();
+        apply(&ctx);
+        let desktop = ctx.global_style().spacing.clone();
+        assert_eq!(desktop.interact_size.y, 22.0);
+        set_density(&ctx, true);
+        let s = ctx.global_style().spacing.clone();
+        assert!(s.interact_size.x >= TOUCH_HIT && s.interact_size.y >= TOUCH_HIT, "{:?}", s.interact_size);
+        assert!(s.icon_width > desktop.icon_width && s.button_padding.y > desktop.button_padding.y);
+        apply_kind(&ctx, ThemeKind::Silver);
+        assert_eq!(ctx.global_style().spacing.interact_size.y, TOUCH_HIT, "a theme change keeps the density");
+        set_density(&ctx, false);
+        let back = ctx.global_style().spacing.clone();
+        assert_eq!((back.interact_size, back.button_padding, back.icon_width), (desktop.interact_size, desktop.button_padding, desktop.icon_width));
+    }
 
     /// Every theme scrolls 100 points a wheel notch, and a zoom notch stays egui's stock ~1.22x
     /// (`exp(40 / 200)`) instead of growing with the longer scroll.

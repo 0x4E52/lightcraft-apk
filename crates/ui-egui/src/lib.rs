@@ -1588,6 +1588,10 @@ impl LightcraftApp {
             ctx.request_repaint();
             return;
         }
+        if self.ui.touch_density != self.ui.touch_mode {
+            self.ui.touch_density = self.ui.touch_mode;
+            theme::set_density(&ctx, self.ui.touch_density);
+        }
         panels::dialogs::prepare(self, ui);
         let t0 = now_ms();
         if std::mem::take(&mut self.ui.quit) && !self.services.quit_disabled {

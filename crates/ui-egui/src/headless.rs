@@ -784,6 +784,49 @@ mod tests {
         Headless::new(app, size, 1.0)
     }
 
+    /// The desktop layout at 1600x1000: every registered widget's rect, rounded, one per line.
+    fn layout_fingerprint(h: &Headless) -> String {
+        let mut lines: Vec<String> = h
+            .app
+            .widgets
+            .iter()
+            .map(|(id, r)| format!("{id} {} {} {} {}", r.min.x.round(), r.min.y.round(), r.width().round(), r.height().round()))
+            .collect();
+        lines.sort();
+        lines.dedup();
+        lines.join("\n") + "\n"
+    }
+
+    /// A mouse session keeps the desktop layout: the rects match the committed fingerprint
+    /// (`LIGHTCRAFT_WRITE_FIXTURES=1` rewrites it after an intended layout change).
+    #[test]
+    fn desktop_layout_fingerprint_unchanged() {
+        let mut h = demo([1600.0, 1000.0]);
+        assert!(h.settle(SETTLE));
+        assert!(!h.app.ui.touch_density, "a mouse is not touch");
+        let got = layout_fingerprint(&h);
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/layout-1600x1000.json");
+        if std::env::var_os("LIGHTCRAFT_WRITE_FIXTURES").is_some() {
+            let json = serde_json::to_string_pretty(&got.lines().collect::<Vec<_>>()).expect("json");
+            std::fs::write(path, json + "\n").expect("write fixture");
+        }
+        let want: Vec<String> = serde_json::from_str(&std::fs::read_to_string(path).expect("fixture")).expect("fixture json");
+        assert!(want.len() > 20, "fingerprint has widgets");
+        assert_eq!(got, want.join("\n") + "\n", "desktop layout changed");
+    }
+
+    /// A first touch switches the theme to finger-sized hit areas; the mouse never does.
+    #[test]
+    fn touch_density_follows_touch_mode() {
+        let mut h = demo([1600.0, 1000.0]);
+        assert!(h.settle(SETTLE));
+        assert_eq!(h.view.ctx.global_style().spacing.interact_size.y, 22.0);
+        h.app.ui.touch_mode = true;
+        h.step();
+        assert!(h.app.ui.touch_density);
+        assert!(h.view.ctx.global_style().spacing.interact_size.y >= 48.0);
+    }
+
     /// Agents cut, copy and paste in a text field as the system does for ⌘X / ⌘C / ⌘V
     /// (`ui.clipboard`), and `ui.inspect` → `copied` says what the UI last copied.
     #[test]
@@ -4844,6 +4887,9 @@ mod tests {
         #[test]
         fn long_press_enters_select_mode_and_tap_toggles() {
             let mut h = grid();
+            // small cells: the bottom bar is taller under touch density and would cover the third row
+            h.app.ui.thumb_size = 150.0;
+            h.step();
             assert!(!h.app.ui.select_mode);
             let a = cell_at(&mut h, 0);
             long_press(&mut h, a);

@@ -793,6 +793,9 @@ pub struct UiState {
     /// instead of dragging photos and long press selects.
     #[serde(skip)]
     pub touch_mode: bool,
+    /// Finger-sized hit areas are applied to the theme (follows `touch_mode`, see `theme::set_density`).
+    #[serde(skip)]
+    pub touch_density: bool,
     /// Select mode (touch): a tap on a grid cell toggles it; Done / Cancel / Back leave it.
     #[serde(skip)]
     pub select_mode: bool,
@@ -1345,6 +1348,7 @@ impl Default for UiState {
             renaming_component: None,
             quit: false,
             touch_mode: false,
+            touch_density: false,
             select_mode: false,
             dragging_photos: None,
             reveal_album: None,
