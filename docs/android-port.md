@@ -1443,7 +1443,7 @@ Agents use the default until the maintainer decides (execution-plan §7).
 |---|---|---|---|
 | 0 | **CI access for agents.** Enable Actions on `0x4E52/lightcraft-apk` and give the container a fine-grained token (actions read/write, contents write) as `GH_TOKEN`. Without it agents commit workflows and the maintainer starts and reads the runs. | maintainer runs CI | CI lines of APK-16, 18, 19, 21, 36, 40 (never a card's code) |
 | 1 | **App name and application id.** "LightCraft" is allowed (the brand licence covers only the ArtCraft marks), but a distinct store name avoids confusion with official builds. Never `ai.storyteller.lightcraft`. Each id segment must start with a letter, so the owner `0x4E52` can't be used as is (nor `_0x4e52`); `x4e52` would be someone else's GitHub namespace. | id `io.github.n0x4e52.lightcraft` (`.debug` suffix for debug), label "LightCraft" | APK-13, 40, 42 |
-| 2 | **Java shims.** Without Java: MediaStore + "Open with", no SAF picker (`onActivityResult`; in-app picker, APK-24), no `onNewIntent` (a second "Open with" while running is ignored), no IME composition, no foreground service for background jobs. A few small Java classes (hasCode=true) would fix each, bending "pure Rust in the product"; a Java SAF shim would also remove the Inbox step for presets, GPX, keyword lists and models (APK-24). | no Java | APK-22, 24, 25, 35 |
+| 2 | **Java shims.** **Decided by the maintainer, 2026-10-31: no Java for the first release.** Photos reach the app through the photo permission (on Android 14+ its "Select photos" partial access, APK-22), raws, folders and other files through "Share → LightCraft" and "Open with" (APK-25). A minimal Java picker shim (system photo picker and Storage Access Framework folder/file picker with persisted grants, `onActivityResult` only) may follow after the first release as its own card; nothing else in Java. | no Java in release 1 | APK-22, 24, 25, 35, 51, 52 |
 | 3 | **minSdk / targetSdk.** minSdk 30: shared media by path (FUSE), settled scoped storage, `WindowInsets.Type` API; devices launching with Android 10+ (64-bit) ship Vulkan 1.1 (upgraded devices may not: GLES fallback). targetSdk tracks Play's rule: 36 for new apps and updates since 2026-08-31 (re-check on the day). | minSdk 30, targetSdk 36 (android-36 platform, build-tools ≥ 36) | APK-13, 15 |
 | 4 | **Repository branding.** The README header, `docs/brand/` and desktop packaging metadata still name ArtCraft; fine while mirroring upstream, to be replaced before this fork publishes builds. | unchanged | — |
 | 5 | **ABIs.** arm64-v8a for release; x86_64 only for the CI emulator. | as stated | APK-12, 16, 40 |
@@ -1453,6 +1453,7 @@ Agents use the default until the maintainer decides (execution-plan §7).
 | 9 | **Library location.** Internal storage (private, `allowBackup="false"`, **deleted on uninstall or "Clear data"** with every edit and Copy-imported original) vs app-specific external or `Pictures/` (survives less, visible to others). | internal, with a first-start notice saying uninstall deletes the library and how to back it up | APK-11b |
 | 10 | **SAM on Android.** The SAM worker model holds several GB (engine/src/segment/worker.rs:9). | ship `sam`; the command is enabled only when MemTotal ≥ 8 GB, otherwise disabled with an explanation. *Implemented as 7 GiB MemTotal (the agent's reading of "8 GB": an 8 GB phone reads 7.2 to 7.9 GiB; the text says 8 GB): maintainer to confirm (APK-11b).* | APK-11b |
 | 11 | **craft-fonts in the APK.** CJK faces add tens of MB. | release builds embed them (as desktop) with their licences (APK-38) | APK-40 |
+| 12 | **All files access.** **Decided by the maintainer, 2026-10-31: never requested** (`MANAGE_EXTERNAL_STORAGE`), so the app stays Google Play compliant; users choose what to share: the photo permission's selection, shares and "Open with". | not requested | APK-51, 52 |
 
 ## Risks
 
@@ -1727,3 +1728,6 @@ Agents use the default until the maintainer decides (execution-plan §7).
   APK-34b (top bar at narrow widths); "Continuing on a Mac" in `android.md`.
 - 2026-10-18 (maintainer feedback from a phone): APK-32c folds the filmstrip on short (landscape) windows; APK-33
   lays every panel row out to the sheet's width and tests that no widget extends past it.
+- 2026-10-31 (maintainer decisions): decision 2, no Java in the first release (photos via the permission's "Select
+  photos", everything else via shares and "Open with"; a picker shim may follow after it); decision 12, no all-files
+  access, Play compliant.

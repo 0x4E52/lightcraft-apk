@@ -425,7 +425,7 @@ For [`android-port.md`](android-port.md) → "Decisions for the maintainer" (thi
 
 | # | Decision | Default an agent uses | Blocks |
 |---|---|---|---|
-| 12 | **All files access outside Google Play.** `MANAGE_EXTERNAL_STORAGE` makes raws that Android hides visible by path; Play allows it only for file managers and similar, F-Droid and sideloaded builds may use it. | not requested; the hidden-types note only | APK-52 step 3 |
+| 12 | **All files access.** Decided 2026-10-31 (android-port.md decision 12): never requested; APK-52 step 3 uses shares and "Open with" in release 1 and the picker shim after it. | not requested | APK-52 step 3 |
 | 13 | **LAN sync.** A listening socket with discovery and pairing between phone and desktop, versus file handoff only. | file handoff only (APK-62) | a later sync card |
 
 ## Order
@@ -446,3 +446,5 @@ Phase 3.
 
 - 2026-10-31: first version: opportunities from `android-competitive.md` checked against the code and the parity
   checklist; 15 cards (APK-50 … 64), folds into APK-23, 25, 27, 41 and 43, proposed decisions 12 and 13.
+- 2026-10-31: decision 12 settled by the maintainer (no all-files access); decision 2 (no Java in release 1) applies to
+  APK-51 and APK-52.
