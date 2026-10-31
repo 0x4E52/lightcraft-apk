@@ -815,6 +815,36 @@ mod tests {
         assert_eq!(got, want.join("\n") + "\n", "desktop layout changed");
     }
 
+    /// Under touch density at 1280x800, every registered widget is at least 48 pt in both directions
+    /// unless `tests/fixtures/small-hit-allow.txt` lists its id with a reason after `#`
+    /// (`LIGHTCRAFT_WRITE_FIXTURES=1` rewrites the list; fix panels and shrink it, never grow it by hand).
+    #[test]
+    fn min_hit_size_48dp_at_tablet() {
+        let mut h = demo([1280.0, 800.0]);
+        h.app.ui.touch_mode = true;
+        assert!(h.settle(SETTLE));
+        h.step();
+        assert!(h.app.ui.touch_density);
+        let mut small: Vec<String> =
+            h.app.widgets.iter().filter(|(_, r)| r.width() < 47.5 || r.height() < 47.5).map(|(id, _)| id.to_string()).collect();
+        small.sort();
+        small.dedup();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/small-hit-allow.txt");
+        if std::env::var_os("LIGHTCRAFT_WRITE_FIXTURES").is_some() {
+            let body: String = small.iter().map(|id| format!("{id} # not yet fixed (APK-32b)\n")).collect();
+            std::fs::write(path, body).expect("write allow-list");
+        }
+        let allowed: std::collections::HashSet<String> = std::fs::read_to_string(path)
+            .expect("allow-list")
+            .lines()
+            .filter_map(|l| l.split('#').next())
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        let bad: Vec<&String> = small.iter().filter(|id| !allowed.contains(*id)).collect();
+        assert!(bad.is_empty(), "widgets below 48 pt not in the allow-list: {bad:?}");
+    }
+
     /// A first touch switches the theme to finger-sized hit areas; the mouse never does.
     #[test]
     fn touch_density_follows_touch_mode() {
