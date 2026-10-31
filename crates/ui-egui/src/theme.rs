@@ -479,6 +479,7 @@ pub fn set_density(ctx: &egui::Context, touch: bool) {
             sp.icon_width_inner = 14.0;
             sp.combo_height = 300.0;
             sp.item_spacing = egui::vec2(8.0, 6.0);
+            s.interaction.resize_grab_radius_side = TOUCH_HIT / 2.0;
         } else {
             sp.interact_size = egui::vec2(40.0, 22.0);
             sp.button_padding = egui::vec2(8.0, 3.0);
@@ -486,6 +487,7 @@ pub fn set_density(ctx: &egui::Context, touch: bool) {
             sp.icon_width_inner = 8.0;
             sp.combo_height = 200.0;
             sp.item_spacing = egui::vec2(6.0, 4.0);
+            s.interaction.resize_grab_radius_side = egui::style::Interaction::default().resize_grab_radius_side;
         }
     });
 }

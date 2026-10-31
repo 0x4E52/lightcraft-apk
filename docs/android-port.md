@@ -1225,7 +1225,8 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
   squeezes the photo. It must fold away: the bottom-bar Filmstrip button (`view.filmstrip`, `/`) already toggles it,
   but on a short window it should start folded with a visible handle to pull it out, and the choice is remembered.
 - **Files:** changed `crates/ui-egui/src/` layout modules named by the failing test.
-- **Steps:** a width breakpoint in points; panels resizable by touch (drag handles sized by touch density); below a
+- **Steps:** a width breakpoint in points (done as the existing `MIN_PHOTO_WIDTH` clamp in `resizable_side`; a
+  named phone breakpoint arrives with APK-33); panels resizable by touch (drag handles sized by touch density); below a
   height breakpoint (about 500 pt) the filmstrip starts folded behind a handle on the bottom bar, and
   `UiState::filmstrip` keeps the user's choice per breakpoint.
 - **Tests:** `tablet_breakpoint_layout` (headless rects at 1280×800: panels fit, no overlap);

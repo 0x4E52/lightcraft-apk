@@ -1592,6 +1592,7 @@ impl LightcraftApp {
             self.ui.touch_density = self.ui.touch_mode;
             theme::set_density(&ctx, self.ui.touch_density);
         }
+        self.ui.set_short_window(ctx.viewport_rect().height() < state::SHORT_WINDOW_HEIGHT);
         panels::dialogs::prepare(self, ui);
         let t0 = now_ms();
         if std::mem::take(&mut self.ui.quit) && !self.services.quit_disabled {

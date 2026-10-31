@@ -27,6 +27,8 @@ edit, import or delete in the personal library). Screenshots of Adobe apps never
   order).
 - **Middle:** the photo; a single tap hides all controls, a second tap brings them back.
 - **Bottom:** the filmstrip (toggle) and, in edit mode, the **edit toolbar**.
+  LightCraft: below 500 pt window height (a phone held sideways, also a short desktop window) the filmstrip starts
+  folded and the bottom bar's Filmstrip button pulls it out; the choice is remembered per window class (short/tall).
 
 ### Edit toolbar and panels
 - **Toolbar:** one row of icon + label buttons along the bottom, scrolling sideways. Expected tools (order to

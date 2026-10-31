@@ -596,6 +596,9 @@ pub const LEFT_WIDTH: PanelWidth = PanelWidth { min: 200.0, default: 268.0, max:
 pub const RIGHT_WIDTH: PanelWidth = PanelWidth { min: 250.0, default: 270.0, max: 520.0 };
 /// The photo area the side panels always leave free (as far as their minimum widths allow).
 pub const MIN_PHOTO_WIDTH: f32 = 360.0;
+/// Windows shorter than this many points (a phone held sideways, about 412 pt high) start with the
+/// filmstrip folded; the bottom bar's Filmstrip button pulls it out.
+pub const SHORT_WINDOW_HEIGHT: f32 = 500.0;
 
 /// What the Keywording box shows: the keywords (chips to edit), them with the keywords containing
 /// them, or what exported files will carry (read only).
@@ -652,7 +655,14 @@ pub struct UiState {
     pub presets: bool,
     /// Presets column: show a live thumbnail of the photo with each preset.
     pub preset_thumbs: bool,
+    /// Filmstrip shown, for the window class in `filmstrip_short`.
     pub filmstrip: bool,
+    /// The window is short ([`SHORT_WINDOW_HEIGHT`]) and `filmstrip` is its choice; the other
+    /// class's choice waits in `filmstrip_other`. Starts as tall.
+    pub filmstrip_short: bool,
+    /// The remembered filmstrip choice of the window class `filmstrip` does not belong to
+    /// (folded by default for the short class).
+    pub filmstrip_other: bool,
     pub zoom: Zoom,
     /// Pan offset of the loupe when zoomed (image-normalized centre).
     pub pan: (f32, f32),
@@ -1290,6 +1300,8 @@ impl Default for UiState {
             presets: false,
             preset_thumbs: false,
             filmstrip: true,
+            filmstrip_short: false,
+            filmstrip_other: false,
             zoom: Zoom::Fit,
             pan: (0.5, 0.5),
             click_zoom: 100,
@@ -1480,6 +1492,15 @@ impl UiState {
             self.open_flyouts.push(id.to_string());
         }
     }
+    /// The window is (no longer) short: `filmstrip` becomes that class's remembered choice, so the
+    /// filmstrip starts folded on a phone held sideways and keeps each class's choice.
+    pub fn set_short_window(&mut self, short: bool) {
+        if self.filmstrip_short != short {
+            self.filmstrip_short = short;
+            std::mem::swap(&mut self.filmstrip, &mut self.filmstrip_other);
+        }
+    }
+
     /// Clamp values restored from disk.
     pub fn sanitized(mut self) -> Self {
         self.thumb_size = self.thumb_size.clamp(THUMB_SIZE_MIN, THUMB_SIZE_MAX);
