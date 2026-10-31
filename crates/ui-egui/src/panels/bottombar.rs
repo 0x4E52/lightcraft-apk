@@ -22,7 +22,7 @@ const VIEW_MODES: &[(&str, Icon, ViewMode, &str)] = &[
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("bottom_bar")
-        .exact_size(t.bottom_bar_h)
+        .exact_size(if crate::theme::density(ui.ctx()) { t.bottom_bar_h.max(crate::theme::TOUCH_HIT) } else { t.bottom_bar_h })
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin { left: 12, right: 12, top: 0, bottom: 0 }))
         .show(ui, |ui| {
             let full = ui.max_rect();
@@ -82,30 +82,46 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 /// and 10-point padding at both ends.
 const PILL_W: f32 = 208.0;
 
+/// Under touch density the stars and flags are 48-pt hit targets (APK-32b): the pill grows to hold them.
+fn pill_metrics(touch: bool) -> (f32, f32, f32, f32) {
+    // (pill width, pill height, star size, flag size)
+    if touch {
+        let hit = crate::theme::TOUCH_HIT;
+        // 5 stars + 3 flags, seven 3-point gaps, a 6-point group gap, 10-point padding at both ends
+        (8.0 * hit + 7.0 * 3.0 + 6.0 + 20.0, hit, hit, hit)
+    } else {
+        (PILL_W, 30.0, 19.0, 22.0)
+    }
+}
+
 /// The rating/flag pill and copy/paste settings, between `from` and `to` (the side groups): the
 /// copy buttons go first when there is no room (they are in the Edit menu too), then the pill.
 fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
     let t = Tokens::get(ui.ctx());
+    let (pill_w, pill_h, star_size, flag_size) = pill_metrics(crate::theme::density(ui.ctx()));
     let has_clip = app.session.clipboard.is_some();
     let label = crate::i18n::tr(if has_clip { "Paste Edit Settings" } else { "Copy Edit Settings" });
     let copy_width = (ui.painter().layout_no_wrap(label.to_string(), t.font(13.0), t.text_label).size().x + 24.0).max(136.0);
-    let centre_width = PILL_W + 10.0 + copy_width + 4.0 + 30.0;
+    let centre_width = pill_w + 10.0 + copy_width + 4.0 + pill_h;
     let room = to - from;
-    if room < PILL_W {
+    if room < pill_w {
         return;
     }
     let with_copy = room >= centre_width;
-    let w = if with_copy { centre_width } else { PILL_W };
+    let w = if with_copy { centre_width } else { pill_w };
     // where it sits with room to spare (slightly left of centre), kept between the side groups
-    let left = (full.center().x - 60.0 - PILL_W / 2.0).clamp(from, to - w);
+    let left = (full.center().x - 60.0 - pill_w / 2.0).clamp(from, to - w);
     let active = app.session.active().and_then(|id| app.session.catalog.photo(id).cloned());
-    let pill = Rect::from_min_size(pos2(left, full.center().y - 15.0), vec2(PILL_W, 30.0));
-    ui.painter().rect_filled(pill, 15.0, t.canvas);
-    let mut pill_ui =
-        ui.new_child(egui::UiBuilder::new().max_rect(pill.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    let pill = Rect::from_min_size(pos2(left, full.center().y - pill_h / 2.0), vec2(pill_w, pill_h));
+    ui.painter().rect_filled(pill, pill_h / 2.0, t.canvas);
+    let mut pill_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(pill.shrink2(vec2(10.0, if pill_h > 30.0 { 0.0 } else { 4.0 })))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
     pill_ui.spacing_mut().item_spacing.x = 3.0;
     let rating = active.as_ref().map(|p| p.rating).unwrap_or(0);
-    if let Some(r) = stars(&mut pill_ui, "bottom", rating, 19.0) {
+    if let Some(r) = stars(&mut pill_ui, "bottom", rating, star_size) {
         let mut params = json!({"rating": r});
         crate::panels::compare::target_active(app, &mut params);
         let _ = app.run("photo.rate", params);
@@ -113,7 +129,7 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
     pill_ui.add_space(6.0);
     let flag = active.as_ref().map(|p| p.flag).unwrap_or_default();
     for (id, icon, f) in [("unflag", Icon::Circle, Flag::None), ("pick", Icon::FlagPick, Flag::Pick), ("reject", Icon::FlagReject, Flag::Reject)] {
-        let (r, resp) = pill_ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+        let (r, resp) = pill_ui.allocate_exact_size(vec2(flag_size, flag_size), Sense::click());
         crate::widgets::announce_selected(
             &resp,
             crate::i18n::tr(match f {
@@ -132,7 +148,7 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
         } else {
             t.icon
         };
-        paint(pill_ui.painter(), r.shrink(3.0), icon, c);
+        paint(pill_ui.painter(), r.shrink(flag_size * 0.14), icon, c);
         if resp.clicked() {
             let mut params = json!({"flag": match f { Flag::Pick => "pick", Flag::Reject => "reject", Flag::None => "none" }});
             crate::panels::compare::target_active(app, &mut params);
@@ -143,23 +159,23 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
     if !with_copy {
         return;
     }
-    let copy_r = Rect::from_min_size(pos2(pill.right() + 10.0, pill.top()), vec2(copy_width, 30.0));
+    let copy_r = Rect::from_min_size(pos2(pill.right() + 10.0, pill.top()), vec2(copy_width, pill_h));
     let cresp = ui.interact(copy_r, egui::Id::new("copy-settings"), Sense::click());
     crate::widgets::announce(&cresp, label.to_string());
     register(ui.ctx(), "button:copySettings", copy_r);
-    ui.painter().rect_filled(copy_r, 15.0, if cresp.hovered() { t.hover } else { t.canvas });
+    ui.painter().rect_filled(copy_r, pill_h / 2.0, if cresp.hovered() { t.hover } else { t.canvas });
     ui.painter().text(copy_r.center(), Align2::CENTER_CENTER, label, t.font(13.0), if active.is_some() { t.text_label } else { t.text_disabled });
     if cresp.clicked() && active.is_some() {
         let _ = if has_clip { app.run("develop.paste", json!({})) } else { app.run("develop.copy", json!({})) };
         let msg = if has_clip { "Settings pasted" } else { "Edit settings copied" };
         app.toast(ui.ctx(), crate::i18n::tr(msg));
     }
-    let gear_r = Rect::from_min_size(pos2(copy_r.right() + 4.0, pill.top()), vec2(30.0, 30.0));
+    let gear_r = Rect::from_min_size(pos2(copy_r.right() + 4.0, pill.top()), vec2(pill_h, pill_h));
     let gresp = ui.interact(gear_r, egui::Id::new("copy-gear"), Sense::click());
     crate::widgets::announce(&gresp, crate::i18n::tr("Copy Settings…"));
     register(ui.ctx(), "icon:copyGear", gear_r);
-    ui.painter().rect_filled(gear_r, 15.0, if gresp.hovered() { t.hover } else { t.canvas });
-    paint(ui.painter(), gear_r.shrink(7.0), Icon::Gear, t.icon);
+    ui.painter().rect_filled(gear_r, pill_h / 2.0, if gresp.hovered() { t.hover } else { t.canvas });
+    paint(ui.painter(), gear_r.shrink(pill_h * 0.23), Icon::Gear, t.icon);
     if gresp.clicked() {
         let _ = app.run("dialog.copySettings", json!({}));
     }
