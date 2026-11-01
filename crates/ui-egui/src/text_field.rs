@@ -185,8 +185,9 @@ impl<'a> TextField<'a> {
             match action {
                 Action::Cut => ui.input_mut(|i| i.events.push(egui::Event::Cut)),
                 Action::Copy => ui.input_mut(|i| i.events.push(egui::Event::Copy)),
-                // only the host can read the clipboard: it answers with a paste event
-                Action::Paste => ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+                // only the host can read the clipboard: it answers with a paste event (a later
+                // frame's, with the app's clipboard service)
+                Action::Paste => crate::clipboard::request_paste(ui.ctx()),
                 Action::SelectAll => select_all(ui.ctx(), id, self.text),
                 Action::Refocus => {}
             }

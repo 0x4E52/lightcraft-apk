@@ -474,6 +474,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         prefer_copy_import: false,
         // the native dialogs answer: no in-app chooser
         pick_roots: Vec::new(),
+        clipboard: None,
     }
 }
 

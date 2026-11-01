@@ -5,7 +5,8 @@
 //! loading frame, and Back and Quit: Back at the root moves the app to the background (`run` passes
 //! the JNI call in), and Quit is never offered, since the system ends the Activity and the process's
 //! one event loop can't start again. Commands that need a file dialog get the in-app chooser over
-//! [`pick_roots`] (APK-24); the clipboard comes with its card as a `Services` field.
+//! [`pick_roots`] (APK-24). Copies and pastes go through the system clipboard ([`clipboard`],
+//! APK-28).
 //!
 //! Shared storage (APK-27, [`shared_storage`]): exported images go to `Pictures/LightCraft`, PDFs
 //! and everything else to `Documents/LightCraft` (both also in the in-app chooser), the Library
@@ -147,6 +148,40 @@ pub fn share_fn(lookup: LookupFiles, chooser: StartChooser) -> lightcraft_ui_egu
 /// Back's last step: moves the app to the background without waiting for it (Android: JNI
 /// `Activity.moveTaskToBack`); `Err` when it could not even be asked.
 pub type MoveToBack = Rc<dyn Fn() -> Result<(), String>>;
+
+/// Puts text on the system clipboard (Android: JNI `ClipboardManager.setPrimaryClip` on
+/// android_main, APK-28); `Err` is the reason to show.
+pub type SetClip = Rc<dyn Fn(&str) -> Result<(), String>>;
+/// Reads the system clipboard's text (Android: JNI `getPrimaryClip` on android_main); `Ok(None)`
+/// when it holds no text.
+pub type GetClip = Rc<dyn Fn() -> Result<Option<String>, String>>;
+
+/// The system clipboard's two calls, kept by the eframe app for a hardware Ctrl+V too.
+#[derive(Clone)]
+pub struct Clip {
+    pub set: SetClip,
+    pub get: GetClip,
+}
+
+/// `Services::clipboard` over the system clipboard. A paste request reads the clip at once (a
+/// binder call, no wait on the Java main thread) and keeps the answer for `take_paste` on the next
+/// frame; a clip that can't be read answers as empty, so no paste stays pending.
+pub fn clipboard(clip: Clip) -> lightcraft_ui_egui::clipboard::ClipboardFns {
+    let answer: Rc<Cell<Option<String>>> = Rc::default();
+    let (asked, taken) = (answer.clone(), answer);
+    let Clip { set, get } = clip;
+    lightcraft_ui_egui::clipboard::ClipboardFns {
+        set: Box::new(move |text: &str| set(text)),
+        request_paste: Box::new(move || {
+            let text = get().unwrap_or_else(|e| {
+                log::warn!("paste: can't read the system clipboard: {e}");
+                None
+            });
+            asked.set(Some(text.unwrap_or_default()));
+        }),
+        take_paste: Box::new(move || taken.take()),
+    }
+}
 
 /// Starts the browser on a link (Android: JNI `startActivity` on the calling thread, APK-26);
 /// `Err` is the message to show.
@@ -396,6 +431,34 @@ mod tests {
     }
 
     /// Links go to the host only when they are https; its refusal comes back as the message.
+    /// Copies reach the system clipboard; a paste is read when it is asked for and answered on
+    /// the next `take_paste`, once; an empty or unreadable clip answers as empty.
+    #[test]
+    fn clipboard_sets_and_answers_pastes() {
+        let set: Rc<RefCell<Vec<String>>> = Rc::default();
+        let clip_text: Rc<RefCell<Result<Option<String>, String>>> = Rc::new(RefCell::new(Ok(Some("Porto".into()))));
+        let (seen, text) = (set.clone(), clip_text.clone());
+        let mut c = clipboard(Clip {
+            set: Rc::new(move |t: &str| {
+                seen.borrow_mut().push(t.to_owned());
+                Ok(())
+            }),
+            get: Rc::new(move || text.borrow().clone()),
+        });
+        (c.set)("Lisbon").unwrap();
+        assert_eq!(*set.borrow(), vec!["Lisbon".to_owned()]);
+        assert_eq!((c.take_paste)(), None, "nothing asked");
+        (c.request_paste)();
+        assert_eq!((c.take_paste)().as_deref(), Some("Porto"));
+        assert_eq!((c.take_paste)(), None, "answered once");
+        *clip_text.borrow_mut() = Ok(None);
+        (c.request_paste)();
+        assert_eq!((c.take_paste)().as_deref(), Some(""));
+        *clip_text.borrow_mut() = Err("no focus".into());
+        (c.request_paste)();
+        assert_eq!((c.take_paste)().as_deref(), Some(""));
+    }
+
     #[test]
     fn open_url_passes_https_only() {
         let seen = Rc::new(RefCell::new(Vec::new()));

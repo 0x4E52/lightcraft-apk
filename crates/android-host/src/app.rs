@@ -18,6 +18,11 @@
 //!
 //! Shares (APK-25): the files LightCraft was sent at this start ([`Shares`]) are ticked in
 //! `logic` once the library is open, and asked for frames until they are received and imported.
+//!
+//! Clipboard (APK-28): the app's copies and its menus' pastes go through `Services::clipboard`;
+//! here `raw_input_hook` gives a hardware keyboard's Ctrl+V the system clipboard's text
+//! ([`crate::input::system_pastes`]), and the first frame seeds egui-winit's in-process clipboard
+//! so that Ctrl+V reaches the app at all.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -66,6 +71,8 @@ pub struct HostApp {
     focus: Vec<bool>,
     /// What other apps sent at this start (kept here, so a reopened library still gets it).
     shares: Shares,
+    /// egui-winit's in-process clipboard holds [`crate::input::PASTE_KEY_SEED`] (or a copy).
+    paste_key_seeded: bool,
 }
 
 impl HostApp {
@@ -78,7 +85,7 @@ impl HostApp {
         insets: Tracker,
         shares: Shares,
     ) -> HostApp {
-        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets, focus: Vec::new(), shares }
+        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets, focus: Vec::new(), shares, paste_key_seeded: false }
     }
 
     /// The focus changes since the last frame, then a tick, to the photo access; asks for a frame
@@ -169,6 +176,11 @@ impl eframe::App for HostApp {
         raw.safe_area_insets = Some(egui::SafeAreaInsets(insets_px_to_points(self.insets.cached(), scale)));
         // Back is Escape: popups and text fields take it first, then the Back cascade
         crate::input::browser_back_to_escape(&mut raw.events);
+        // a hardware Ctrl+V pastes what the system clipboard holds (before the app adds the
+        // answers of its own paste requests, which already are)
+        if let Some(clip) = &self.start.clipboard {
+            crate::input::system_pastes(&mut raw.events, || (clip.get)());
+        }
         // (taken by the `logic` of this frame)
         self.focus.extend(raw.events.iter().filter_map(|e| match e {
             egui::Event::WindowFocused(focused) => Some(*focused),
@@ -193,6 +205,12 @@ impl eframe::App for HostApp {
             Some(state) if state.app.fonts_ready() => {
                 state.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
                 state.app.ui(ui);
+                // after the app's frame, so this copy stays in egui-winit and never reaches the
+                // system clipboard
+                if !self.paste_key_seeded && self.start.clipboard.is_some() {
+                    self.paste_key_seeded = true;
+                    ui.ctx().copy_text(crate::input::PASTE_KEY_SEED.to_owned());
+                }
                 if self.reopen.is_pending() {
                     ui.ctx().request_repaint();
                 }

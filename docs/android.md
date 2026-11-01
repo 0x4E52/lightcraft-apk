@@ -303,6 +303,14 @@ system's share sheet with them (one file: `ACTION_SEND`, several: `ACTION_SEND_M
 to the app chosen). `{"paths": [...]}` shares files already exported there. A file outside shared storage can't be
 shared and the message says where to export it.
 
+## Clipboard
+
+Copy and paste reach other apps (APK-28): every copy (a text field's Copy or Cut, a dialog's Copy to Clipboard, Ctrl+C
+on a hardware keyboard) goes to Android's clipboard, and Paste in a text field, or Ctrl+V, reads it. The calls run on
+LightCraft's own thread without waiting for Android's main thread; a paste arrives on the next frame. Android 10 and
+later show the clipboard only to the app in front, so a paste works while LightCraft has the focus. Pastes are cut at
+1 MiB.
+
 ## Privacy
 
 LightCraft collects nothing and sends nothing about you or your photos: no telemetry, no analytics, no crash
@@ -389,6 +397,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   `Pictures/LightCraft` (Gallery shows them) and no `.lightcraft-…-tmp` file is left; a Contact Sheet PDF saved
   from the chooser's Documents place is in `Documents/LightCraft` (Files shows it). File ▸ Share… one photo, then
   three, to a messenger: the photos arrive. The Export dialog with a folder in Pictures doesn't offer Original files.
+- [ ] Clipboard (APK-28): copy a keyword from the keyword field (long press or right-click ▸ Copy) and paste it into
+  another app; copy text in another app and paste it into the keyword field with the field's Paste; with a hardware
+  keyboard, Ctrl+C and Ctrl+V do the same. The UI doesn't stall on a paste.
 - [ ] File pickers (APK-24, after APK-25): share a `.xmp` preset from Files to LightCraft, then File ▸ Import
   Profiles & Presets… ▸ Inbox imports it; the chooser's rows are finger-sized and Back closes it.
 - [ ] Debug control server (APK-21): the recipe in "Debug control server" returns a screenshot; the same request

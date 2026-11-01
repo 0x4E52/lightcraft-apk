@@ -11,6 +11,7 @@ pub mod album_picker;
 pub mod brush_live;
 pub mod button;
 pub mod canvas_keys;
+pub mod clipboard;
 mod command_error;
 pub mod control;
 pub mod credits;
@@ -75,6 +76,8 @@ mod tests_browse_active;
 mod tests_button;
 #[cfg(test)]
 mod tests_canvas_keys;
+#[cfg(test)]
+mod tests_clipboard;
 #[cfg(test)]
 mod tests_compare;
 #[cfg(test)]
@@ -427,6 +430,10 @@ pub struct Services {
     /// Commands whose file can't live there are disabled with why. Empty = no in-app chooser (the
     /// desktop and the web, which have their own dialogs).
     pub pick_roots: Vec<(String, std::path::PathBuf)>,
+    /// The system clipboard where egui's host keeps its own (Android: `ClipboardManager`): every
+    /// copy goes to it and every paste reads it, never blocking the UI thread ([`clipboard`]).
+    /// `None` = egui's host clipboard (the desktop, the web).
+    pub clipboard: Option<clipboard::ClipboardFns>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -522,6 +529,9 @@ pub struct LightcraftApp {
     touch_shift: f64,
     /// The text the UI last put on the clipboard (`ui.inspect` → `copied`).
     pub copied: Option<String>,
+    /// When (`now_ms`) the clipboard service was last asked for a paste it hasn't answered yet:
+    /// frames are asked for until it does, up to `clipboard::PASTE_WAIT_MS`.
+    pub(crate) paste_pending: Option<f64>,
     /// Native file dialogs up for commands (`pick`): each command runs again when its closes.
     pub(crate) pending_picks: Vec<pick::Pending>,
     /// The in-app file chooser while it is up (`pick_browser`; hosts without file dialogs).
@@ -675,6 +685,7 @@ impl LightcraftApp {
             touch_origin: None,
             touch_shift: 0.0,
             copied: None,
+            paste_pending: None,
             pending_picks: vec![],
             pick_browser: None,
             synthetic_mods: egui::Modifiers::NONE,
@@ -1327,6 +1338,7 @@ impl LightcraftApp {
     }
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
+        clipboard::mark_service(ctx, self.services.clipboard.is_some());
         if !self.styled {
             theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
             theme::apply(ctx);
@@ -1641,6 +1653,7 @@ impl LightcraftApp {
             raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
         }
         self.release_touch(raw);
+        self.take_paste(raw);
         if self.services.touch || raw.events.iter().any(|e| matches!(e, egui::Event::Touch { .. })) {
             self.ui.touch_mode = true;
         }
@@ -1672,6 +1685,51 @@ impl LightcraftApp {
         raw.events.extend(self.synthetic.drain(..n));
     }
 
+    /// The clipboard service's answer to a paste, as the paste event a host sends (none for an
+    /// empty clipboard); asked every frame, so a late answer is pasted when it comes.
+    fn take_paste(&mut self, raw: &mut egui::RawInput) {
+        let Some(clip) = self.services.clipboard.as_mut() else { return };
+        match (clip.take_paste)() {
+            Some(text) => {
+                self.paste_pending = None;
+                if !text.is_empty() {
+                    raw.events.push(egui::Event::Paste(text));
+                }
+            }
+            None => {
+                if self.paste_pending.is_some_and(|since| now_ms() - since > clipboard::PASTE_WAIT_MS) {
+                    log::warn!("the clipboard did not answer a paste within {} s", clipboard::PASTE_WAIT_MS / 1000.0);
+                    self.paste_pending = None;
+                }
+            }
+        }
+    }
+
+    /// With a clipboard service: this frame's copies go to the system clipboard (a failure is
+    /// said in a toast), a paste a widget asked for is requested, and frames are asked for while
+    /// its answer is due.
+    fn clipboard_end_frame(&mut self, ctx: &egui::Context, copies: &[String]) {
+        let Some(clip) = self.services.clipboard.as_mut() else { return };
+        let mut failed = None;
+        for text in copies {
+            if let Err(e) = (clip.set)(text) {
+                log::warn!("copy to the system clipboard: {e}");
+                failed = Some(e);
+            }
+        }
+        if clipboard::take_request(ctx) {
+            (clip.request_paste)();
+            self.paste_pending = Some(now_ms());
+        }
+        if self.paste_pending.is_some() {
+            ctx.request_repaint();
+        }
+        if let Some(e) = failed {
+            self.toast_error(ctx, format!("{} {e}", crate::i18n::tr("Could not copy to the clipboard:")));
+            ctx.request_repaint();
+        }
+    }
+
     /// Lights Out: veil everything but the photo (the loupe's image, or the grid / Compare /
     /// Survey area) in black. Painted above the panels, below dialogs and notices.
     fn lights_out(&self, ctx: &egui::Context) {
@@ -1698,13 +1756,19 @@ impl LightcraftApp {
 
     /// Frame timings once layout is done (`t0`: when layout started).
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
-        ctx.output(|o| {
-            for c in &o.commands {
-                if let egui::OutputCommand::CopyText(text) = c {
-                    self.copied = Some(text.clone());
-                }
-            }
+        let copies: Vec<String> = ctx.output(|o| {
+            o.commands
+                .iter()
+                .filter_map(|c| match c {
+                    egui::OutputCommand::CopyText(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
         });
+        if let Some(last) = copies.last() {
+            self.copied = Some(last.clone());
+        }
+        self.clipboard_end_frame(ctx, &copies);
         self.perf.frame_ms = now_ms() - t0;
         self.perf.update_ms = self.perf.logic_ms + self.perf.frame_ms;
         self.perf.max_update_ms = self.perf.max_update_ms.max(self.perf.update_ms);

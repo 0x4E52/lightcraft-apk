@@ -378,7 +378,7 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
                 Some("copy") => app.synthetic.push(egui::Event::Copy),
                 Some("paste") => match s("text") {
                     Some(text) => app.synthetic.push(egui::Event::Paste(text.to_string())),
-                    None => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+                    None => crate::clipboard::request_paste(ctx),
                 },
                 _ => return err("ui.clipboard: `action` is cut, copy or paste"),
             }

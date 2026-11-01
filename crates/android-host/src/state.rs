@@ -86,6 +86,8 @@ pub struct Start {
     pub shared: Option<lightcraft_android_sys::storage::Folders>,
     /// File ▸ Share's service (`None` in tests: no share sheet).
     pub share: Option<lightcraft_ui_egui::share::ShareFn>,
+    /// The system clipboard (`None` in tests: egui's own, in-process).
+    pub clipboard: Option<crate::services::Clip>,
 }
 
 impl Start {
@@ -141,6 +143,7 @@ impl HostState {
             crate::services::shared_storage(&mut services, folders);
         }
         services.share = start.share.clone();
+        services.clipboard = start.clipboard.clone().map(crate::services::clipboard);
         let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {
             app.ui = ui;
@@ -374,5 +377,24 @@ mod tests {
         let r = lightcraft_ui_egui::menus::run_ui_command(&mut state.app, "app.help", &serde_json::Value::Null);
         assert!(matches!(r, Some(Ok(_))), "{r:?}");
         assert_eq!(*seen.borrow(), [lightcraft_ui_egui::links::HELP]);
+    }
+
+    /// The host's clipboard is the app's: a copy from the UI reaches the host's `set`.
+    #[test]
+    fn clipboard_reaches_the_app() {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let log = seen.clone();
+        let clip = crate::services::Clip {
+            set: std::rc::Rc::new(move |t: &str| {
+                log.borrow_mut().push(t.to_owned());
+                Ok(())
+            }),
+            get: std::rc::Rc::new(|| Ok(None)),
+        };
+        let mut state = HostState::new(Err("in memory".into()), Start { clipboard: Some(clip), ..Start::default() });
+        let services = state.app.services.clipboard.as_mut().unwrap();
+        (services.set)("Lisbon").unwrap();
+        assert_eq!(*seen.borrow(), ["Lisbon"]);
+        assert!(HostState::new(Err("in memory".into()), Start::default()).app.services.clipboard.is_none());
     }
 }

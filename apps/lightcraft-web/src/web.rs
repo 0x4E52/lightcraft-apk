@@ -259,6 +259,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         prefer_copy_import: false,
         // the browser's own file pickers answer: no in-app chooser
         pick_roots: Vec::new(),
+        clipboard: None,
     }
 }
 

@@ -121,7 +121,7 @@ crates/android-host         package lightcraft-android-host, rlib, #![forbid(uns
   ├─ loader.rs              opens the Session on a worker; hands it over to the UI thread              (APK-11)
   ├─ state.rs               HostState { app, prefs }: flush_leaving/flush_dirty/trim (impl Host)      (APK-11/18)
   ├─ app.rs                 eframe::App wrapper: loading frame, logic, raw_input_hook, ui, on_exit    (APK-11 …)
-  ├─ input.rs               pure: the Back key becomes Escape (browser_back_to_escape)                (APK-17)
+  ├─ input.rs               pure: Back becomes Escape; Ctrl+V pastes the system clipboard             (APK-17/28)
   ├─ services.rs            fills ui_egui::Services (writer, png, android-sys services)               (APK-11 …)
   ├─ lifecycle_core.rs      pure: HostEvent, trait Host, on_event() → Continue | Exit                  (APK-18)
   ├─ lifecycle.rs           android only: ApplicationHandler forwarding to EframeWinitApplication      (APK-18)

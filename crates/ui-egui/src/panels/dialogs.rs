@@ -403,7 +403,9 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                             ui.end_row();
                         }
                     });
-                    if ui.button(crate::i18n::tr("Copy to Clipboard")).clicked() {
+                    let copy = ui.button(crate::i18n::tr("Copy to Clipboard"));
+                    crate::widgets::register(ui.ctx(), "dialog:systemInfoCopy", copy.rect);
+                    if copy.clicked() {
                         let text: String = rows.iter().map(|(k, v)| format!("{k}: {v}\n")).collect();
                         ui.ctx().copy_text(text);
                     }

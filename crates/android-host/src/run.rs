@@ -159,6 +159,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         open_link: Some(open_link(&app)),
         shared: Some(shared_folders(&app)),
         share: Some(share(&app)),
+        clipboard: Some(clipboard(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
     // what another app sent: `getIntent()` never changes while the Activity lives, so once
@@ -352,6 +353,17 @@ fn share(app: &android_activity::AndroidApp) -> lightcraft_ui_egui::share::Share
         lightcraft_android_sys::intents::start_share(&chooser_app, spec, "Share").map_err(|e| lightcraft_android_sys::intents::share_message(&e))
     });
     crate::services::share_fn(lookup, chooser)
+}
+
+/// The system clipboard: `ClipboardManager` calls on android_main itself (binder calls that work
+/// from any thread; no hop to the Java main thread, which may be waiting on android_main).
+#[cfg(target_os = "android")]
+fn clipboard(app: &android_activity::AndroidApp) -> crate::services::Clip {
+    let (set_app, get_app) = (app.clone(), app.clone());
+    crate::services::Clip {
+        set: std::rc::Rc::new(move |text: &str| lightcraft_android_sys::clipboard::set_text(&set_app, text).map_err(|e| e.user_message("copy"))),
+        get: std::rc::Rc::new(move || lightcraft_android_sys::clipboard::get_text(&get_app).map_err(|e| e.user_message("paste"))),
+    }
 }
 
 /// The content URIs of the intent that started the Activity ("Open with", a share), read on
