@@ -18,11 +18,11 @@ const SHOW_ALL: &str = "shortcuts-show-all";
 pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
     capture(app, ui.ctx());
-    ui.set_min_width(560.0);
+    ui.set_min_width(560.0f32.min(crate::panels::dialogs::body_width(ui)));
     let (search_id, all_id) = (egui::Id::new(SEARCH), egui::Id::new(SHOW_ALL));
     let mut search: String = ui.data(|d| d.get_temp(search_id)).unwrap_or_default();
     let mut show_all: bool = ui.data(|d| d.get_temp(all_id)).unwrap_or(false);
-    ui.horizontal(|ui| {
+    crate::panels::dialogs::row(ui, |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut search).hint_text(crate::i18n::tr("Search commands or keys")).desired_width(220.0));
         register(ui.ctx(), "field:shortcutsSearch", r.rect);
         let r = ui.checkbox(&mut show_all, crate::i18n::tr("Show commands without a shortcut"));
@@ -60,7 +60,9 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     // a fixed height, so the dialog doesn't jump around while the search narrows the list
     // (shorter on a short window, so the dialog fits it)
     let h = crate::panels::dialogs::list_height(ui, 400.0);
-    egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).id_salt("shortcuts-list").show(ui, |ui| {
+    // (below the phone breakpoint the list scrolls sideways too rather than widen the dialog: APK-33b)
+    let scroll = if crate::panels::dialogs::narrow(ui.ctx()) { egui::ScrollArea::both() } else { egui::ScrollArea::vertical() };
+    scroll.max_height(h).min_scrolled_height(h).auto_shrink([false, false]).id_salt("shortcuts-list").show(ui, |ui| {
         egui::Grid::new("shortcuts").striped(true).num_columns(4).spacing([12.0, 4.0]).show(ui, |ui| {
             for (b, sc) in &rows {
                 row(app, ui, t, b, sc.as_deref(), mac);
@@ -122,7 +124,10 @@ fn row(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, b: &Bindable, sc:
             apply(app, ui.ctx(), serde_json::json!({"id": b.id, "reset": true}));
         }
     });
-    ui.label(RichText::new(b.id).size(10.5).color(t.text_dim));
+    // (the command id, for agents and the control channel: left out on a phone, where it doesn't fit)
+    if !crate::panels::dialogs::narrow(ui.ctx()) {
+        ui.label(RichText::new(b.id).size(10.5).color(t.text_dim));
+    }
     ui.end_row();
 }
 

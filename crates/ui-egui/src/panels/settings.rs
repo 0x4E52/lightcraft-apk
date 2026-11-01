@@ -39,7 +39,7 @@ const LABEL_W: f32 = 150.0;
 /// The dialog body for `tab` (the tab bar switches `tab`).
 pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, tab: &mut String) {
     let t = Tokens::get(ui.ctx());
-    ui.set_width((ui.ctx().content_rect().width() - 64.0).clamp(240.0, 560.0));
+    ui.set_width((ui.ctx().content_rect().width() - 64.0).clamp(240.0, 560.0).min(super::dialogs::body_width(ui)));
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         for (id, label) in TABS {
@@ -68,14 +68,7 @@ pub(super) fn heading(ui: &mut egui::Ui, t: &Tokens, text: &str) {
 }
 
 pub(super) fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(egui::vec2(LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.set_min_width(LABEL_W);
-            ui.label(RichText::new(crate::i18n::tr(label)).color(t.text_label));
-        });
-        add(ui)
-    })
-    .inner
+    super::dialogs::labelled_row(ui, LABEL_W, RichText::new(crate::i18n::tr(label)).color(t.text_label), add)
 }
 
 pub(super) fn hint(ui: &mut egui::Ui, t: &Tokens, text: &str) {
@@ -715,6 +708,28 @@ fn slideshow_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     let top_down = egui::Layout::top_down(egui::Align::Min);
     // as tall as the window allows (the dialog's title, tabs and Close button take ~260 pt)
     let tall = (ui.ctx().content_rect().height() - 260.0).clamp(300.0, 760.0);
+    if super::dialogs::narrow(ui.ctx()) {
+        // below the phone breakpoint the preview sits above the settings, both the dialog's width
+        // (APK-33b); the dialog's own scroll area takes them
+        let w = ui.available_width();
+        ui.vertical(|ui| {
+            ui.set_width(w);
+            super::slide_layout::preview(app, ui, t);
+            ui.add_space(6.0);
+            super::slide_templates::section(app, ui, t);
+            ui.add_space(6.0);
+            playback_section(app, ui, t);
+            ui.add_space(6.0);
+            super::slide_layout::sections(app, ui, t);
+            ui.add_space(6.0);
+            super::slide_overlays::sections(app, ui, t);
+            ui.add_space(6.0);
+            super::slide_titles::sections(app, ui, t);
+            ui.add_space(6.0);
+            export_section(app, ui, t);
+        });
+        return;
+    }
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(SLIDESHOW_COLUMN_W, tall), top_down, |ui| {
             ui.set_width(SLIDESHOW_COLUMN_W);
@@ -744,7 +759,7 @@ fn slideshow_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
 fn export_section(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     heading(ui, t, crate::i18n::tr("Export"));
     let running = app.session.slideshow_export.as_ref().is_some_and(|r| r.running());
-    ui.horizontal(|ui| {
+    super::dialogs::row(ui, |ui| {
         for (id, label, format) in [
             ("slideshowExportPdf", "Export PDF…", "pdf"),
             ("slideshowExportJpeg", "Export JPEG…", "jpeg"),

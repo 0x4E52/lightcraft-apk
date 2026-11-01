@@ -155,21 +155,23 @@ pub fn licences_ui(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let id = egui::Id::new("licences_view");
     let mut v = ui.data_mut(|d| d.get_temp::<View>(id)).unwrap_or_default();
-    ui.horizontal(|ui| {
+    // below the phone breakpoint the list and the terms stack, each the dialog's width (APK-33b)
+    let narrow = crate::panels::dialogs::narrow(ui.ctx());
+    let width = crate::panels::dialogs::body_width(ui);
+    let (list_w, text_w) = if narrow { (width, width) } else { (LIST_WIDTH, TEXT_WIDTH) };
+    crate::panels::dialogs::row(ui, |ui| {
         crate::text_field::TextField::singleline("field:licenceFilter", &mut v.filter)
             .hint(crate::i18n::tr("Filter by name or licence"))
-            .width(LIST_WIDTH)
+            .width(list_w)
             .show(ui);
         ui.label(egui::RichText::new(crate::i18n::tr("LightCraft and the components it is built from")).color(t.text_dim));
     });
     let shown = licences.matching(&v.filter);
     let list_h = crate::panels::dialogs::list_height(ui, LIST_HEIGHT);
-    ui.horizontal_top(|ui| {
-        // bounds the separator, which would otherwise grow the window to the screen's height
-        ui.set_height(list_h);
+    let list = |ui: &mut egui::Ui, v: &mut View, height: f32| {
         ui.vertical(|ui| {
-            ui.set_width(LIST_WIDTH);
-            egui::ScrollArea::vertical().id_salt("licences_list").max_height(list_h).auto_shrink([false, false]).show_rows(
+            ui.set_width(list_w);
+            egui::ScrollArea::vertical().id_salt("licences_list").max_height(height).auto_shrink([false, false]).show_rows(
                 ui,
                 ui.spacing().interact_size.y,
                 shown.len(),
@@ -186,16 +188,32 @@ pub fn licences_ui(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 },
             );
         });
-        ui.separator();
+    };
+    let text = |app: &mut LightcraftApp, ui: &mut egui::Ui, v: &View, height: f32| {
         ui.vertical(|ui| {
-            ui.set_width(TEXT_WIDTH);
-            egui::ScrollArea::vertical().id_salt("licences_text").max_height(list_h).auto_shrink([false, false]).show(ui, |ui| {
+            ui.set_width(text_w);
+            egui::ScrollArea::vertical().id_salt("licences_text").max_height(height).auto_shrink([false, false]).show(ui, |ui| {
                 if let Some(e) = licences.entries.get(v.selected) {
                     entry_ui(app, ui, &t, licences, e);
                 }
             });
         });
-    });
+    };
+    if narrow {
+        // (the list's height split between the two, so the tab is no taller than beside each other)
+        let half = (list_h / 2.0).max(ui.spacing().interact_size.y * 3.0);
+        list(ui, &mut v, half);
+        ui.separator();
+        text(app, ui, &v, half);
+    } else {
+        ui.horizontal_top(|ui| {
+            // bounds the separator, which would otherwise grow the window to the screen's height
+            ui.set_height(list_h);
+            list(ui, &mut v, list_h);
+            ui.separator();
+            text(app, ui, &v, list_h);
+        });
+    }
     ui.data_mut(|d| d.insert_temp(id, v));
 }
 

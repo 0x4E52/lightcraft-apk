@@ -300,6 +300,11 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             .max(DIALOG_MIN_BODY);
     let widest_id = window_id.with("widest");
     let widest = if settings { ctx.data(|d| d.get_temp::<f32>(widest_id)).unwrap_or(0.0).min(screen.width() * 0.9) } else { 0.0 };
+    // every dialog's width from the content rect (APK-33b): never wider than it less the margins,
+    // and all of that below the phone breakpoint
+    let room = width(screen.width(), f32::INFINITY);
+    let narrow = narrow_width(screen.width());
+    ctx.data_mut(|d| d.insert_temp(body_width_id(), room - frame.total_margin().sum().x));
     let mut content_w = 0.0f32;
     let mut body_h = None;
     let shown = egui::Window::new(crate::i18n::tr(&title)).id(window_id)
@@ -309,17 +314,21 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         .resize(|r| if import { r.default_height(crate::import::DIALOG_SIZE[1]) } else { r })
         .frame(frame)
         .anchor(if settings { egui::Align2::CENTER_TOP } else { egui::Align2::CENTER_CENTER }, [0.0, if settings { top } else { 0.0 }])
-        .min_width(widest)
-        .default_width(match dlg {
-            Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
-            Dialog::SmartRules { .. } => 680.0,
-            Dialog::AllMetadata { .. } => 620.0,
-            Dialog::Print => 1100.0,
-            Dialog::FaceModel { .. } => 460.0,
-            Dialog::LightroomCatalog { .. } => 440.0,
-            Dialog::ManageEffects { .. } => 560.0,
-            _ => 380.0,
-        })
+        .min_width(if narrow { room } else { widest.min(room) })
+        .max_width(room)
+        .default_width(width(
+            screen.width(),
+            match dlg {
+                Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
+                Dialog::SmartRules { .. } => 680.0,
+                Dialog::AllMetadata { .. } => 620.0,
+                Dialog::Print => 1100.0,
+                Dialog::FaceModel { .. } => 460.0,
+                Dialog::LightroomCatalog { .. } => 440.0,
+                Dialog::ManageEffects { .. } => 560.0,
+                _ => 380.0,
+            },
+        ))
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             body_h = dialog_body(ui, (!import && !print).then_some(title.as_str()), body_max, |ui| match &mut dlg {
@@ -1269,10 +1278,10 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     );
                 }
                 Dialog::About => {
-                    ui.set_min_width(680.0);
+                    ui.set_min_width(680.0f32.min(body_width(ui)));
                     let tab_id = egui::Id::new("about_tab");
                     let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         for (i, (id, label)) in ABOUT_TABS.iter().enumerate() {
                             if crate::widgets::text_button(ui, &format!("aboutTab-{id}"), label, usize::from(tab) == i).clicked() {
@@ -1487,8 +1496,70 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     app.ui.dialog = if close { None } else { Some(dlg) };
 }
 
-/// Room kept free above and below a dialog (#781).
+/// Room kept free around a dialog (#781; at its sides too since APK-33b).
 const DIALOG_SCREEN_MARGIN: f32 = 12.0;
+
+/// The outer width of a dialog that asks for `preferred` points in a content rect `screen_w`
+/// wide (the window less its safe-area insets, APK-31): at most the content width less the
+/// margins at its sides, and all of that below the phone breakpoint (APK-33b), where a dialog
+/// takes the screen's width. `f32::INFINITY` gives the most a dialog may take.
+pub fn width(screen_w: f32, preferred: f32) -> f32 {
+    let room = (screen_w - 2.0 * DIALOG_SCREEN_MARGIN).max(DIALOG_MIN_WIDTH.min(screen_w));
+    if narrow_width(screen_w) { room } else { preferred.min(room) }
+}
+
+/// A content rect this wide lays dialogs out for a phone: full width, wrapped rows, stacked columns.
+fn narrow_width(screen_w: f32) -> bool {
+    screen_w < crate::state::PHONE_WIDTH
+}
+
+/// The dialogs are laid out for a phone (the content rect is narrower than the phone breakpoint):
+/// rows of controls wrap and two-column bodies stack.
+pub fn narrow(ctx: &egui::Context) -> bool {
+    narrow_width(ctx.content_rect().width())
+}
+
+/// The most a dialog's content may be wide this frame (its window's widest less the frame): a body
+/// with a fixed width of its own takes `fixed.min(body_width(ui))`.
+pub fn body_width(ui: &egui::Ui) -> f32 {
+    ui.data(|d| d.get_temp::<f32>(body_width_id())).unwrap_or(f32::INFINITY)
+}
+
+fn body_width_id() -> egui::Id {
+    egui::Id::new("dialog-body-width")
+}
+
+/// A row of controls: one line, or wrapped onto the next lines when the dialogs are narrow.
+pub fn row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::InnerResponse<R> {
+    if narrow(ui.ctx()) { ui.horizontal_wrapped(add) } else { ui.horizontal(add) }
+}
+
+/// A label in a column `label_w` wide and its controls beside it; when the dialogs are narrow the
+/// two stack: the label (if any) on a line of its own, the controls below it, wrapping onto more
+/// lines when they don't fit.
+pub fn labelled_row<R>(ui: &mut egui::Ui, label_w: f32, label: egui::RichText, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if narrow(ui.ctx()) {
+        return ui
+            .vertical(|ui| {
+                if !label.text().is_empty() {
+                    ui.label(label);
+                }
+                ui.horizontal_wrapped(add).inner
+            })
+            .inner;
+    }
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(egui::vec2(label_w, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_width(label_w);
+            ui.label(label);
+        });
+        add(ui)
+    })
+    .inner
+}
+
+/// However narrow the window, a dialog keeps this much width (it then runs off the screen).
+const DIALOG_MIN_WIDTH: f32 = 200.0;
 /// A dialog's title bar, frame and button row before the first frame measures them.
 const DIALOG_CHROME_GUESS: f32 = 100.0;
 /// A dialog's options never get less room than this, however short the window.
@@ -2143,14 +2214,7 @@ fn slideshow_export_body(app: &mut LightcraftApp, ui: &mut egui::Ui, settings: &
 
 fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let t = Tokens::get(ui.ctx());
-    ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(egui::vec2(LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.set_min_width(LABEL_W);
-            ui.label(egui::RichText::new(crate::i18n::tr(label)).color(t.text_label));
-        });
-        add(ui)
-    })
-    .inner
+    labelled_row(ui, LABEL_W, egui::RichText::new(crate::i18n::tr(label)).color(t.text_label), add)
 }
 
 /// The rest of a [`field`] row, laid out right to left: `add` places its trailing button(s) first,

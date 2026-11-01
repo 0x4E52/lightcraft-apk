@@ -46,6 +46,10 @@ edit, import or delete in the personal library). Screenshots of Adobe apps never
   left) (verify).
 - **Premium badge:** in the free app, premium tools stay visible with a badge and open an upgrade screen. LightCraft
   has no tiers: every tool it has is free.
+- **Dialogs:** LightCraft (APK-33b, `panels::dialogs::width`): every dialog is at most the content width (the window
+  less its safe-area insets) less 12 pt at each side; below 600 pt it takes all of that. Its rows of controls stack
+  there (label above, controls wrapping below), as do two-column bodies (About ▸ Licences, Settings ▸ Slideshow), and
+  the tab rows wrap.
 
 ## 2. Gestures
 
@@ -133,3 +137,4 @@ toolbar and sheets of §1, APK-34 the top bar and overflow menu. A card that has
 
 - 2026-10-17: first version from public sources; the maintainer's device checks pending.
 - 2026-11-01: the phone layout as built (APK-33): edit toolbar and bottom sheet below 600 pt width.
+- 2026-11-01: dialogs fit a phone (APK-33b).

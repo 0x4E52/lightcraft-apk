@@ -158,3 +158,106 @@ fn gpu_status_never_moves_the_performance_controls() {
     let first = seen[0].1;
     assert!(seen.iter().all(|(_, r, _)| *r == first), "the memory buttons moved: {seen:?}");
 }
+
+/// A phone held upright and on its side, in points, and its scale (1080 × 2400 px at 420 dpi).
+const PHONE: [f32; 2] = [412.0, 915.0];
+const PHONE_SCALE: f32 = 2.625;
+
+/// The demo library on a phone: touch, so the touch density's bigger hit sizes are laid out too.
+fn phone(size: [f32; 2]) -> Headless {
+    let services = Services { png: None, write_shared: Some(std::sync::Arc::new(|_: &str, _: &[u8]| Ok(()))), ..Default::default() };
+    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
+    app.ui.settings.gpu = false;
+    let mut h = Headless::new(app, size, PHONE_SCALE);
+    // the status bar and the gesture bar, as the Android host reports them (APK-31)
+    h.safe_area = Some(egui::epaint::MarginF32 { left: 0.0, right: 0.0, top: 28.0, bottom: 24.0 });
+    touch_frames(&mut h);
+    h
+}
+
+/// Settle with touch mode set again (a control request's own pointer activity clears it).
+fn touch_frames(h: &mut Headless) {
+    h.app.ui.touch_mode = true;
+    h.settle(T);
+    h.step();
+    h.step();
+}
+
+/// Nothing a dialog lays out runs past the content rect (the window less its insets), and its
+/// buttons lie inside it; what doesn't goes to `bad`.
+fn check_fits_content(h: &Headless, what: &str, bad: &mut Vec<String>) {
+    let content = h.view.ctx.content_rect();
+    let dialog = rect(h, "dialog:window");
+    if !content.expand(0.5).contains_rect(dialog) {
+        bad.push(format!("{what}: dialog {dialog:?} runs off the content rect {content:?}"));
+    }
+    for b in ["button:dialogOk", "button:dialogCancel"] {
+        if let Some((_, r)) = h.app.widgets.iter().find(|(w, _)| w == b)
+            && !dialog.expand(0.5).contains_rect(*r)
+        {
+            bad.push(format!("{what}: {b} {r:?} is outside the dialog {dialog:?}"));
+        }
+    }
+}
+
+// Scenario: on a phone, upright and on its side, every dialog (and each About tab) fits the screen
+#[test]
+fn every_dialog_fits_a_phone() {
+    let mut bad = vec![];
+    for size in [PHONE, [PHONE[1], PHONE[0]]] {
+        let mut h = phone(size);
+        for command in [
+            "dialog.export",
+            "dialog.copySettings",
+            "dialog.pasteSettings",
+            "dialog.createPreset",
+            "dialog.contactSheet",
+            "app.settings",
+            "app.shortcuts",
+            "app.whatsNew",
+            "app.systemInfo",
+            "dialog.smartAlbum",
+        ] {
+            open(&mut h, command);
+            touch_frames(&mut h);
+            check_fits_content(&h, &format!("{command} at {size:?}"), &mut bad);
+            h.app.ui.dialog = None;
+            touch_frames(&mut h);
+        }
+        open(&mut h, "app.about");
+        for (id, _) in crate::panels::dialogs::ABOUT_TABS {
+            let r = h.request("ui.clickWidget", json!({"id": format!("button:aboutTab-{id}")}), T);
+            assert_eq!(r["ok"], true, "{id}: {r}");
+            touch_frames(&mut h);
+            check_fits_content(&h, &format!("About ▸ {id} at {size:?}"), &mut bad);
+        }
+        // the Settings tabs too: its tab row wraps instead of widening the window
+        h.app.ui.dialog = None;
+        touch_frames(&mut h);
+        open(&mut h, "app.settings");
+        let tabs: Vec<String> = h.app.widgets.iter().map(|(w, _)| w.to_string()).filter(|w| w.starts_with("button:settingsTab-")).collect();
+        assert!(!tabs.is_empty(), "Settings has tabs");
+        for tab in tabs {
+            let r = h.request("ui.clickWidget", json!({"id": tab}), T);
+            assert_eq!(r["ok"], true, "{tab}: {r}");
+            touch_frames(&mut h);
+            check_fits_content(&h, &format!("Settings ▸ {tab} at {size:?}"), &mut bad);
+        }
+        h.app.ui.dialog = None;
+        h.settle(T);
+    }
+    assert!(bad.is_empty(), "dialogs that don't fit a phone:\n{}", bad.join("\n"));
+}
+
+// Scenario: below the phone breakpoint a dialog takes the content width less its margins
+#[test]
+fn a_dialog_is_full_width_on_a_phone() {
+    let mut h = phone(PHONE);
+    open(&mut h, "app.about");
+    touch_frames(&mut h);
+    let content = h.view.ctx.content_rect();
+    let dialog = rect(&h, "dialog:window");
+    let want = content.width() - 2.0 * 12.0;
+    assert!((dialog.width() - want).abs() <= 1.0, "full width less the margins: {dialog:?} in {content:?}");
+    assert!((dialog.center().x - content.center().x).abs() <= 1.0, "centred: {dialog:?} in {content:?}");
+}
