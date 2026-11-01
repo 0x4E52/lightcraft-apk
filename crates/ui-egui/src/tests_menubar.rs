@@ -181,3 +181,143 @@ fn a_scrolled_menu_draws_no_scrollbar_over_its_shortcuts() {
     }
     assert!((widths[0] - widths[1]).abs() < 0.5, "a scrolled menu is as wide as one that fits: {widths:?}");
 }
+
+// ---- APK-34: one overflow button below the phone breakpoint
+
+/// Every menu title as a `menusub:` row in the open overflow level, in order.
+#[test]
+fn overflow_lists_every_menu_command() {
+    // the desktop bar: its titles and, per title, the commands its menu offers
+    let mut desk = app([1280.0, 703.0]);
+    let bar = crate::menubar::menu_bar(&desk.app);
+    assert!(widget(&desk, "menu:all").is_none(), "the desktop keeps its titles");
+    let titles: Vec<String> = bar.iter().map(|(t, _)| t.clone()).collect();
+    for t in &titles {
+        assert!(widget(&desk, &format!("menu:{t}")).is_some(), "desktop title {t}");
+    }
+    desk.settle(SETTLE);
+
+    let svc = Services { png: None, ..Default::default() };
+    // 412 pt: the search field still runs over the button (APK-34b), so only look; 590 pt, still
+    // below the breakpoint, leaves the button free to tap
+    let mut narrow = Headless::new(
+        LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() }),
+        [412.0, 915.0],
+        2.625,
+    );
+    narrow.settle(SETTLE);
+    assert!(narrow.app.ui.sheet.phone && widget(&narrow, "menu:all").is_some());
+    let mut h = Headless::new(LightcraftApp::new(lightcraft_engine::Session::with_demo(), svc), [590.0, 900.0], 1.0);
+    h.settle(SETTLE);
+    assert!(h.app.ui.sheet.phone);
+    assert!(widget(&h, "menu:all").is_some(), "one overflow button");
+    assert!(titles.iter().all(|t| widget(&h, &format!("menu:{t}")).is_none()), "no titles in the phone bar");
+    go(&mut h, "ui.clickWidget", "menu:all");
+    h.step();
+    h.step();
+    let level = widget(&h, "menu-level:1")
+        .unwrap_or_else(|| panic!("overflow open: {:?}", h.app.widgets.iter().filter(|w| w.0.starts_with("menu")).collect::<Vec<_>>()));
+    for t in &titles {
+        let r = widget(&h, &format!("menusub:{t}")).unwrap_or_else(|| panic!("overflow lacks {t}"));
+        assert!(level.expand(0.5).contains_rect(r) || r.intersects(level), "{t} in the overflow");
+    }
+    // the overflow draws the desktop tree: per title, every item row (nested submenus walked by
+    // hovering their rows) is registered as `menuitem:<id>` / `menuitem-off:<id>`, and the set of
+    // ids with their enabled flags equals the tree's
+    fn walk(n: &[crate::menubar::MenuNode], items: &mut Vec<(String, bool)>, subs: &mut Vec<String>) {
+        for x in n {
+            match x {
+                crate::menubar::MenuNode::Item { id, enabled, .. } => items.push((id.clone(), *enabled)),
+                crate::menubar::MenuNode::Submenu { label, children } => {
+                    subs.push(label.clone());
+                    walk(children, items, subs);
+                }
+                _ => {}
+            }
+        }
+    }
+    let drawn = |h: &Headless| -> std::collections::BTreeSet<(String, bool)> {
+        h.app
+            .widgets
+            .iter()
+            .filter_map(|(w, _)| {
+                w.strip_prefix("menuitem:").map(|i| (i.to_string(), true)).or_else(|| w.strip_prefix("menuitem-off:").map(|i| (i.to_string(), false)))
+            })
+            .collect()
+    };
+    // a nested popup can cover its parent's later rows, so every submenu starts from a fresh overflow
+    let open_title = |h: &mut Headless, t: &str| {
+        h.step();
+        if widget(h, "menu-level:1").is_some() {
+            go(h, "ui.clickWidget", "menu:all");
+            h.step();
+        }
+        go(h, "ui.clickWidget", "menu:all");
+        h.step();
+        h.step();
+        go(h, "ui.hoverWidget", &format!("menusub:{t}"));
+        h.settle(SETTLE);
+        assert!(widget(h, "menu-level:2").is_some(), "{t}: its submenu opens");
+    };
+    let mut total = 0;
+    let mut disabled = 0;
+    for (t, nodes) in &bar {
+        let (mut want, mut subs) = (vec![], vec![]);
+        walk(nodes, &mut want, &mut subs);
+        let want: std::collections::BTreeSet<(String, bool)> = want.into_iter().collect();
+        open_title(&mut h, t);
+        let mut got = drawn(&h);
+        for s in &subs {
+            open_title(&mut h, t);
+            go(&mut h, "ui.hoverWidget", &format!("menusub:{s}"));
+            h.settle(SETTLE);
+            got.extend(drawn(&h));
+        }
+        assert_eq!(got, want, "{t}: the overflow draws the desktop menu's commands with the same enabled flags");
+        total += want.len();
+        disabled += want.iter().filter(|(_, e)| !e).count();
+    }
+    assert!(total > 50, "{total} commands compared");
+    assert!(disabled > 0, "some disabled item was compared");
+}
+
+/// APK-34b turns this on: at the real portrait-phone width the search field still runs over the
+/// Menu button, so a tap lands on the field.
+#[test]
+#[ignore = "APK-34b: the search field covers menu:all at 412 pt"]
+fn menu_button_is_tappable_at_412() {
+    let mut h = Headless::new(
+        LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() }),
+        [412.0, 915.0],
+        2.625,
+    );
+    h.settle(SETTLE);
+    let r = widget(&h, "menu:all").expect("menu:all");
+    let field = widget(&h, "field:search").expect("field:search");
+    assert!(!r.intersects(field), "{r:?} vs {field:?}");
+}
+
+/// A phone-sized window never puts the titles in the bar, however much room the bar has (APK-34).
+#[test]
+fn phone_bar_is_one_button_even_with_room() {
+    let mut view = crate::headless::HeadlessView::new();
+    let mut run = |phone: bool| {
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+        app.ui.sheet.phone = phone;
+        let raw = crate::headless::HeadlessView::raw_input(egui::vec2(1280.0, 703.0), 1.0, 0.0, vec![]);
+        let mut ids = vec![];
+        for _ in 0..2 {
+            let raw = raw.clone();
+            view.run(raw, |ui| {
+                crate::menubar::show_in_window(&mut app, ui, 5000.0);
+                ids = crate::widgets::take_registry(ui.ctx()).into_iter().map(|w| w.0).collect();
+            });
+        }
+        ids
+    };
+    let desk = run(false);
+    assert!(desk.iter().any(|i| i == "menu:File") && !desk.iter().any(|i| i == "menu:all"), "{desk:?}");
+    let phone = run(true);
+    assert!(phone.iter().any(|i| i == "menu:all"), "{phone:?}");
+    assert!(!phone.iter().any(|i| i.starts_with("menu:") && i != "menu:all"), "{phone:?}");
+}

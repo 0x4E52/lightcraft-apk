@@ -1295,7 +1295,7 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
 - **Steps:** below the phone breakpoint the search field collapses to a magnifier button that opens it full-width;
   the right-hand icons move into APK-34's overflow menu except Share (as in `android-touch-ui.md` §1); the bar lays
   out inside the content rect (APK-31).
-- **Tests:** `topbar_widgets_do_not_overlap` at 412×915 and 915×412; `search_opens_from_the_magnifier`;
+- **Tests:** `topbar_widgets_do_not_overlap` at 412×915 and 915×412; `search_opens_from_the_magnifier`; un-ignore `menu_button_is_tappable_at_412` (APK-34);
   `desktop_layout_fingerprint_unchanged` stays green.
 - **Verify:** `cargo test -p lightcraft-ui-egui -- topbar desktop_layout`, a 412×915 snapshot, then Read the PNG.
 - **Depends on:** APK-34  **Needs:** none  **Model:** sonnet — one bar, test-driven.

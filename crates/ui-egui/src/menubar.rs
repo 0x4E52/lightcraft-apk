@@ -890,7 +890,7 @@ pub fn bar_width(ui: &egui::Ui) -> f32 {
 }
 
 /// The in-window menu bar (hosts without a native one): one dropdown per menu, or a single
-/// "Menu" button when the space is too narrow. Returns the width used.
+/// "Menu" overflow button when the space is too narrow or the window is a phone's. Returns the width used.
 pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32) -> f32 {
     let t = crate::theme::Tokens::get(ui.ctx());
     let bar = menu_bar(app);
@@ -906,7 +906,8 @@ pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32
     // Menus hang below the whole top bar and never grow past the window (#189): a tall menu
     // scrolls instead of egui sliding it up over the titles.
     let bar_bottom = Some(ui.max_rect().bottom());
-    if total <= max_width {
+    // below the phone breakpoint (APK-34) the titles never sit in the bar, whatever room is left
+    if total <= max_width && !app.ui.sheet.phone {
         let saved = ui.spacing().item_spacing.x;
         ui.spacing_mut().item_spacing.x = TITLE_GAP;
         // All titles first, then their popups, so a title the pointer moves onto can take over
@@ -1035,6 +1036,8 @@ fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Opti
                     b = b.shortcut_text(shortcut_text(sc, mac));
                 }
                 let r = ui.add_enabled(*enabled, b);
+                // tests read the rows actually drawn: `menuitem:<id>` / `menuitem-off:<id>` (disabled)
+                crate::widgets::register(ui.ctx(), format!("{}:{id}", if *enabled { "menuitem" } else { "menuitem-off" }), r.rect);
                 if *checked == Some(true) {
                     let t = crate::theme::Tokens::get(ui.ctx());
                     let c = egui::Rect::from_center_size(egui::pos2(r.rect.left() + 11.0, r.rect.center().y), egui::vec2(13.0, 13.0));
