@@ -13,6 +13,7 @@ pub mod activity;
 pub mod dialog;
 pub mod insets;
 pub mod jni_env;
+pub mod media_store;
 pub mod permissions;
 pub mod props;
 

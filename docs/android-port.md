@@ -940,8 +940,11 @@ Each pushed card leaves a debug APK in the Android workflow's artifacts, so the 
 - **Goal:** import device photos by **path**, so the catalog and every reader stay unchanged.
 - **Files:** new `crates/android-sys/src/media_store.rs`; changed `crates/ui-egui/src/lib.rs`
   (`Services::import_media: Option<…>`, `Services::prefer_copy_import: bool`), `crates/ui-egui/src/menus.rs`,
-  `menubar.rs`, `crates/ui-egui/src/panels/import.rs` (bucket list as a folder source; Copy default; Add-mode note),
-  `crates/android-host/src/services.rs`, `docs/parity-checklist.md` (row), `docs/android.md` (limitation).
+  `menubar.rs`, `crates/ui-egui/src/import.rs` (the import review; there is no `panels/import.rs`: bucket list as a
+  folder source; Copy default; Add-mode note), new `crates/ui-egui/src/media_import.rs` (the command, its worker and
+  poll, `MediaBucket`, the read-only error text) and `tests_media_import.rs`, `crates/android-host/src/services.rs`
+  (plus `state.rs` and `run.rs`: the query is built in `run`, and the worker asks the APK-22 permission through a
+  `PhotoGate`), `docs/parity-checklist.md` (row), `docs/android.md` (limitation).
 - **Steps:** 1. On API 30+ an app holding the read permission opens shared media through ordinary paths
   (`/storage/emulated/<user>/DCIM/…`, FUSE). Query `MediaStore.Images.Media.EXTERNAL_CONTENT_URI` for `_data`,
   `RELATIVE_PATH`, `DISPLAY_NAME`, `BUCKET_DISPLAY_NAME`, `MIME_TYPE`, `SIZE`; read the column indexes once; each row

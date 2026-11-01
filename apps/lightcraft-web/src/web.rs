@@ -252,6 +252,9 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         move_to_back: None,
         quit_disabled: false,
         touch: false,
+        // no device photo library in the browser; imports add in place by default as on the desktop
+        import_media: None,
+        prefer_copy_import: false,
     }
 }
 

@@ -91,6 +91,9 @@ pub struct ImportDialog {
     /// The candidate clicked last: where a Shift-click range starts ([`ImportDialog::click`]).
     #[serde(skip)]
     pub last_clicked: Option<usize>,
+    /// The photo library's folders (`file.importMediaLibrary`): the sources to choose from, each
+    /// scanned into this review as a picked folder is. Empty for every other import.
+    pub buckets: Vec<crate::media_import::MediaBucket>,
 }
 
 /// A candidate's file type, as the review groups them: its format, or its extension when the
@@ -430,6 +433,8 @@ pub struct ScanTask {
     sources: Vec<String>,
     /// The scan's row in the activity stack (its ✕ and `activity.cancel` set `progress.cancel`).
     guard: lightcraft_engine::activity::TaskGuard,
+    /// The photo library's folders the review offers (scanning one of them; else empty).
+    pub buckets: Vec<crate::media_import::MediaBucket>,
 }
 
 /// The activity row of a scan: the review's ("Scanning folder") or the Local view's ("Reading folder").
@@ -472,20 +477,58 @@ pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String
         return Err("a scan is already running".into());
     }
     let sources = paths.clone();
-    let (input, paths) = ScanInput::new(&mut app.session, &paths);
+    start_review_scan(app, sources, move || paths);
+    Ok(json!({"scanning": true}))
+}
+
+/// Scan only `dir`'s own photos (not its subfolders) into the review: a photo library folder
+/// (Android: a MediaStore bucket) is one directory, and its subfolders are folders of their own.
+pub(crate) fn open_folder_only(app: &mut LightcraftApp, dir: &str) -> Result<Value, String> {
+    if app.scan.is_some() {
+        return Err("a scan is already running".into());
+    }
+    let root = dir.trim_end_matches(['/', '\\']).to_owned();
+    let root = if root.is_empty() { dir.to_owned() } else { root };
+    let skip = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone());
+    let listed = root.clone();
+    start_review_scan(app, vec![dir.to_owned()], move || {
+        if skip.as_deref().is_some_and(|s| s == std::path::Path::new(&listed)) { Vec::new() } else { own_files(&listed) }
+    });
+    Ok(json!({"scanning": true}))
+}
+
+/// The supported photos directly in `root` (no subfolders, no hidden files), sorted.
+fn own_files(root: &str) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(root)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|f| {
+                    f.is_file() && lightcraft_engine::import::is_supported(f) && !f.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))
+                })
+                .map(|f| f.to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// Scan what `list` gives (files and folders; run on the worker) into the review of `sources`.
+fn start_review_scan(app: &mut LightcraftApp, sources: Vec<String>, list: impl FnOnce() -> Vec<String> + Send + 'static) {
+    let (input, _) = ScanInput::new(&mut app.session, &[]);
     let progress = std::sync::Arc::new(ScanProgress::default());
     let (tx, rx) = std::sync::mpsc::channel();
     let p = progress.clone();
     let job = move || {
-        let _ = tx.send(scan_with(input, &paths, &p));
+        let _ = tx.send(scan_with(input, &list(), &p));
     };
     #[cfg(not(target_arch = "wasm32"))]
     std::thread::spawn(job);
     #[cfg(target_arch = "wasm32")]
     job();
     let guard = scan_guard(app, &progress, false);
-    app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse: false, sources, guard });
-    Ok(json!({"scanning": true}))
+    app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse: false, sources, guard, buckets: Vec::new() });
 }
 
 /// Show a folder's photos in the Local view (`library.browse` from the UI): the view switches at
@@ -523,25 +566,7 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
     let p = progress.clone();
     let root = dir_s.clone();
     let job = move || {
-        let files: Vec<String> = if subfolders {
-            lightcraft_engine::import::expand(&[root], None)
-        } else {
-            let mut v: Vec<String> = std::fs::read_dir(&root)
-                .map(|rd| {
-                    rd.flatten()
-                        .map(|e| e.path())
-                        .filter(|f| {
-                            f.is_file()
-                                && lightcraft_engine::import::is_supported(f)
-                                && !f.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))
-                        })
-                        .map(|f| f.to_string_lossy().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-            v.sort();
-            v
-        };
+        let files: Vec<String> = if subfolders { lightcraft_engine::import::expand(&[root], None) } else { own_files(&root) };
         let _ = tx.send(scan_with(input, &files, &p));
     };
     #[cfg(not(target_arch = "wasm32"))]
@@ -549,7 +574,7 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
     #[cfg(target_arch = "wasm32")]
     job();
     let guard = scan_guard(app, &progress, true);
-    app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse: true, sources: Vec::new(), guard });
+    app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse: true, sources: Vec::new(), guard, buckets: Vec::new() });
     app.renderer.forget_imports();
     Ok(json!({"path": dir_s, "subfolders": subfolders, "scanning": true}))
 }
@@ -603,7 +628,10 @@ pub fn poll_scan(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
     if out.candidates.is_empty() {
         app.toast(ctx, crate::i18n::tr("No photos found"));
-        return;
+        // (a photo library folder keeps the review open: another folder can be chosen)
+        if task.buckets.is_empty() {
+            return;
+        }
     }
     app.renderer.forget_imports();
     let mut d = ImportDialog::new(out.candidates);
@@ -616,7 +644,9 @@ pub fn poll_scan(app: &mut LightcraftApp, ctx: &egui::Context) {
         })
         .collect();
     d.set_trashed(trashed);
-    d.copy = task.copy;
+    // a camera or card, or a host whose added-in-place originals are read-only: Copy
+    d.copy = task.copy || app.services.prefer_copy_import;
+    d.buckets = task.buckets;
     // only an album the review offers (it may have been deleted while the scan ran)
     d.album = task.album.filter(|id| app.session.catalog.album(lightcraft_catalog::AlbumId(*id)).is_some_and(|a| !a.folder && !a.is_smart()));
     d.sources = task.sources;
@@ -1056,6 +1086,12 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     }
     ui.add_space(4.0);
     // options
+    if !d.buckets.is_empty() {
+        field(ui, "Photo library", |ui| crate::media_import::bucket_list(app, ui, d));
+        if d.sources.is_empty() {
+            ui.label(egui::RichText::new(crate::i18n::tr("Choose a folder of the photo library to see its photos.")).color(t.text_dim).small());
+        }
+    }
     if !d.sources.is_empty() {
         field(ui, "Source", |ui| {
             // (whether each source is a folder is checked off the UI thread, once)
@@ -1113,6 +1149,10 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
         .small(),
     );
     register(ui.ctx(), "label:importModeHelp", r.rect);
+    if !d.copy && app.services.prefer_copy_import {
+        let r = ui.label(egui::RichText::new(crate::i18n::tr(crate::media_import::ADD_IN_PLACE_NOTE)).color(t.caution).small());
+        register(ui.ctx(), "label:importAddNote", r.rect);
+    }
     if d.copy {
         field(ui, if d.move_files { "Move to" } else { "Copy to" }, |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;

@@ -67,6 +67,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
         &[
             "file.addPhotos",
             "file.addFolder",
+            "file.importMediaLibrary",
             "@Import from Device",
             "---",
             "app.newLibrary",
@@ -279,6 +280,8 @@ fn host_supports(app: &LightcraftApp, id: &str) -> bool {
     match id {
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
+        // the device's photo library (Android)
+        "file.importMediaLibrary" => app.services.import_media.is_some(),
         // the system ends the app where it can't quit itself (Android)
         "app.quit" => !app.services.quit_disabled,
         "photo.restore" | "photo.deletePermanently" => selection_deleted(app),

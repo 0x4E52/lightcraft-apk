@@ -155,6 +155,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         move_to_back: Some(move_to_back(&app)),
         storage: crate::services::StorageDirs::from_internal(&files_dir, &paths.inbox),
         photos: Some(photo_access(&app)),
+        media_query: Some(media_query(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
 
@@ -293,6 +294,18 @@ fn photo_access(app: &android_activity::AndroidApp) -> crate::services::PhotoAcc
         }),
         std::time::Instant::now(),
     )
+}
+
+/// The photo library's folders: the MediaStore query on the calling worker (`with_activity`
+/// attaches it to the JVM for the call).
+#[cfg(target_os = "android")]
+fn media_query(app: &android_activity::AndroidApp) -> crate::services::MediaQuery {
+    let app = app.clone();
+    std::sync::Arc::new(move || {
+        let buckets = lightcraft_android_sys::media_store::query_buckets(&app).map_err(|e| e.user_message("read the photo library"))?;
+        log::info!("photo library: {} folders", buckets.len());
+        Ok(crate::services::buckets_for_ui(buckets))
+    })
 }
 
 /// Back at the root: `Activity.moveTaskToBack(true)`, posted to the Java main thread and not

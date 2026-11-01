@@ -217,6 +217,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("merge.hdrPanoramaLast", "HDR Panorama with Last Settings", None, "Photo>Photo Merge"),
     ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
     ("file.addFolder", "Import from Folder…", None, "File"),
+    // {bucket?}: the device's photo library (Android) as folders in the import review
+    ("file.importMediaLibrary", "Import from Photo Library…", None, "File"),
     ("file.importLightroom", "Import Lightroom Catalog…", None, "File"),
     ("file.addFromDevice", "Import from Device", None, ""),
     ("file.findMissing", "Find Missing Photos…", None, "File"),
@@ -1768,6 +1770,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
             import_into_album(app, p, r)
         }
+        "file.importMediaLibrary" => crate::media_import::run(app, p),
         "file.addFolder" => {
             // a folder (searched recursively) into the import review
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2189,6 +2192,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "view.fullScreenPreview" | "view.infoOverlay" | "view.navigator" => app.session.active().is_some() || app.ui.fullscreen,
         "app.openLibrary" | "app.newLibrary" => app.services.pick_folder.is_some() && crate::panels::settings::can_switch_library(app).is_ok(),
         "file.addFolder" => app.services.pick_folder.is_some() && !crate::lightroom_import::is_running(app),
+        "file.importMediaLibrary" => app.services.import_media.is_some() && app.media_query.is_none(),
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.quit" => !app.services.quit_disabled,
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),

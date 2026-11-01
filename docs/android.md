@@ -201,6 +201,25 @@ locally instead of only in CI. To go on task by task, ask Claude Code in the rep
 For several cards in a row with an implementer, an adversarial reviewer and a fix round per card, run the workflow
 in [`tools/agents/android-runner.js`](../tools/agents/android-runner.js) (see the comment at its top).
 
+## Importing from the photo library
+
+File ▸ Import from Photo Library… (`file.importMediaLibrary`) asks for the photo permission the first time (allow
+all photos, or only the ones you pick on Android 14+), then reads the phone's photo library (MediaStore) in the
+background, with "Reading the photo library" in the activity stack. The import review lists the library's folders
+(Camera, Screenshots, …); tap one and its photos appear in the review, as for a folder chosen in Import from
+Folder…, except that only the folder's own photos are scanned: its subfolders are folders of their own in the list. LightCraft reads the photos by their path in shared storage (`/storage/emulated/0/DCIM/…`), so previews,
+edits, metadata and GPS (with the media location permission) work as for any file.
+
+Limitations:
+- **Copy is the default, and Add in place is read-only.** Android lets LightCraft read other apps' photos but not
+  change them: for photos added in place, writing XMP sidecars next to them, renaming, moving and deleting fail
+  (the error says to import with Copy). Copy puts the photos in the library's own folder, where all of that works.
+- Only the phone's main storage is read: photos on an SD card are not listed yet.
+- Raws that the system does not list as images (many `.CR3`, `.ARW`, `.NEF` files) don't appear: share them to
+  LightCraft instead (APK-25).
+- Denied for good: the import says "allow it in Settings ▸ Apps ▸ LightCraft ▸ Permissions"; after allowing it
+  there, choose Import from Photo Library again.
+
 ## Privacy
 
 LightCraft collects nothing and sends nothing about you or your photos: no telemetry, no analytics, no crash
@@ -288,6 +307,10 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   Storage within the system's rounding; Clear on the thumbnail cache, smart previews and Inbox frees the space App
   info then shows; a fresh install starts with the 512 MB thumbnail cache limit.
 - [ ] APK-54: with under 1 GB free (fill the phone), the thumbnail and denoise caches shrink to half their limits within a minute and a notice says so (probe: `statvfs` through `storage_report::free_bytes`).
+- [ ] Import from Photo Library (APK-23): import a JPEG folder and a DNG folder from the library; previews and edits
+  work and GPS shows on the map; with Add in place, Save Metadata to File fails with the "Import the photo with Copy"
+  error; a 20k-photo library lists its folders without a local-reference abort, the activity row showing while it
+  reads.
 - [ ] APK-22 (asked from APK-23's import): on API 33+, allow all (the import lists every bucket), allow selected
   photos on 34+ (`photo access: Pending → Partial` in logcat), deny (`→ Denied`), deny twice then import again (no
   dialog appears; within a second the import's error says to allow it in Settings ▸ Apps ▸ LightCraft ▸

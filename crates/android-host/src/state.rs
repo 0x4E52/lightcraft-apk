@@ -77,6 +77,9 @@ pub struct Start {
     /// Access to the photo library (`None` in tests: no device to ask). The eframe app drives it;
     /// the commands that read photos ask it.
     pub photos: Option<crate::services::PhotoAccess>,
+    /// The MediaStore query behind File ▸ Import from Photo Library (`None` in tests: no device);
+    /// offered only with [`Start::photos`], whose permission it needs.
+    pub media_query: Option<crate::services::MediaQuery>,
 }
 
 impl Start {
@@ -120,10 +123,12 @@ impl HostState {
                 (session.with_default_sam3_model(), Some(LibraryProblem::new(start.library.to_string_lossy(), e)))
             }
         };
-        let mut app = LightcraftApp::new(
-            session,
-            crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref(), start.move_to_back.as_ref(), &start.storage),
-        );
+        let mut services =
+            crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref(), start.move_to_back.as_ref(), &start.storage);
+        if let (Some(photos), Some(query)) = (&start.photos, &start.media_query) {
+            services.import_media = Some(crate::services::import_media(photos.gate(), query.clone()));
+        }
+        let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {
             app.ui = ui;
         }
@@ -214,6 +219,7 @@ mod tests {
         let mut state = HostState::new(Ok((session, None)), start);
         assert!(state.app.library_problem.is_none());
         assert!(state.app.services.write.is_some(), "the Android services are in place");
+        assert!(state.app.services.import_media.is_none(), "no device: no photo library to import from");
         let id = *state.app.session.visible().get(1).unwrap();
         state.app.run("library.select", json!({"ids": [id.0]})).unwrap();
         state.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
@@ -324,5 +330,20 @@ mod tests {
         assert_eq!(problem.path, "/data/user/0/x/files/library");
         assert_eq!(problem.error, crate::loader::STOPPED);
         assert!(state.app.session.library.is_none() && state.app.session.catalog.is_empty());
+    }
+
+    /// With a device's photo access and query, File ▸ Import from Photo Library is offered.
+    #[test]
+    fn photo_library_import_needs_access_and_query() {
+        let t0 = std::time::Instant::now();
+        let photos = crate::services::PhotoAccess::new(34, Box::new(|| Ok(Default::default())), Box::new(|_| {}), t0);
+        let query: crate::services::MediaQuery = std::sync::Arc::new(|| Ok(Vec::new()));
+        let only_query = Start { media_query: Some(query.clone()), ..Start::default() };
+        let state = HostState::new(Err("in memory".into()), only_query);
+        assert!(state.app.services.import_media.is_none(), "no access to ask: not offered");
+        let start = Start { photos: Some(photos), media_query: Some(query), ..Start::default() };
+        let state = HostState::new(Err("in memory".into()), start);
+        assert!(state.app.services.import_media.is_some());
+        assert!(lightcraft_ui_egui::menus::ui_enabled(&state.app, "file.importMediaLibrary"));
     }
 }

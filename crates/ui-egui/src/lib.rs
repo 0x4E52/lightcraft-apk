@@ -28,6 +28,7 @@ pub mod import;
 pub mod licences;
 pub mod lightroom_import;
 pub mod links;
+pub mod media_import;
 pub mod menu_level;
 pub mod menubar;
 pub mod menus;
@@ -134,6 +135,8 @@ mod tests_mask_effects;
 mod tests_masking;
 #[cfg(test)]
 mod tests_masking_layout;
+#[cfg(test)]
+mod tests_media_import;
 #[cfg(test)]
 mod tests_menubar;
 #[cfg(test)]
@@ -362,6 +365,15 @@ pub struct Services {
     /// The host is touch-first (Android): touch mode is on from the first frame. `false` = the
     /// desktop, where it turns on with the first `egui::Event::Touch`.
     pub touch: bool,
+    /// File ▸ Import from Photo Library… (`file.importMediaLibrary`): lists the device's photo
+    /// library as folders, called on a worker thread (Android: a MediaStore query). `None` = no
+    /// such library (the desktop, the web): the command is disabled and left out of the menus.
+    pub import_media: Option<media_import::ImportMedia>,
+    /// The import review starts on Copy, and Add in place carries a note: originals added in place
+    /// are read-only to LightCraft (Android: other apps' files in shared storage, where XMP
+    /// sidecars, rename, move and delete fail), and those failures say to import with Copy.
+    /// `false` = the desktop (Add in place for a folder).
+    pub prefer_copy_import: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -512,6 +524,8 @@ pub struct LightcraftApp {
     pub import: Option<import::ImportTask>,
     /// A folder scan in progress (feeds the import review).
     pub scan: Option<import::ScanTask>,
+    /// The photo library's folders being read (`file.importMediaLibrary`; feeds the import review).
+    pub media_query: Option<media_import::MediaQuery>,
     /// A Synchronize Folder scan in progress (feeds its dialog).
     pub sync: Option<sync::SyncTask>,
     /// `session.folder_changes` came from the Synchronize Folder dialog (and goes with it).
@@ -630,6 +644,7 @@ impl LightcraftApp {
             merge: merge::MergeState::default(),
             import: None,
             scan: None,
+            media_query: None,
             sync: None,
             sync_owns_changes: false,
             sync_run: None,
@@ -732,7 +747,11 @@ impl LightcraftApp {
         } else {
             params
         };
-        let r = self.session.execute(id, &params).map_err(CommandError::from);
+        let mut r = self.session.execute(id, &params).map_err(CommandError::from);
+        // an original the host can't let LightCraft change (Android, added in place): say what to do
+        if self.services.prefer_copy_import {
+            media_import::tell_read_only_originals(id, &mut r);
+        }
         if r.is_ok() && matches!(id, "crop.aspect" | "crop.rotateAspect") {
             self.ui.crop_default_aspect = if id == "crop.aspect" && params.get("aspect").and_then(Value::as_str) == Some("original") {
                 Some(serde_json::json!("original"))
@@ -1292,6 +1311,7 @@ impl LightcraftApp {
         self.renderer.poll(ctx, &mut self.session);
         merge::poll(self, ctx);
         import::poll_scan(self, ctx);
+        media_import::poll(self, ctx);
         sync::poll(self, ctx);
         sync::poll_run(self, ctx);
         import::tick(self, ctx);

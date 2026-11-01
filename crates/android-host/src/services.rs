@@ -9,17 +9,23 @@
 //!
 //! Access to the photo library ([`PhotoAccess`], APK-22) is the host's: the eframe app's `logic`
 //! feeds it the window's focus changes and a tick while a request is pending, and the commands
-//! that read photos (the MediaStore import, APK-23) ask it before they start.
+//! that read photos ask it before they start. The MediaStore import (APK-23,
+//! [`import_media`]) runs on a worker, so it asks through the [`PhotoGate`] the access keeps up
+//! to date: readable → the query; denied → where to allow it; not asked yet → the request is
+//! made on the UI thread's next frame and the command says to try again once allowed. Imports
+//! default to Copy (`prefer_copy_import`): LightCraft can't write next to other apps' photos.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use lightcraft_android_sys::permissions::{Access, Event, Grants, PhotoPermission};
 
 use lightcraft_ui_egui::Services;
+use lightcraft_ui_egui::media_import::{ImportMedia, MediaBucket};
 
 use crate::state::Reopen;
 
@@ -61,6 +67,70 @@ pub type CheckPhotos = Box<dyn Fn() -> Result<Grants, String>>;
 /// main thread, never awaited).
 pub type AskPhotos = Box<dyn Fn(&'static [&'static str])>;
 
+/// What a photo command run on a worker says when access is not settled yet: the request has
+/// been made.
+pub const ASKING_MESSAGE: &str = "LightCraft is asking for access to your photos: allow it, then choose Import from Photo Library again";
+
+/// Where photo access stands, for code off the UI thread: [`PhotoAccess`] writes it after every
+/// change, and a worker asks for a request through it (made on the UI thread's next frame).
+#[derive(Debug)]
+pub struct PhotoGate {
+    access: Mutex<Access>,
+    ask: AtomicBool,
+}
+
+impl Default for PhotoGate {
+    fn default() -> Self {
+        PhotoGate { access: Mutex::new(Access::NotAsked), ask: AtomicBool::new(false) }
+    }
+}
+
+impl PhotoGate {
+    /// Where access stood after the UI thread's last look.
+    pub fn access(&self) -> Access {
+        *self.access.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn set(&self, access: Access) {
+        *self.access.lock().unwrap_or_else(PoisonError::into_inner) = access;
+    }
+
+    /// Ask for access on the UI thread's next frame.
+    pub fn want_request(&self) {
+        self.ask.store(true, Ordering::Relaxed);
+    }
+
+    /// A request was asked for since the last call.
+    pub fn take_request(&self) -> bool {
+        self.ask.swap(false, Ordering::Relaxed)
+    }
+}
+
+/// The MediaStore query itself (Android: `media_store::query_buckets`, JNI on the calling worker).
+pub type MediaQuery = Arc<dyn Fn() -> Result<Vec<MediaBucket>, String> + Send + Sync>;
+
+/// File ▸ Import from Photo Library's query, behind the photo permission: readable (all photos,
+/// or the ones the user picked) → `query`; denied → [`DENIED_MESSAGE`](lightcraft_android_sys::permissions::DENIED_MESSAGE);
+/// not asked or pending → a request on the UI thread and [`ASKING_MESSAGE`].
+pub fn import_media(gate: Arc<PhotoGate>, query: MediaQuery) -> ImportMedia {
+    Arc::new(move || {
+        let access = gate.access();
+        if access.readable() {
+            return query();
+        }
+        if let Some(denied) = access.error() {
+            return Err(denied.to_owned());
+        }
+        gate.want_request();
+        Err(ASKING_MESSAGE.to_owned())
+    })
+}
+
+/// The photo library's folders from `media_store` (paths as text, the import's form).
+pub fn buckets_for_ui(buckets: Vec<lightcraft_android_sys::media_store::Bucket>) -> Vec<MediaBucket> {
+    buckets.into_iter().map(|b| MediaBucket { name: b.name, path: b.dir.to_string_lossy().into_owned(), count: b.count, bytes: b.bytes }).collect()
+}
+
 /// Access to the photo library: the [`PhotoPermission`] state machine with the device's check and
 /// request calls. Clones share it; it lives on the UI thread. A state that is in use (a re-entrant
 /// call) is logged and the call skipped, never a panic.
@@ -74,18 +144,32 @@ struct PhotoAccessInner {
     /// The last answer that came back, used when a check fails (so a failed call never reads as
     /// "denied").
     last: Cell<Grants>,
+    /// The state as workers see it.
+    gate: Arc<PhotoGate>,
 }
 
 impl PhotoAccess {
     /// Access on API level `sdk`, checked once now: the user may have allowed it in an earlier run.
     pub fn new(sdk: i32, check: CheckPhotos, ask: AskPhotos, now: Instant) -> PhotoAccess {
-        let inner = PhotoAccessInner { state: RefCell::new(PhotoPermission::new(sdk)), check, ask, last: Cell::new(Grants::default()) };
+        let inner = PhotoAccessInner {
+            state: RefCell::new(PhotoPermission::new(sdk)),
+            check,
+            ask,
+            last: Cell::new(Grants::default()),
+            gate: Arc::new(PhotoGate::default()),
+        };
         let access = PhotoAccess(Rc::new(inner));
         let grants = access.grants();
         if let Ok(mut state) = access.0.state.try_borrow_mut() {
             state.refresh(now, grants);
+            access.0.gate.set(state.access());
         }
         access
+    }
+
+    /// Where workers read the access, and ask for a request.
+    pub fn gate(&self) -> Arc<PhotoGate> {
+        self.0.gate.clone()
     }
 
     /// Where access stands now.
@@ -105,12 +189,16 @@ impl PhotoAccess {
             log::info!("asking for {permissions:?}");
             (self.0.ask)(permissions);
         }
+        self.0.gate.set(state.access());
         state.access()
     }
 
     /// One event at `now` (a focus change, or the frame's tick); answers when to tick again while
     /// a request is pending.
     pub fn on_event(&self, event: Event, now: Instant) -> Option<Duration> {
+        if self.0.gate.take_request() {
+            self.request(now);
+        }
         let Ok(mut state) = self.0.state.try_borrow_mut() else {
             log::warn!("photo permission event skipped: the state is in use");
             return None;
@@ -120,6 +208,7 @@ impl PhotoAccess {
         if state.access() != before {
             log::info!("photo access: {:?} → {:?}", before, state.access());
         }
+        self.0.gate.set(state.access());
         after
     }
 
@@ -162,6 +251,8 @@ pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_b
         free_space: Some(Box::new(lightcraft_engine::storage_report::free_bytes)),
         quit_disabled: true,
         touch: true,
+        // photos added in place from shared storage are other apps' files: read-only to LightCraft
+        prefer_copy_import: true,
         ..Services::default()
     }
 }
@@ -257,6 +348,63 @@ mod tests {
         denied.request(t0);
         denied.on_event(Event::Tick, t0 + Duration::from_secs(1));
         assert_eq!(denied.access().error(), Some(DENIED_MESSAGE));
+    }
+
+    /// File ▸ Import from Photo Library asks for access first (on the UI thread, from the worker's
+    /// call), queries only once the photos are readable, and says where to allow it when denied;
+    /// every import defaults to Copy.
+    #[test]
+    fn import_media_asks_for_access_first() {
+        use lightcraft_android_sys::permissions::DENIED_MESSAGE;
+        let t0 = Instant::now();
+        let device = Rc::new(Cell::new(Grants::default()));
+        let asked = Rc::new(Cell::new(0));
+        let (answer, count) = (device.clone(), asked.clone());
+        let photos = PhotoAccess::new(34, Box::new(move || Ok(answer.get())), Box::new(move |_| count.set(count.get() + 1)), t0);
+        let queried = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = queried.clone();
+        let query: MediaQuery = Arc::new(move || {
+            seen.fetch_add(1, Ordering::Relaxed);
+            Ok(vec![MediaBucket { name: "Camera".into(), path: "/storage/emulated/0/DCIM/Camera".into(), count: 3, bytes: 9 }])
+        });
+        let import = import_media(photos.gate(), query);
+        // not asked yet: no query, a request on the next frame
+        let worker = import.clone();
+        let first = std::thread::spawn(move || worker()).join().unwrap();
+        assert_eq!(first, Err(ASKING_MESSAGE.to_owned()));
+        assert_eq!(queried.load(Ordering::Relaxed), 0);
+        assert_eq!(asked.get(), 0, "the worker never asks the device itself");
+        photos.on_event(Event::Tick, t0);
+        assert_eq!(asked.get(), 1, "asked on the UI thread");
+        assert_eq!(photos.gate().access(), Access::Pending);
+        // the user allows the picked photos: the query runs
+        photos.on_event(Event::Focused(false), t0 + Duration::from_millis(100));
+        device.set(Grants { all: false, selected: true, location: true });
+        photos.on_event(Event::Focused(true), t0 + Duration::from_millis(900));
+        assert_eq!(photos.gate().access(), Access::Partial);
+        let buckets = import().unwrap();
+        assert_eq!(buckets[0].name, "Camera");
+        assert_eq!(queried.load(Ordering::Relaxed), 1);
+        photos.on_event(Event::Tick, t0 + Duration::from_secs(2));
+        assert_eq!(asked.get(), 1, "readable: nothing more is asked");
+
+        // denied: where to allow it, and still no query
+        let denied = PhotoAccess::new(33, Box::new(|| Ok(Grants::default())), Box::new(|_| {}), t0);
+        denied.request(t0);
+        denied.on_event(Event::Tick, t0 + Duration::from_secs(1));
+        let none: MediaQuery = Arc::new(|| panic!("no query without access"));
+        assert_eq!(import_media(denied.gate(), none)(), Err(DENIED_MESSAGE.to_owned()));
+        // the folders as the import takes them; the review starts on Copy
+        let ui = buckets_for_ui(vec![lightcraft_android_sys::media_store::Bucket {
+            name: "Camera".into(),
+            dir: "/storage/emulated/0/DCIM/Camera".into(),
+            count: 2,
+            bytes: 5,
+        }]);
+        assert_eq!(ui, [MediaBucket { name: "Camera".into(), path: "/storage/emulated/0/DCIM/Camera".into(), count: 2, bytes: 5 }]);
+        let s = base_services(None, None, None, &StorageDirs::default());
+        assert!(s.prefer_copy_import);
+        assert!(s.import_media.is_none(), "offered only with a device to query");
     }
 
     /// Settings ▸ Storage counts `files/` and the sibling `cache/`, so its total is App info's.
