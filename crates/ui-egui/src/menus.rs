@@ -196,6 +196,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.autoStack", "Auto-Stack by Capture Time…", None, "Photo>Stack"),
     ("dialog.copySettings", "Choose Edit Settings to Copy…", Some("Cmd+Shift+C"), "Edit"),
     ("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Edit"),
+    // {}: Auto Settings on every selected photo, each from its own analysis, in the background (one undo step)
+    ("app.autoSettingsSelected", "Auto Settings on Selected Photos", None, "Photo"),
     ("view.focusSearch", "Find…", Some("Cmd+F"), "Edit"),
     ("dialog.export", "Export…", None, "File"),
     ("dialog.print", "Print…", Some("Cmd+P"), "File"),
@@ -1344,10 +1346,14 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             app.ui.dialog = Some(Dialog::create_preset());
             Ok(Value::Null)
         }
+        "app.autoSettingsSelected" => {
+            let ids: Vec<u64> = app.session.selected().iter().map(|id| id.0).collect();
+            app.run("develop.auto", json!({"ids": ids, "background": true}))
+        }
         "dialog.pasteSettings" => {
             let groups =
                 app.session.copy_groups.iter().filter_map(|g| serde_json::to_value(g).ok().and_then(|v| v.as_str().map(str::to_string))).collect();
-            app.ui.dialog = Some(Dialog::PasteSettings { groups });
+            app.ui.dialog = Some(Dialog::PasteSettings { groups, recompute_ai: false });
             Ok(Value::Null)
         }
         "view.focusSearch" => {
@@ -2157,6 +2163,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "photo.editInPhotoCraft" | "photo.editInExternal" => app.session.active().is_some() && app.services.open_with.is_some(),
         "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
+        "app.autoSettingsSelected" => !app.session.selected().is_empty() && !app.session.batch_ai.running(),
         "photo.openOriginalInExternal" => {
             app.services.open_with.is_some()
                 && app

@@ -2056,5 +2056,8 @@
   "Open Settings": "Otevřít nastavení",
   "Select none": "Zrušit celý výběr",
   "Select all": "Vybrat vše",
-  "Visualize HDR": "Zobrazit rozsah HDR"
+  "Visualize HDR": "Zobrazit rozsah HDR",
+  "Auto Settings on Selected Photos": "Automatická nastavení pro vybrané fotografie",
+  "Update AI Masks": "Aktualizovat AI masky",
+  "Recompute subject and sky on each photo": "Znovu vypočítat objekt a oblohu na každé fotografii"
 }

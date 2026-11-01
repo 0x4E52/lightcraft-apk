@@ -2331,5 +2331,8 @@
   "Checking the GPU…": "Перевірка ГП…",
   "CPU": "ЦП",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Модель облич використовує ГП, лише якщо перевірка показала, що він дає ті самі результати швидше.",
-  "Checking the GPU for faces": "Перевірка ГП для облич"
+  "Checking the GPU for faces": "Перевірка ГП для облич",
+  "Auto Settings on Selected Photos": "Автоналаштування для вибраних фото",
+  "Update AI Masks": "Оновити маски ШІ",
+  "Recompute subject and sky on each photo": "Перерахувати об’єкт і небо на кожному фото"
 }

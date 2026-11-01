@@ -2343,5 +2343,8 @@
   "Authors": "Autoren",
   "This component publishes no licence file; the standard text of its licence follows.": "Diese Komponente veröffentlicht keine Lizenzdatei; es folgt der Standardtext ihrer Lizenz.",
   "A modified version, based on LightCraft by the ArtCraft team.": "Eine veränderte Version, basierend auf LightCraft vom ArtCraft-Team.",
-  "The original LightCraft": "Das ursprüngliche LightCraft"
+  "The original LightCraft": "Das ursprüngliche LightCraft",
+  "Auto Settings on Selected Photos": "Automatische Einstellungen für ausgewählte Fotos",
+  "Update AI Masks": "KI-Masken aktualisieren",
+  "Recompute subject and sky on each photo": "Motiv und Himmel auf jedem Foto neu berechnen"
 }

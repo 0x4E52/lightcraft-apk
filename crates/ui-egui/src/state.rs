@@ -1173,6 +1173,9 @@ pub enum Dialog {
     /// Paste Selected Settings: which of the copied groups to paste.
     PasteSettings {
         groups: Vec<String>,
+        /// With Masks pasted: compute the AI masks again on each photo afterwards (`mask.updateAi`).
+        #[serde(default)]
+        recompute_ai: bool,
     },
     /// `resize` is used unless `full_size`; `limit_kb` 0 = no limit; `dir` empty = default export folder.
     Export {

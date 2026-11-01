@@ -8,6 +8,14 @@ use serde_json::{Value, json};
 use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, f64_req, has_active, has_clipboard, has_selection, index_req, ok, str_param};
 use crate::{Result, Session, media::SourceLevel};
 
+/// Auto Settings: a photo to analyse (the active one, or a selection), and no batch already running.
+fn auto_enabled(s: &Session) -> std::result::Result<(), String> {
+    if s.batch_ai.running() {
+        return Err("Auto Settings or Update AI Masks is still running".into());
+    }
+    has_selection(s)
+}
+
 fn active(s: &Session, c: &str) -> Result<PhotoId> {
     s.active().ok_or_else(|| bad(c, "no active photo"))
 }
@@ -376,25 +384,39 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"mix": m}))
             }
         ),
-        cmd!("develop.auto", "Auto Settings", ["Photo"], Some("Shift+A"), "{}", has_active, |s, _| {
-            let id = active(s, "develop.auto")?;
-            let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.auto", e))?;
-            let info = s.source_info(id);
-            let d = s.develop_of(id).unwrap_or_default();
-            let a = lightcraft_pipeline::auto::auto_tone(&src, &info, &d);
-            edit(s, "develop.auto", "Auto", |d| {
-                d.light.exposure = a.exposure;
-                d.light.contrast = a.contrast;
-                d.light.highlights = a.highlights;
-                d.light.shadows = a.shadows;
-                d.light.whites = a.whites;
-                d.light.blacks = a.blacks;
-                d.color.vibrance = a.vibrance;
-                d.color.saturation = a.saturation;
-                Ok(())
-            })?;
-            Ok(serde_json::to_value(a).unwrap_or_default())
-        }),
+        CommandSpec {
+            explicit_targets: true,
+            ..cmd!(
+                "develop.auto",
+                "Auto Settings",
+                ["Photo"],
+                Some("Shift+A"),
+                "{ids?, id?, selection?: bool, background?: bool} — no photos named: the active photo, returning its values; with `ids` / `id` (or `selection: true`: the selected photos) each photo gets its own analysis from its thumbnail on a worker (activity row, ✕ cancels), photos that can't be read are skipped with the reason, and all changes are one undo step → {kind, photos, changed, skipped: [{id, name, reason}], cancelled}; `background` returns {started} at once and `batch.pump` finishes it",
+                auto_enabled,
+                |s, p| {
+                    if super::names_photos(p) || p.get("selection").and_then(Value::as_bool) == Some(true) {
+                        return crate::batch_ai::start_auto(s, p);
+                    }
+                    let id = active(s, "develop.auto")?;
+                    let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.auto", e))?;
+                    let info = s.source_info(id);
+                    let d = s.develop_of(id).unwrap_or_default();
+                    let a = lightcraft_pipeline::auto::auto_tone(&src, &info, &d);
+                    edit(s, "develop.auto", "Auto", |d| {
+                        d.light.exposure = a.exposure;
+                        d.light.contrast = a.contrast;
+                        d.light.highlights = a.highlights;
+                        d.light.shadows = a.shadows;
+                        d.light.whites = a.whites;
+                        d.light.blacks = a.blacks;
+                        d.color.vibrance = a.vibrance;
+                        d.color.saturation = a.saturation;
+                        Ok(())
+                    })?;
+                    Ok(serde_json::to_value(a).unwrap_or_default())
+                }
+            )
+        },
         cmd!(
             "develop.wb",
             "White Balance",

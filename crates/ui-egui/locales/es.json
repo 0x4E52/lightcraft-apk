@@ -2333,5 +2333,8 @@
   "Checking the GPU…": "Comprobando la GPU…",
   "CPU": "CPU",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Un modelo de caras usa la GPU solo cuando una comprobación muestra que da los mismos resultados más rápido.",
-  "Checking the GPU for faces": "Comprobando la GPU para las caras"
+  "Checking the GPU for faces": "Comprobando la GPU para las caras",
+  "Auto Settings on Selected Photos": "Ajustes automáticos en las fotos seleccionadas",
+  "Update AI Masks": "Actualizar máscaras de IA",
+  "Recompute subject and sky on each photo": "Volver a calcular sujeto y cielo en cada foto"
 }

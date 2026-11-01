@@ -296,5 +296,12 @@
   "Already in “{}”": "Уже в «{}»",
   "Move {n} photo{} to “{}”": "Переместить в «{1}» фото: {n}{0:.0}",
   "Move {n} photo{} to “{}”?": "Переместить в «{1}» фото: {n}{0:.0}?",
-  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "В «{1}» перемещено фото: {n}{0:.0}. Правка → Отменить вернёт их."
+  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "В «{1}» перемещено фото: {n}{0:.0}. Правка → Отменить вернёт их.",
+  "{label} was cancelled: nothing changed": "{label}: отменено, ничего не изменилось",
+  "{label}: {n} of {total} photos": "{label}: {n} из {total} фото",
+  "skipped {name}: {reason}": "пропущено {name}: {reason}",
+  "skipped {name} and {more} more: {reason}": "пропущено {name} и ещё {more}: {reason}",
+  "{n} kept their AI selections ({reason})": "Фото с сохранённым выделением ИИ: {n} ({reason})",
+  "{n} live masks need no update": "Динамические маски без обновления: {n}",
+  "Pasted. {label} did not start: {reason}": "Вставлено. Не удалось запустить «{label}»: {reason}"
 }

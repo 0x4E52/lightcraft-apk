@@ -38,8 +38,7 @@ pub const LICENSE_URL: &str = "https://github.com/facebookresearch/sam3/blob/mai
 /// How errors about a missing model start (frontends decide on [`crate::ErrorKind::ModelMissing`], not on this text).
 pub const NOT_INSTALLED: &str = "The SAM 3 model is not installed";
 /// Longest a waiting command (CLI, MCP) waits for the model (loading on a CPU can take minutes).
-#[cfg_attr(not(feature = "sam"), allow(dead_code))]
-const WAIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+pub(crate) const WAIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 /// Most clicks one Object selection takes (the model's prompt grows with each).
 pub const MAX_CLICKS: usize = 64;
 
@@ -370,6 +369,23 @@ fn strip_detail(mut shape: MaskShape) -> MaskShape {
     shape
 }
 
+/// A selection being computed on the model's worker ([`Session::segment_submit`]).
+#[cfg(feature = "sam")]
+pub(crate) struct Pending(std::sync::mpsc::Receiver<worker::Outcome>);
+
+#[cfg(feature = "sam")]
+impl Pending {
+    /// The result once it is there; a worker that went away (or skipped the request) is an error.
+    pub(crate) fn take(&self) -> Option<Result<Option<SegMask>, String>> {
+        match self.0.try_recv() {
+            Ok(o) if o.superseded => Some(Err("the request was replaced by a newer one".into())),
+            Ok(o) => Some(o.result),
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err("the AI model stopped before it was done".into())),
+        }
+    }
+}
+
 fn clicks_of(include: &[Point], exclude: &[Point]) -> Vec<Click> {
     include.iter().map(|p| Click { at: *p, include: true }).chain(exclude.iter().map(|p| Click { at: *p, include: false })).collect()
 }
@@ -430,7 +446,7 @@ impl Session {
                 job
             }
         };
-        Ok(worker::Job { dir, key: if region.is_some() { 0 } else { key }, render: Some(render), missing, kind, tag, reply })
+        Ok(worker::Job { dir, key: if region.is_some() { 0 } else { key }, render: Some(render), missing, kind, tag, reply, cancel: None })
     }
 
     /// Send a request and wait for its result (CLI, MCP, tests; or when not in background mode).
@@ -451,6 +467,31 @@ impl Session {
         let reply = self.segmenter.results.0.clone();
         let job = self.segment_job(id, kind, tag, reply, region)?;
         self.segmenter.worker.submit(job)
+    }
+
+    /// Compute `shape` (Describe text or Object clicks) again on photo `id`, on the model's worker, without waiting:
+    /// the result comes back through the returned [`Pending`] (Update AI Masks on a selection, `crate::batch_ai`).
+    #[cfg(feature = "sam")]
+    /// The model skips the request if `cancel` is set before it starts.
+    pub(crate) fn segment_submit(
+        &mut self,
+        id: PhotoId,
+        shape: &MaskShape,
+        cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<Pending, String> {
+        let kind = match shape {
+            MaskShape::Prompt { text, .. } if !text.trim().is_empty() => worker::Kind::Text(text.trim().to_string()),
+            MaskShape::Object { hint, exclude, .. } if !hint.is_empty() => {
+                let cap = |v: &[Point]| v.get(..v.len().min(MAX_CLICKS)).unwrap_or(&[]).to_vec();
+                worker::Kind::Clicks(Self::model_clicks(&clicks_of(&cap(hint), &cap(exclude))))
+            }
+            _ => return Err("not an AI selection the model computes".into()),
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut job = self.segment_job(id, kind, Tag::Wait, tx, None)?;
+        job.cancel = Some(std::sync::Arc::clone(cancel));
+        self.segmenter.worker.submit(job)?;
+        Ok(Pending(rx))
     }
 
     /// Start preparing photo `id` for AI masks (load the model, encode the image), so the first

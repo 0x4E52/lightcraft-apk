@@ -720,6 +720,9 @@ impl LightcraftApp {
             }
             return r.map_err(CommandError::from);
         }
+        // batches on a selection run in the background here (`batch.pump` finishes them), and SAM 3 stays off on a
+        // device without the memory for it, as for the Object and Describe tiles
+        let params = self.batch_params(id, params);
         let params = if id == "crop.aspect"
             && params.get("aspect").and_then(Value::as_str) == Some("toggle")
             && self.crop_tool_aspect().is_some()
@@ -925,6 +928,23 @@ impl LightcraftApp {
         }
     }
 
+    /// Auto Settings / Update AI Masks on a selection: take in what the batch has done (it applies everything as one
+    /// undo step when it ends) and say how it ended. Idle, it costs a check.
+    fn batch_ai_pump(&mut self, ctx: &egui::Context) {
+        if !self.session.batch_ai.running() && !self.session.batch_ai.has_outcome() {
+            return;
+        }
+        let Ok(v) = self.session.execute("batch.pump", &serde_json::json!({})) else { return };
+        if v["active"] == true {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        let Some(done) = v.get("done").cloned() else { return };
+        let Ok(summary) = serde_json::from_value::<lightcraft_engine::batch_ai::Summary>(done) else { return };
+        ctx.request_repaint();
+        let (text, problem) = batch_summary_text(&summary);
+        if problem { self.toast_for(ctx, text, 8.0) } else { self.toast(ctx, text) }
+    }
+
     /// AI masks: apply finished background requests (clicks, descriptions, detail passes) and
     /// show their errors; start a zoomed-in detail pass once the clicking stops
     /// (`ui.detail_due`); watch the model download. Never waits for the model.
@@ -1003,6 +1023,34 @@ impl LightcraftApp {
             _ => false,
         };
         if ai { self.sam_unavailable_reason() } else { None }
+    }
+
+    /// `develop.auto` on named photos and `mask.updateAi` as the app runs them: always in the background (a caller's
+    /// `background: false` would block the UI thread for as long as the job runs); Update AI Masks told why SAM 3
+    /// can't run on this device, when it can't, whatever the caller sent (APK-11b: the memory gate is not optional).
+    fn batch_params(&self, id: &str, mut params: Value) -> Value {
+        let batch = match id {
+            "mask.updateAi" => true,
+            "develop.auto" => {
+                ["ids", "id"].iter().any(|k| params.get(k).is_some_and(|v| !v.is_null()))
+                    || params.get("selection").and_then(Value::as_bool) == Some(true)
+            }
+            _ => false,
+        };
+        if !batch {
+            return params;
+        }
+        if params.is_null() {
+            params = serde_json::json!({});
+        }
+        let Some(o) = params.as_object_mut() else { return params };
+        o.insert("background".into(), serde_json::json!(true));
+        if id == "mask.updateAi"
+            && let Some(reason) = self.sam_unavailable_reason()
+        {
+            o.insert("samUnavailable".into(), serde_json::json!(crate::i18n::tr(reason)));
+        }
+        params
     }
 
     /// Open the dialog offering the SAM 3 download (never downloads by itself).
@@ -1345,6 +1393,7 @@ impl LightcraftApp {
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
         focus_scan::pump(self, ctx);
+        self.batch_ai_pump(ctx);
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         if self.fonts_ready {
@@ -1752,6 +1801,37 @@ fn detect_summary(v: &Value) -> String {
         (f, 1) => format!("Found {}", plural(f, "face")),
         (f, _) => format!("Found {} in {}", plural(f, "face"), plural(with, "photo")),
     }
+}
+
+/// What a toast says when Auto Settings or Update AI Masks on a selection ends, and whether it reports a problem (it
+/// then stays longer).
+pub(crate) fn batch_summary_text(s: &lightcraft_engine::batch_ai::Summary) -> (String, bool) {
+    let label = i18n::tr(s.kind.label());
+    if s.cancelled {
+        return (i18n::tr_format!("{label} was cancelled: nothing changed", label = label), false);
+    }
+    let mut text = i18n::tr_format!("{label}: {n} of {total} photos", label = label, n = s.changed, total = s.photos);
+    if s.live > 0 {
+        // heuristic masks follow each photo by themselves: not changed, but not a failure either
+        text.push_str(" · ");
+        text.push_str(&i18n::tr_format!("{n} live masks need no update", n = s.live));
+    }
+    if let Some(first) = s.skipped.first() {
+        let more = s.skipped.len() - 1;
+        text.push_str(" · ");
+        text.push_str(&if first.id == 0 {
+            first.reason.clone()
+        } else if more == 0 {
+            i18n::tr_format!("skipped {name}: {reason}", name = first.name, reason = first.reason)
+        } else {
+            i18n::tr_format!("skipped {name} and {more} more: {reason}", name = first.name, more = more, reason = first.reason)
+        });
+    }
+    if let Some(first) = s.kept.first() {
+        text.push_str(" · ");
+        text.push_str(&i18n::tr_format!("{n} kept their AI selections ({reason})", n = s.kept.len(), reason = first.reason));
+    }
+    (text, !s.skipped.is_empty() || !s.kept.is_empty())
 }
 
 /// What to say when a SAM 3 download ended while its dialog was closed: the text, and whether it is

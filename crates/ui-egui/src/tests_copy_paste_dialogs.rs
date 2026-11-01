@@ -89,3 +89,69 @@ fn escape_closes_paste_settings_without_pasting() {
     assert!(h.app.ui.dialog.is_none(), "Esc closes the dialog");
     assert_eq!(exposure(&h, ids[1]), 0.0, "Esc pastes nothing");
 }
+
+/// Paste Selected Settings with Masks offers "Recompute subject and sky on each photo": checked, the paste is
+/// followed by Update AI Masks on the photos pasted into, in the background, and its outcome is a toast. Without the
+/// SAM 3 model here, the pasted Describe selection is kept and the toast says so; the heuristic Subject mask follows
+/// the photo by itself.
+#[test]
+fn paste_with_recompute_option() {
+    let (mut h, ids) = edited();
+    let seg = serde_json::to_value(lightcraft_develop::SegMask::from_logits(4, &[1.0; 16])).unwrap();
+    exec(&mut h, "mask.add", json!({"kind": "prompt", "text": "subject", "seg": seg}));
+    exec(&mut h, "mask.add", json!({"kind": "subject"}));
+    exec(&mut h, "develop.copy", json!({"groups": ["masks"]}));
+    exec(&mut h, "library.select", json!({"ids": [ids[1]]}));
+    key(&mut h, json!({"key": "V", "cmd": true, "shift": true}));
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::PasteSettings { recompute_ai: false, .. })), "{:?}", h.app.ui.dialog);
+    let r = h.request("ui.clickWidget", json!({"id": "check:pasteRecompute"}), T);
+    assert_eq!(r["ok"], true, "the option is there when Masks is pasted: {r}");
+    h.settle(SETTLE);
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::PasteSettings { recompute_ai: true, .. })), "{:?}", h.app.ui.dialog);
+    assert_eq!(h.request("ui.dialog.confirm", json!({}), T)["ok"], true);
+    let t = std::time::Instant::now();
+    while h.app.session.batch_ai.running() || h.app.session.batch_ai.has_outcome() {
+        assert!(t.elapsed() < SETTLE, "Update AI Masks never ended");
+        h.step();
+    }
+    let masks = &h.app.session.develop_of(PhotoId(ids[1])).unwrap().masks;
+    assert_eq!(masks.len(), 2, "the masks were pasted");
+    let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+    assert!(toast.contains("Update AI Masks") && toast.contains("kept their AI selections"), "{toast}");
+    // without Masks in the paste there is nothing to recompute: no option
+    exec(&mut h, "develop.copy", json!({"groups": ["light"]}));
+    key(&mut h, json!({"key": "V", "cmd": true, "shift": true}));
+    let r = h.request("ui.clickWidget", json!({"id": "check:pasteRecompute"}), T);
+    assert_ne!(r["ok"], true, "{r}");
+}
+
+/// APK-11b's memory gate holds for Update AI Masks too: a caller (control channel, `mcp --connect`) can't switch it off
+/// with an empty `samUnavailable`, nor make the UI thread wait with `background: false`.
+#[test]
+fn update_ai_masks_keeps_the_memory_gate() {
+    let services = crate::Services { png: None, min_ram_for_sam: Some(u64::MAX), ..Default::default() };
+    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
+    app.ui.view = crate::state::ViewMode::PhotoGrid;
+    let mut h = Headless::new(app, [1200.0, 900.0], 1.0);
+    let id = h.app.session.visible_cloned()[0].0;
+    exec(&mut h, "library.select", json!({"ids": [id]}));
+    let seg = serde_json::to_value(lightcraft_develop::SegMask::from_logits(4, &[1.0; 16])).unwrap();
+    // the app refuses a precomputed `seg` on this device like the tiles: the session puts the selection there, as a
+    // paste from a phone with the memory (or a desktop catalog) would
+    h.app.session.execute("mask.add", &json!({"kind": "prompt", "text": "subject", "seg": seg})).unwrap();
+    h.app.session.execute("mask.add", &json!({"kind": "subject"})).unwrap();
+    let before = h.app.session.develop_of(PhotoId(id)).unwrap().masks.clone();
+    assert_eq!(before.len(), 2);
+    let r = h.request("engine.execute", json!({"command": "mask.updateAi", "params": {"ids": [id], "samUnavailable": "", "background": false}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["result"]["started"], true, "run in the background all the same: {r}");
+    let t = std::time::Instant::now();
+    while h.app.session.batch_ai.running() || h.app.session.batch_ai.has_outcome() {
+        assert!(t.elapsed() < SETTLE, "Update AI Masks never ended");
+        h.step();
+    }
+    assert_eq!(h.app.session.develop_of(PhotoId(id)).unwrap().masks, before, "the selection is kept");
+    let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+    assert!(toast.contains("1 kept their AI selections") && toast.contains("Needs a device with 8 GB of memory"), "{toast}");
+    assert!(toast.contains("1 live masks need no update"), "the Subject mask is counted as live: {toast}");
+}

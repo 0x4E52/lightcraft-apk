@@ -18,6 +18,7 @@ pub mod activity;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod apple_photos;
 pub mod availability;
+pub mod batch_ai;
 pub(crate) mod camera_preview;
 pub mod camera_profiles;
 pub mod cmd;
@@ -261,6 +262,8 @@ pub struct Session {
     /// Reading focus points for photos imported before they were read (`photo.readFocusPoints`, `focus.pump`).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) focus_scan: focus_scan::FocusScan,
+    /// Auto Settings and Update AI Masks on a selection (`develop.auto {ids}`, `mask.updateAi`, `batch.pump`).
+    pub batch_ai: batch_ai::BatchAi,
     /// Copied develop settings (partial JSON) for Paste.
     pub clipboard: Option<Value>,
     /// The folder on disk the [`LibrarySource::Folder`] view browses.
@@ -443,6 +446,7 @@ impl Session {
             faces: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             focus_scan: Default::default(),
+            batch_ai: Default::default(),
             clipboard: None,
             meta_clipboard: None,
             browse: None,
@@ -1263,6 +1267,8 @@ mod tests_album_order;
 mod tests_album_remove;
 #[cfg(test)]
 mod tests_albums_local;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_batch_ai;
 #[cfg(test)]
 mod tests_color;
 #[cfg(test)]

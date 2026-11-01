@@ -57,6 +57,8 @@ pub struct Job {
     pub kind: Kind,
     pub tag: Tag,
     pub reply: mpsc::Sender<Outcome>,
+    /// Set when whoever asked has given up (a cancelled batch): the job is skipped if it hasn't started.
+    pub cancel: Option<Arc<AtomicBool>>,
 }
 
 /// A finished request: the segmentation (`None`: nothing selected / nothing to report).
@@ -220,6 +222,12 @@ fn run(rx: &mpsc::Receiver<Job>, shared: &Shared, idle: Duration) {
         if queue.iter().any(|later| supersedes(later, &job)) {
             drop(done);
             let _ = job.reply.send(Outcome { tag: job.tag, result: Ok(None), superseded: true });
+            continue;
+        }
+        // nobody waits for it any more: don't spend the model's time (and a phone's battery) on it
+        if job.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
+            drop(done);
+            let _ = job.reply.send(Outcome { tag: job.tag, result: Err("cancelled".into()), superseded: false });
             continue;
         }
         let result = match std::panic::catch_unwind(AssertUnwindSafe(|| run_job(&mut state, shared, &mut job))) {
@@ -405,7 +413,31 @@ mod tests {
     fn job(tag: Tag, reply: &mpsc::Sender<Outcome>) -> Job {
         // an empty folder: loading fails with an error (no model files)
         let dir = std::env::temp_dir().join(format!("lc-sam3-worker-none-{}", std::process::id()));
-        Job { dir, key: 1, render: None, missing: None, kind: Kind::Prepare, tag, reply: reply.clone() }
+        Job { dir, key: 1, render: None, missing: None, kind: Kind::Prepare, tag, reply: reply.clone(), cancel: None }
+    }
+
+    #[test]
+    fn a_cancelled_job_is_skipped_before_it_runs() {
+        let (tx, rx) = mpsc::channel();
+        let (jtx, jrx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(true));
+        let mut j = job(Tag::Wait, &tx);
+        // it would panic if it ran
+        j.kind = Kind::Panic;
+        j.cancel = Some(cancel);
+        jtx.send(j).unwrap();
+        let mut live = job(Tag::Wait, &tx);
+        live.cancel = Some(Arc::new(AtomicBool::new(false)));
+        jtx.send(live).unwrap();
+        drop(jtx);
+        let shared = Shared::default();
+        shared.pending.store(2, Ordering::SeqCst);
+        run(&jrx, &shared, Duration::from_secs(60));
+        let out: Vec<Outcome> = rx.try_iter().collect();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].result.as_ref().unwrap_err(), "cancelled", "skipped, not run");
+        assert!(out[1].result.as_ref().unwrap_err().contains("not found"), "a job not cancelled still runs");
+        assert_eq!(shared.pending.load(Ordering::SeqCst), 0, "counters reset");
     }
 
     #[test]

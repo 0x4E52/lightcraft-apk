@@ -721,13 +721,19 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     group_checklist(ui, "presetInclude", groups);
                 }
                 Dialog::CopySettings { groups } => group_checklist(ui, "copyGroup", groups),
-                Dialog::PasteSettings { groups } => {
+                Dialog::PasteSettings { groups, recompute_ai } => {
                     let n = app.session.selected().len();
                     ui.label(
                         egui::RichText::new(crate::i18n::tr_format!("Paste into {n} photo{} — only settings that were copied are pasted", if n == 1 { "" } else { "s" }, n = n))
                             .color(t.text_dim),
                     );
                     group_checklist(ui, "pasteGroup", groups);
+                    // pasted AI selections are the source photo's shapes until they are computed on each photo
+                    if groups.iter().any(|g| g == MASKS_GROUP) {
+                        ui.add_space(6.0);
+                        let r = ui.checkbox(recompute_ai, crate::i18n::tr("Recompute subject and sky on each photo"));
+                        crate::widgets::register(ui.ctx(), "check:pasteRecompute", r.rect);
+                    }
                 }
                 Dialog::SlideshowExport { settings } => slideshow_export_body(app, ui, settings),
                 Dialog::ContactSheet { options } => {
@@ -1964,7 +1970,22 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
         Dialog::SlideshowExport { settings } => app.run("app.slideshowExport", json!(settings)),
         Dialog::Print => app.run("app.print", json!({})),
         Dialog::CopySettings { groups } => app.run("develop.copy", json!({"groups": groups})),
-        Dialog::PasteSettings { groups } => app.run("develop.paste", json!({"groups": groups})),
+        Dialog::PasteSettings { groups, recompute_ai } => {
+            let ids: Vec<u64> = app.session.selected().iter().map(|id| id.0).collect();
+            let pasted = app.run("develop.paste", json!({"groups": groups, "ids": ids}))?;
+            if *recompute_ai && groups.iter().any(|g| g == MASKS_GROUP) {
+                // a second step after the paste, in the background (the activity row; the summary is a toast)
+                // the paste is applied (and on the undo stack) either way: a step that can't start (a batch
+                // still running) is its own message, not the paste's error
+                if let Err(e) = app.run("mask.updateAi", json!({"ids": ids})) {
+                    let label = crate::i18n::tr(lightcraft_engine::batch_ai::Kind::AiMasks.label());
+                    let text = crate::i18n::tr_format!("Pasted. {label} did not start: {reason}", label = label, reason = e);
+                    let now = app.tasks.repaint.as_ref().map(|ctx| ctx.input(|i| i.time)).unwrap_or(app.last_time);
+                    app.ui.toast = Some((text, now + 8.0, None));
+                }
+            }
+            Ok(pasted)
+        }
         Dialog::Export { opts, full_size, resize, limit_kb, dir, .. } => {
             let mut p = export_dialog_params(opts, *full_size, resize, *limit_kb);
             p["dir"] = json!(dir);
@@ -2021,6 +2042,9 @@ fn export_dialog_params(
 }
 
 // ------------------------------------------------------------------------------------------ dialog widgets
+
+/// The Masks group's key in a copy / paste group list.
+const MASKS_GROUP: &str = "masks";
 
 /// Two columns of settings-group checkboxes (Copy Settings, Create Preset) plus All / None.
 fn group_checklist(ui: &mut egui::Ui, tag: &str, groups: &mut Vec<String>) {

@@ -296,5 +296,12 @@
   "Already in “{}”": "Already in “{}”",
   "Move {n} photo{} to “{}”": "Move {n} photo{} to “{}”",
   "Move {n} photo{} to “{}”?": "Move {n} photo{} to “{}”?",
-  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Moved {n} photo{} to “{}”. Edit → Undo moves them back."
+  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Moved {n} photo{} to “{}”. Edit → Undo moves them back.",
+  "{label} was cancelled: nothing changed": "{label} გაუქმდა: არაფერი შეცვლილა",
+  "{label}: {n} of {total} photos": "{label}: {n} / {total} ფოტო",
+  "skipped {name}: {reason}": "გამოტოვებულია {name}: {reason}",
+  "skipped {name} and {more} more: {reason}": "გამოტოვებულია {name} და კიდევ {more}: {reason}",
+  "{n} kept their AI selections ({reason})": "AI მონიშვნა შენარჩუნდა {n} ფოტოზე ({reason})",
+  "{n} live masks need no update": "განახლება არ სჭირდება {n} ცოცხალ მასკას",
+  "Pasted. {label} did not start: {reason}": "ჩასმულია. {label} ვერ დაიწყო: {reason}"
 }

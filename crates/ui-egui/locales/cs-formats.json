@@ -296,5 +296,12 @@
   "Already in “{}”": "Již v „{}“",
   "Move {n} photo{} to “{}”": "Přesunout do „{1}“ fotografie: {n}{0:.0}",
   "Move {n} photo{} to “{}”?": "Přesunout do „{1}“ fotografie: {n}{0:.0}?",
-  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Do „{1}“ přesunuto fotografií: {n}{0:.0}. Úpravy → Zpět je vrátí."
+  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Do „{1}“ přesunuto fotografií: {n}{0:.0}. Úpravy → Zpět je vrátí.",
+  "{label} was cancelled: nothing changed": "{label} – zrušeno: nic se nezměnilo",
+  "{label}: {n} of {total} photos": "{label}: {n} z {total} fotografií",
+  "skipped {name}: {reason}": "přeskočeno {name}: {reason}",
+  "skipped {name} and {more} more: {reason}": "přeskočeno {name} a další ({more}): {reason}",
+  "{n} kept their AI selections ({reason})": "Fotografie s ponechaným AI výběrem: {n} ({reason})",
+  "{n} live masks need no update": "Živé masky bez nutnosti aktualizace: {n}",
+  "Pasted. {label} did not start: {reason}": "Vloženo. {label} se nespustilo: {reason}"
 }

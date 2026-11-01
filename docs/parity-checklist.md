@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-01 · **Change:** minor (LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-01 · **Change:** minor (LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -36,7 +36,7 @@ cited here still exists. Formerly docs/parity.md.
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 8 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
 | J. Red eye (EYE) | 2 | 0 | 0 | 0 | — | 1/1 (100%) |
-| K. Masking (MASK) | 15 | 5 | 5 | 0 | 7/8 (88%) | 7/7 (100%) |
+| K. Masking (MASK) | 15 | 6 | 4 | 0 | 7/8 (88%) | 7/7 (100%) |
 | L. Presets (PRE) | 6 | 0 | 1 | 1 | 2/2 (100%) | 2/2 (100%) |
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
 | N. Copy / paste / sync (SYNC) | 5 | 0 | 0 | 0 | 3/3 (100%) | 1/1 (100%) |
@@ -53,9 +53,9 @@ cited here still exists. Formerly docs/parity.md.
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 78 | 4 | 2 | 1 | 49/52 (94%) | 24/26 (92%) |
 | Lightroom Classic extras | 40 | 23 | 23 | 8 | — | 24/26 (92%) |
-| **Total** | 420 | 61 | 59 | 35 | 194/201 (97%) | 148/161 (92%) |
+| **Total** | 420 | 62 | 58 | 35 | 194/201 (97%) | 148/161 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.4%** of 540 in-scope rows — P0 98.3% of 201 · P1 95.0% of 161 · P2 55.9% of 177.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.5%** of 540 in-scope rows — P0 98.3% of 201 · P1 95.0% of 161 · P2 56.2% of 177.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -177,7 +177,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-EDIT-AUTO | Auto settings | P0 | ✅ | `cmd:develop.auto`, `crates/pipeline/src/auto.rs` | a Lightroom-like recipe calibrated black-box on Lightroom's Auto results for 24 Sony raws: Exposure from the scene's scene-linear log-average luminance (Lightroom's observed slope, -0.41 EV per EV), Highlights -66 and Shadows +52 (Lightroom's average Auto values), Contrast +68 and Vibrance +30 fitted on our scales. Held out one photo at a time: on the 16 photos whose start Sony's DRO doesn't brighten, a median dE76 of 6.4 from Lightroom's Auto results against 8.3 unedited; on all 24, 7.7 against 7.9 (issues #318, #209). Calibrated on Sony files only; Whites and Blacks stay 0 |
+| LR-EDIT-AUTO | Auto settings | P0 | ✅ | `cmd:develop.auto`, `crates/pipeline/src/auto.rs` | a Lightroom-like recipe calibrated black-box on Lightroom's Auto results for 24 Sony raws: Exposure from the scene's scene-linear log-average luminance (Lightroom's observed slope, -0.41 EV per EV), Highlights -66 and Shadows +52 (Lightroom's average Auto values), Contrast +68 and Vibrance +30 fitted on our scales. Held out one photo at a time: on the 16 photos whose start Sony's DRO doesn't brighten, a median dE76 of 6.4 from Lightroom's Auto results against 8.3 unedited; on all 24, 7.7 against 7.9 (issues #318, #209). Calibrated on Sony files only; Whites and Blacks stay 0. On a selection (APK-60): `develop.auto` with `ids` (Photo ▸ `cmd:app.autoSettingsSelected`) analyses each photo's own thumbnail on a worker with an activity row (✕ cancels: nothing changes), skips a photo that can't be read with the reason, and applies every photo as one undo step |
 | LR-EDIT-BW | Black & white | P0 | ✅ | `cmd:develop.treatment` | |
 | LR-EDIT-HDR-MODE | HDR editing | P2 | ✅ | `cmd:develop.hdr`, `ctl:hdr.maxEv`, `crates/ui-egui/src/panels/edit.rs` (`hdr_row`) | HDR button next to B&W in the Edit panel header, as Lightroom (Visualize HDR and the headroom limit in the Light panel while it's on); see Q. HDR |
 | LR-EDIT-LIGHT-EXPOSURE | Exposure | P0 | ✅ | `ctl:light.exposure` | |
@@ -311,7 +311,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-MASK-OVERLAY | Mask overlay | P0 | ✅ | `cmd:view.maskOverlay`, `cmd:view.maskOverlayMode`, `cmd:view.maskOverlayColor`, `crates/pipeline/src/visualize.rs` | rendered alpha of the selected mask (CPU + GPU): colour, colour on B&W, image on black/white, white on black; ⇧O cycles while masking; successful local adjustments (including Amount) hide the overlay until manually shown again with O / the eye; shape/edge edits retain it; zoomed in, the overlay is rendered on the same sharp window as the plain view (zoom and pan unchanged; `crates/ui-egui/src/tests_preview_limit.rs`, `crates/pipeline/src/tests_window.rs`); no auto-show on hover |
 | LR-MASK-OVERLAYALL | Show all mask overlays | P1 | ✅ | `cmd:view.maskOverlayAll`, `crates/ui-egui/src/panels/masking.rs`, `crates/pipeline/src/visualize.rs` | one diagnostic tint over every visible mask at once (CPU + GPU): the masks still stack their adjustments as before — this only paints each mask's region together, so you can see all masked areas at a glance (⌘⇧O / Ctrl+Shift+O) |
 | LR-MASK-PINS | Pins | P1 | ✅ | `cmd:view.maskPins`, `cmd:view.toolOverlay`, `crates/ui-egui/src/panels/detail.rs`, `crates/ui-egui/src/tests_tool_overlay.rs` | a pin per radial/linear/brush component: click selects its mask, drag moves it; Show Pins on follows the Tool Overlay mode (Auto: while the pointer is over the photo, hidden while brushing; Always; Selected: the selected mask's; Never; ⇧H cycles, #224); no pins for range/AI components |
-| LR-MASK-UPDATE | Recompute AI masks | P2 | ⬜ | | |
+| LR-MASK-UPDATE | Recompute AI masks | P2 | 🟡 | `cmd:mask.updateAi`, `cmd:batch.pump`, `cmd:dialog.pasteSettings`, `crates/engine/src/batch_ai.rs`, `crates/engine/src/tests_batch_ai.rs` | Photo ▸ Update AI Masks on the selection, and Paste Selected Settings with Masks offers "Recompute subject and sky on each photo" (APK-60): Describe and Object (SAM 3) selections are computed again on each photo by the model's worker, one undo step for all, an activity row with ✕ (cancelled: nothing changes); where the model isn't installed or the device lacks the memory (APK-11b) they are kept and the photos named in a toast. Subject / Sky / Background / People / Landscape masks are computed from each photo's own pixels whenever it renders, so they never kept the source photo's shape and need nothing stored. 🟡: the SAM path is tested with a stand-in for the model only (no model in CI) |
 | LR-MASK-SYNC | Copy masks to other photos | P1 | ✅ | `cmd:develop.copy` (`groups`) | |
 | LR-MASK-ADAPTIVE | Adaptive presets | P2 | ⬜ | | |
 
@@ -889,3 +889,4 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 | 2026-10-14 | patch | LRC-LIB-CATALOG-IMPORT: reconciled with upstream phased progress, cancellation kinds, WAL-only import, translations and current progress tracking. Status and summary counts unchanged. |
 | 2026-10-13 | minor | KEYC-COMPARE: `=` / `-` (also `+`) increase / decrease the grid thumbnail size (`view.thumbSizeUp` / `view.thumbSizeDown`, View menu), grids only; status unchanged (🟡) |
 | 2026-11-01 | minor | LR-PRIVACY-NETWORK: new row, Settings ▸ Network lists every network use and has Never use the network (APK-57) |
+| 2026-11-01 | minor | LR-MASK-UPDATE ⬜ → 🟡: Photo ▸ Update AI Masks (`mask.updateAi`) and Paste Selected Settings' "Recompute subject and sky on each photo" compute SAM 3 selections again per photo (kept and reported where the model can't run); LR-EDIT-AUTO: Auto Settings on a selection, each photo its own analysis, one undo step (APK-60) |

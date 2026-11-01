@@ -296,5 +296,12 @@
   "“{to}” is already a person. Combining them makes one person; Undo separates them again.": "「{to}」已經是另一個人。合併後成為一個人；還原會再把他們分開。",
   "{what} merge added at {mp}: its full size, {full}, needs more memory than this computer has": "已新增{what}合併照片（{mp}）：完整尺寸（{full}）所需的記憶體超過這台電腦的記憶體",
   "{what} merge added at {mp}: its full size, {full}, needs more memory than this device has": "已新增{what}合併照片（{mp}）：完整尺寸（{full}）所需的記憶體超過這台裝置的記憶體",
-  "{what} merge added at {mp}, the largest a panorama can be (its full size is {full})": "已新增{what}合併照片（{mp}），這是全景圖的最大尺寸（完整尺寸：{full}）"
+  "{what} merge added at {mp}, the largest a panorama can be (its full size is {full})": "已新增{what}合併照片（{mp}），這是全景圖的最大尺寸（完整尺寸：{full}）",
+  "{label} was cancelled: nothing changed": "{label}已取消：未做任何變更",
+  "{label}: {n} of {total} photos": "{label}：{total} 張中的 {n} 張",
+  "skipped {name}: {reason}": "已略過 {name}：{reason}",
+  "skipped {name} and {more} more: {reason}": "已略過 {name} 及另外 {more} 張：{reason}",
+  "{n} kept their AI selections ({reason})": "{n} 張保留了 AI 選取範圍（{reason}）",
+  "{n} live masks need no update": "{n} 個即時遮色片無須更新",
+  "Pasted. {label} did not start: {reason}": "已貼上。{label} 未能開始：{reason}"
 }

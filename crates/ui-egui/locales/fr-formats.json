@@ -296,5 +296,12 @@
   "Already in “{}”": "Déjà dans « {} »",
   "Move {n} photo{} to “{}”": "Déplacer {n} photo{} vers « {} »",
   "Move {n} photo{} to “{}”?": "Déplacer {n} photo{} vers « {} » ?",
-  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "{n} photo{} déplacée(s) vers « {} ». Modifier → Annuler les remet en place."
+  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "{n} photo{} déplacée(s) vers « {} ». Modifier → Annuler les remet en place.",
+  "{label} was cancelled: nothing changed": "{label} annulé : rien n’a changé",
+  "{label}: {n} of {total} photos": "{label} : {n} photos sur {total}",
+  "skipped {name}: {reason}": "{name} ignorée : {reason}",
+  "skipped {name} and {more} more: {reason}": "{name} et {more} autres ignorées : {reason}",
+  "{n} kept their AI selections ({reason})": "{n} gardent leurs sélections IA ({reason})",
+  "{n} live masks need no update": "{n} masques dynamiques n’ont pas besoin de mise à jour",
+  "Pasted. {label} did not start: {reason}": "Collé. {label} n’a pas démarré : {reason}"
 }

@@ -8,6 +8,14 @@ use super::{CommandSpec, bad, bool_or, cmd, f64_or, has_active, ok, point, str_p
 use crate::segment::{Click, MAX_CLICKS};
 use crate::{Result, Session};
 
+/// Update AI Masks: a selection, and no batch already running.
+fn ai_update_enabled(s: &Session) -> std::result::Result<(), String> {
+    if s.batch_ai.running() {
+        return Err("Auto Settings or Update AI Masks is still running".into());
+    }
+    super::has_selection(s)
+}
+
 fn shape_from(kind: &str, p: &Value, c: &str) -> Result<MaskShape> {
     Ok(match kind {
         "brush" => MaskShape::Brush { strokes: vec![] },
@@ -359,6 +367,27 @@ pub fn specs() -> Vec<CommandSpec> {
                 }
                 Ok(out)
             }
+        ),
+        CommandSpec {
+            explicit_targets: true,
+            ..cmd!(
+                "mask.updateAi",
+                "Update AI Masks",
+                ["Photo"],
+                None,
+                "{ids?, id? (default: the selection), background?: bool, samUnavailable?: why SAM 3 can't run here} — compute each photo's AI masks on that photo: Subject / Sky / Background / People / Landscape follow each photo's pixels already (counted as `live`); Describe and Object selections are computed again by SAM 3 where it is installed (and the device has the memory), else kept and reported; one undo step for all, an activity row (✕ cancels: nothing changes) → {kind, photos, changed, skipped, kept: [{id, name, reason}], live, cancelled}; `background` returns {started} at once and `batch.pump` finishes it",
+                ai_update_enabled,
+                crate::batch_ai::start_ai_masks
+            )
+        },
+        cmd!(
+            query "batch.pump",
+            "Finish Auto Settings / Update AI Masks in the Background",
+            [],
+            None,
+            "{} → {active, running?: {kind, done, total}, done?: summary (once, when a job has ended)} — cheap to call every frame (the app does): takes in what the running batch has computed and applies it all, as one undo step, when it ends",
+            super::always,
+            |s, _| crate::batch_ai::pump(s)
         ),
         cmd!("mask.update", "Update Mask Shape", [], None, "{id?, component?: index (0), shape: MaskShape JSON}", has_active, |s, p| {
             let shape: MaskShape =
