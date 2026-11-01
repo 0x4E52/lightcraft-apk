@@ -361,6 +361,8 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] Renderer failure (APK-19, needs APK-20): make the first renderer fail (an emulator image without Vulkan with
   `debug.lightcraft.gpu_backend vulkan`), the failure dialog shows, dismiss it, tap the icon **once**: the app opens on
   GL, with the notice that the window could not start with its Vulkan renderer last time.
+- [ ] Links (APK-26): Help ▸ LightCraft Help and About ▸ Source code on GitHub open the browser. Only `https` links
+  open; with no browser installed the notice says "No app can open links".
 - [ ] Shares (APK-25): share from Google Photos (one photo, then several), from Files (Downloads) and from an app
   that uses a FileProvider; "Open with" a DNG from Files: all are imported into `Originals/`. Share a 1 GB file: the
   UI stays responsive and the activity row "Receiving 1 file" shows it until it is done. Share a `.xmp` preset: a

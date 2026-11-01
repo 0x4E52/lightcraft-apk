@@ -80,6 +80,10 @@ pub fn pick_roots(inbox: Option<&Path>, library: &Path) -> Vec<(String, std::pat
 /// `Activity.moveTaskToBack`); `Err` when it could not even be asked.
 pub type MoveToBack = Rc<dyn Fn() -> Result<(), String>>;
 
+/// Starts the browser on a link (Android: JNI `startActivity` on the calling thread, APK-26);
+/// `Err` is the message to show.
+pub type OpenLink = Rc<dyn Fn(&str) -> Result<(), String>>;
+
 /// Asks `checkSelfPermission` for the photo permissions (Android: JNI on the UI thread); `Err`
 /// when the call failed, for the log.
 pub type CheckPhotos = Box<dyn Fn() -> Result<Grants, String>>;
@@ -277,6 +281,16 @@ pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_b
     }
 }
 
+/// `Services::open_url` over the host's `open_link`: only `https://` links go on.
+pub fn open_url(open_link: OpenLink) -> lightcraft_ui_egui::OpenUrlFn {
+    Box::new(move |url: &str| {
+        if lightcraft_android_sys::intents::IntentSpec::view(url).is_none() {
+            return Err(format!("Can't open {url}: only https links open in the browser"));
+        }
+        open_link(url)
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -311,6 +325,21 @@ mod tests {
         // Quit is never offered; without a way to the background, Back at the root does nothing
         assert!(s.quit_disabled && s.move_to_back.is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Links go to the host only when they are https; its refusal comes back as the message.
+    #[test]
+    fn open_url_passes_https_only() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let log = seen.clone();
+        let mut f = open_url(Rc::new(move |u: &str| {
+            log.borrow_mut().push(u.to_owned());
+            Err("No app can open links".to_owned())
+        }));
+        assert!(f("http://example.com").is_err() && f("intent://x").is_err());
+        assert!(seen.borrow().is_empty());
+        assert_eq!(f("https://example.com/a"), Err("No app can open links".to_owned()));
+        assert_eq!(*seen.borrow(), ["https://example.com/a"]);
     }
 
     /// Back at the root reaches the host's call, and its refusal comes back as the command's error.

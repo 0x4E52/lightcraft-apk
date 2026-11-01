@@ -156,6 +156,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         storage: crate::services::StorageDirs::from_internal(&files_dir, &paths.inbox, &paths.incoming),
         photos: Some(photo_access(&app)),
         media_query: Some(media_query(&app)),
+        open_link: Some(open_link(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
     // what another app sent: `getIntent()` never changes while the Activity lives, so once
@@ -309,6 +310,18 @@ fn media_query(app: &android_activity::AndroidApp) -> crate::services::MediaQuer
         let buckets = lightcraft_android_sys::media_store::query_buckets(&app).map_err(|e| e.user_message("read the photo library"))?;
         log::info!("photo library: {} folders", buckets.len());
         Ok(crate::services::buckets_for_ui(buckets))
+    })
+}
+
+/// Help and About links: `startActivity(ACTION_VIEW)` on the calling thread (no hop to the Java
+/// main thread); no browser installed reads "No app can open links".
+#[cfg(target_os = "android")]
+fn open_link(app: &android_activity::AndroidApp) -> crate::services::OpenLink {
+    let app = app.clone();
+    std::rc::Rc::new(move |url: &str| {
+        let spec = lightcraft_android_sys::intents::IntentSpec::view(url)
+            .ok_or_else(|| format!("Can't open {url}: only https links open in the browser"))?;
+        lightcraft_android_sys::intents::start_view(&app, &spec).map_err(|e| lightcraft_android_sys::intents::open_link_message(&e))
     })
 }
 

@@ -84,6 +84,69 @@ impl IntentSpec {
     }
 }
 
+impl IntentSpec {
+    /// `ACTION_VIEW` for a web link (Help, About; APK-26). Only `https://` with a host and no
+    /// whitespace or control characters: the URL may come from a command argument, so anything
+    /// else (`http:`, `intent:`, `file:`, `javascript:`) is refused here, before Android sees it.
+    pub fn view(url: &str) -> Option<IntentSpec> {
+        let url = url.trim();
+        let (scheme, rest) = url.split_once("://")?;
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = authority.split(':').next().unwrap_or("");
+        let ok = scheme.eq_ignore_ascii_case("https")
+            && !host.is_empty()
+            && !authority.starts_with('@')
+            && !url.chars().any(|c| c.is_whitespace() || c.is_control());
+        // Android matches intent-filter schemes case-sensitively: always hand over lowercase
+        ok.then(|| IntentSpec { action: Some(ACTION_VIEW.to_owned()), data: Some(format!("https://{rest}")), ..IntentSpec::default() })
+    }
+}
+
+/// What Help ▸ a link says when starting the browser failed: no app handles links, or the JNI error.
+pub fn open_link_message(e: &crate::Error) -> String {
+    match e {
+        crate::Error::Java { class, .. } if class.rsplit(['.', '/', '$']).next() == Some("ActivityNotFoundException") => {
+            "No app can open links".to_owned()
+        }
+        other => other.user_message("open the link"),
+    }
+}
+
+/// `startActivity(new Intent(action, Uri.parse(data)))` on the calling thread (attached through
+/// [`crate::jni_env::with_activity`], so never from inside a `with_activity` closure). Android
+/// allows it off the Java main thread, so there is no hop and nothing to wait for; an exception
+/// (`ActivityNotFoundException`) comes back as the error.
+#[cfg(target_os = "android")]
+pub fn start_view(app: &android_activity::AndroidApp, spec: &IntentSpec) -> Result<(), crate::Error> {
+    let (Some(action), Some(data)) = (spec.action.as_deref(), spec.data.as_deref()) else {
+        return Err(crate::Error::Jni("the intent has no action or data".into()));
+    };
+    crate::jni_env::with_activity(app, |env, activity| {
+        use crate::dialog::caught;
+        use jni::{JValue, jni_sig, jni_str};
+        env.with_local_frame(16, |env| -> Result<(), crate::Error> {
+            let action = env.new_string(action)?;
+            let text = env.new_string(data)?;
+            let answer = env.call_static_method(
+                jni_str!("android/net/Uri"),
+                jni_str!("parse"),
+                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                &[JValue::Object(&text)],
+            );
+            let uri = caught(env, answer)?.l()?;
+            let intent = env.new_object(
+                jni_str!("android/content/Intent"),
+                jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"),
+                &[JValue::Object(&action), JValue::Object(&uri)],
+            );
+            let intent = caught(env, intent)?;
+            let started = env.call_method(activity, jni_str!("startActivity"), jni_sig!("(Landroid/content/Intent;)V"), &[JValue::Object(&intent)]);
+            caught(env, started)?;
+            Ok(())
+        })
+    })
+}
+
 /// A URI LightCraft opens through the ContentResolver: `content://…`, or `file://…` from an old
 /// sender (the resolver applies the file's own permissions).
 fn receivable(uri: &str) -> bool {
@@ -193,6 +256,38 @@ mod tests {
 
     fn spec(action: &str, data: Option<&str>, extras: Extras) -> IntentSpec {
         IntentSpec::parse(Some(action), data, Some("image/jpeg"), 0, extras)
+    }
+
+    #[test]
+    fn view_spec_rejects_non_https() {
+        for url in [
+            "http://example.com",
+            "intent://x#Intent;end",
+            "file:///sdcard/a",
+            "javascript:alert(1)",
+            "https://",
+            "https:///path",
+            "https://:443/x",
+            "https://exa mple.com",
+            "https://example.com/a\nb",
+            "example.com",
+            "",
+        ] {
+            assert!(IntentSpec::view(url).is_none(), "{url:?}");
+        }
+    }
+
+    #[test]
+    fn view_spec_fields() {
+        let s = IntentSpec::view("  HTTPS://github.com/0x4E52/lightcraft-apk?a=b ").unwrap();
+        assert_eq!(s.action.as_deref(), Some(ACTION_VIEW));
+        assert_eq!(s.data.as_deref(), Some("https://github.com/0x4E52/lightcraft-apk?a=b"));
+        assert_eq!(s.flags, 0);
+        // not content to receive
+        assert!(s.received().is_empty());
+        let e = crate::Error::Java { class: "android.content.ActivityNotFoundException".into(), message: "x".into() };
+        assert_eq!(open_link_message(&e), "No app can open links");
+        assert!(open_link_message(&crate::Error::Reentrant).starts_with("Could not open the link"));
     }
 
     #[test]

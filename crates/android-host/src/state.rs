@@ -80,6 +80,8 @@ pub struct Start {
     /// The MediaStore query behind File ▸ Import from Photo Library (`None` in tests: no device);
     /// offered only with [`Start::photos`], whose permission it needs.
     pub media_query: Option<crate::services::MediaQuery>,
+    /// Starts the browser on a link (`None` in tests: Help and About links are unavailable).
+    pub open_link: Option<crate::services::OpenLink>,
 }
 
 impl Start {
@@ -130,6 +132,7 @@ impl HostState {
         if let (Some(photos), Some(query)) = (&start.photos, &start.media_query) {
             services.import_media = Some(crate::services::import_media(photos.gate(), query.clone()));
         }
+        services.open_url = start.open_link.clone().map(crate::services::open_url);
         let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {
             app.ui = ui;
@@ -348,5 +351,20 @@ mod tests {
         let state = HostState::new(Err("in memory".into()), start);
         assert!(state.app.services.import_media.is_some());
         assert!(lightcraft_ui_egui::menus::ui_enabled(&state.app, "file.importMediaLibrary"));
+    }
+
+    /// The host's link closure is what Help ▸ LightCraft Help calls.
+    #[test]
+    fn help_links_reach_the_host() {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let log = seen.clone();
+        let open_link: crate::services::OpenLink = std::rc::Rc::new(move |u: &str| {
+            log.borrow_mut().push(u.to_owned());
+            Ok(())
+        });
+        let mut state = HostState::new(Err("in memory".into()), Start { open_link: Some(open_link), ..Start::default() });
+        let r = lightcraft_ui_egui::menus::run_ui_command(&mut state.app, "app.help", &serde_json::Value::Null);
+        assert!(matches!(r, Some(Ok(_))), "{r:?}");
+        assert_eq!(*seen.borrow(), [lightcraft_ui_egui::links::HELP]);
     }
 }

@@ -579,7 +579,7 @@ visible menu bar yet: the menu model is only exposed through the control channel
 | MENU-WINDOW-MINIMIZE | Minimize / zoom | P1 | ✅ | `apps/lightcraft/src/native_menu.rs` | the system's Minimize (⌘M) and Zoom items at the top of Window |
 | MENU-WINDOW-PANELS | Panel switches | P0 | ✅ | `cmd:panel.edit`, `cmd:panel.crop`, `cmd:panel.remove`, `cmd:panel.masking`, `cmd:panel.presets`, `cmd:panel.versions` | |
 | MENU-WINDOW-BRINGFRONT | Bring all to front | P2 | ✅ | `apps/lightcraft/src/native_menu.rs` | the system's item at the end of Window |
-| MENU-HELP-HELP | Help | P2 | ✅ | `cmd:app.help` | opens the documentation |
+| MENU-HELP-HELP | Help | P2 | ✅ | `cmd:app.help` | opens the documentation; on Android it opens the browser (https links only; "No app can open links" with none installed, APK-26) |
 | MENU-HELP-TUTORIALS | Tutorials | OOS | 🚫 | | |
 | MENU-HELP-WHATSNEW | What's new | P2 | ✅ | `cmd:app.whatsNew` | |
 | MENU-HELP-SHORTCUTS | Keyboard shortcuts | P1 | ✅ | `cmd:app.shortcuts` | |
