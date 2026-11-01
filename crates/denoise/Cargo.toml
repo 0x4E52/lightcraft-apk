@@ -29,5 +29,9 @@ miniz_oxide = { workspace = true }
 rayon = { workspace = true }
 web-time = { workspace = true }
 
+# "Never use the network" reaches the remote client (native only)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lightcraft-fetch = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }

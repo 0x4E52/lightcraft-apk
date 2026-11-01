@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-14 · **Change:** minor (integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-01 · **Change:** minor (LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -47,15 +47,15 @@ cited here still exists. Formerly docs/parity.md.
 | S. Export (EXP) | 15 | 4 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 1 | 1 | 0 | — | 0/1 (0%) |
-| V. Preferences (PREF) | 6 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
+| V. Preferences (PREF) | 7 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 78 | 4 | 2 | 1 | 49/52 (94%) | 24/26 (92%) |
 | Lightroom Classic extras | 40 | 23 | 23 | 8 | — | 24/26 (92%) |
-| **Total** | 419 | 61 | 59 | 35 | 194/201 (97%) | 148/161 (92%) |
+| **Total** | 420 | 61 | 59 | 35 | 194/201 (97%) | 148/161 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.4%** of 539 in-scope rows — P0 98.3% of 201 · P1 95.0% of 161 · P2 55.7% of 176.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.4%** of 540 in-scope rows — P0 98.3% of 201 · P1 95.0% of 161 · P2 55.9% of 177.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -441,6 +441,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-PREF-TECHPREVIEW | Early-access toggles | P2 | ⬜ | | |
 | LR-PREF-NOTIFICATIONS | Notifications | OOS | 🚫 | | |
 | LR-PREF-DEVICE | Device settings | P2 | ⬜ | | |
+| LR-PRIVACY-NETWORK | Every network use listed; Never use the network (beyond Lightroom) | P2 | ✅ | `crates/fetch/src/uses.rs`, `crates/fetch/tests/uses_scan.rs`, `crates/ui-egui/src/panels/settings.rs` (`network_tab`), `crates/ui-egui/src/tests_network.rs`, `docs/android.md` | an extra: Settings ▸ Network lists each use of the network (purpose, hosts, the action that starts it) with a Never use the network switch that makes downloads refuse; the registry is code and a source scan fails the build when a file reaches the network outside it; `docs/android.md` ▸ Privacy has the store's Data safety answers. Not yet on a device |
 
 ## W. Cloud & AI infrastructure (CLOUD / AI)
 
@@ -887,3 +888,4 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 | 2026-10-13 | minor | LRC-LIB-CATALOG-IMPORT review: offline Local promotion and result dismissal across library switches covered; redundant operation/settings copies removed. Status and summary counts unchanged. |
 | 2026-10-14 | patch | LRC-LIB-CATALOG-IMPORT: reconciled with upstream phased progress, cancellation kinds, WAL-only import, translations and current progress tracking. Status and summary counts unchanged. |
 | 2026-10-13 | minor | KEYC-COMPARE: `=` / `-` (also `+`) increase / decrease the grid thumbnail size (`view.thumbSizeUp` / `view.thumbSizeDown`, View menu), grids only; status unchanged (🟡) |
+| 2026-11-01 | minor | LR-PRIVACY-NETWORK: new row, Settings ▸ Network lists every network use and has Never use the network (APK-57) |

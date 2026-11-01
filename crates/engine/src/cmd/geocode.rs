@@ -174,9 +174,16 @@ mod download {
     fn get(name: &str, base: &str, dir: &Path, cancel: &AtomicBool, task: &crate::activity::TaskHandle) -> std::result::Result<(), String> {
         let _ = std::fs::remove_file(dir.join(name));
         let file = lightcraft_fetch::FileSpec { name, size: None, sha256: None, max: MAX_ZIP };
-        lightcraft_fetch::download_url(&file, &format!("{base}{name}"), dir, &lightcraft_fetch::Options::default(), cancel, &mut |pr| {
-            task.progress(pr.done, pr.total.max(pr.done))
-        })
+        // network-use: place-names
+        lightcraft_fetch::download_url(
+            lightcraft_fetch::uses::PLACE_NAMES,
+            &file,
+            &format!("{base}{name}"),
+            dir,
+            &lightcraft_fetch::Options::default(),
+            cancel,
+            &mut |pr| task.progress(pr.done, pr.total.max(pr.done)),
+        )
         .map_err(|e| e.to_string())
     }
 

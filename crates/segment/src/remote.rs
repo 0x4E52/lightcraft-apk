@@ -84,6 +84,7 @@ impl Client {
         if !address.ip().is_loopback() {
             return Err("SAM endpoint must be loopback; use an SSH tunnel for remote access".into());
         }
+        // network-use: segment-worker
         let stream = TcpStream::connect_timeout(&address, Duration::from_secs(5)).map_err(|e| e.to_string())?;
         stream.set_read_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
         stream.set_write_timeout(Some(Duration::from_secs(30))).map_err(|e| e.to_string())?;
@@ -192,6 +193,7 @@ pub fn serve(address: SocketAddr, dir: &Path, device: candle_core::Device) -> Re
     if !crate::is_model_dir(dir) {
         return Err("SAM model files are missing".into());
     }
+    // network-use: segment-worker
     let listener = TcpListener::bind(address).map_err(|e| e.to_string())?;
     eprintln!("SAM3 worker listening on {address}; device=Metal; idle unload=600s");
     for stream in listener.incoming() {

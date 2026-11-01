@@ -139,7 +139,8 @@ impl Downloader {
                 }
             };
             let r =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fetch::download(files, &mirrors, &dir, &opts, &s.cancel, &mut on_progress)));
+                // network-use: sam3-model
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fetch::download(fetch::uses::SAM3_MODEL, files, &mirrors, &dir, &opts, &s.cancel, &mut on_progress)));
             let cancelled = matches!(r, Ok(Err(fetch::DownloadError::Cancelled)));
             let error = match r {
                 Ok(Ok(())) => {

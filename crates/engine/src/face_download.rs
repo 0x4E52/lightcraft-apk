@@ -205,9 +205,18 @@ fn explain(e: &lightcraft_fetch::DownloadError) -> String {
 #[cfg(not(target_arch = "wasm32"))]
 fn fetch(spec: &Download, mirror: &str, staging: &Path, shared: &Shared) -> Result<(), lightcraft_fetch::DownloadError> {
     let file = lightcraft_fetch::FileSpec { name: &spec.file_name, size: Some(spec.size_bytes), sha256: Some(&spec.sha256), max: spec.size_bytes };
-    lightcraft_fetch::download(&[file], &[mirror.to_string()], staging, &lightcraft_fetch::Options::default(), &shared.cancel, &mut |p| {
-        shared.set(State::Running { bytes: p.done.min(spec.size_bytes), total: spec.size_bytes });
-    })
+    // network-use: face-model
+    lightcraft_fetch::download(
+        lightcraft_fetch::uses::FACE_MODEL,
+        &[file],
+        &[mirror.to_string()],
+        staging,
+        &lightcraft_fetch::Options::default(),
+        &shared.cancel,
+        &mut |p| {
+            shared.set(State::Running { bytes: p.done.min(spec.size_bytes), total: spec.size_bytes });
+        },
+    )
 }
 
 #[cfg(target_arch = "wasm32")]

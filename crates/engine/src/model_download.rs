@@ -193,9 +193,18 @@ fn explain(e: &lightcraft_fetch::DownloadError) -> String {
 #[cfg(not(target_arch = "wasm32"))]
 fn fetch(spec: &Download, mirror: &str, staging: &Path, shared: &Shared) -> Result<(), lightcraft_fetch::DownloadError> {
     let file = lightcraft_fetch::FileSpec { name: &spec.file_name, size: Some(spec.size_bytes), sha256: Some(&spec.sha256), max: spec.size_bytes };
-    lightcraft_fetch::download_url(&file, mirror, staging, &lightcraft_fetch::Options::default(), &shared.cancel, &mut |p| {
-        shared.set(State::Running { bytes: p.done.min(spec.size_bytes), total: spec.size_bytes });
-    })
+    // network-use: denoise-model
+    lightcraft_fetch::download_url(
+        lightcraft_fetch::uses::DENOISE_MODEL,
+        &file,
+        mirror,
+        staging,
+        &lightcraft_fetch::Options::default(),
+        &shared.cancel,
+        &mut |p| {
+            shared.set(State::Running { bytes: p.done.min(spec.size_bytes), total: spec.size_bytes });
+        },
+    )
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -323,6 +332,21 @@ mod tests {
         wait("the download never stopped", || !d.running());
         assert_eq!(d.jobs["test-model"].get(), State::Cancelled);
         wait("the row stayed", || activity.list().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn network_off_refuses_downloads() {
+        let dir = scratch("network-off");
+        let (staging, spec) = (dir.join(STAGING), spec_for(b"abc"));
+        std::fs::create_dir_all(&staging).unwrap();
+        let shared = Shared::new(spec.size_bytes);
+        lightcraft_fetch::uses::set_network_off_on_this_thread(true);
+        run(&spec, &spec.url, &staging, &shared);
+        lightcraft_fetch::uses::set_network_off_on_this_thread(false);
+        let State::Failed(why) = shared.get() else { panic!("refused: {:?}", shared.get()) };
+        assert_eq!(why, "Network use is off in Settings ▸ Network");
+        assert!(!staging.join(&spec.file_name).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -23,6 +23,53 @@ use std::sync::OnceLock;
 
 use crate::Session;
 
+/// The "Never use the network" preference (Settings ▸ Network, `app.networkOff`): while on, downloads and
+/// connections that leave the device refuse with "Network use is off in Settings ▸ Network". Process-wide;
+/// the single switch lives in `lightcraft_fetch::uses`.
+pub fn set_network_off(off: bool) {
+    #[cfg(not(target_arch = "wasm32"))]
+    lightcraft_fetch::uses::set_network_off(off);
+    #[cfg(target_arch = "wasm32")]
+    let _ = off;
+}
+
+/// Whether "Never use the network" is on.
+pub fn network_off() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    return lightcraft_fetch::uses::network_off();
+    #[cfg(target_arch = "wasm32")]
+    false
+}
+
+/// The marker file that keeps the preference between runs, so the CLI and MCP honour what the app saved.
+fn network_off_marker() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("network-off"))
+}
+
+/// Save the preference where every host reads it at start ([`load_network_off`]). Best effort.
+pub fn save_network_off(off: bool) {
+    let Some(p) = network_off_marker() else { return };
+    if off {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(&p, b"Never use the network\n");
+    } else {
+        let _ = std::fs::remove_file(&p);
+    }
+}
+
+/// Turn the switch on when the saved preference says so (never turns it off).
+pub fn load_network_off() {
+    if network_off_marker().is_some_and(|p| p.exists()) {
+        set_network_off(true);
+    }
+}
+
+/// Every use of the network (the registry behind Settings ▸ Network).
+#[cfg(not(target_arch = "wasm32"))]
+pub use lightcraft_fetch::uses::{NetworkUse, USES as NETWORK_USES};
+
 /// Files beside the executable that switch on portable mode (either one; contents are ignored).
 pub const PORTABLE_MARKERS: [&str; 2] = ["portable.txt", "LightCraft.portable"];
 /// The data folder created beside the executable in portable mode.

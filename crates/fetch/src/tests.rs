@@ -141,8 +141,9 @@ fn quick() -> Options {
 }
 
 fn run(files: &[FileSpec<'_>], mirrors: &[String], dir: &Path, cancel: &AtomicBool) -> (Result<(), DownloadError>, Vec<Progress>) {
+    let _g = SWITCH.read().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut seen = Vec::new();
-    let r = download(files, mirrors, dir, &quick(), cancel, &mut |p| seen.push(p.clone()));
+    let r = download(uses::FACE_MODEL, files, mirrors, dir, &quick(), cancel, &mut |p| seen.push(p.clone()));
     (r, seen)
 }
 
@@ -375,7 +376,8 @@ fn exact_url_keeps_query_and_owned_catalog_values() {
     let spec = FileSpec { name: &name, size: Some(3), sha256: Some(&hash), max: 3 };
     let dir = tmp("exact");
     let mut progress = Vec::new();
-    download_url(&spec, &url, &dir, &quick(), &AtomicBool::new(false), &mut |p| progress.push(p.clone())).unwrap();
+    let _g = SWITCH.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+    download_url(uses::FACE_MODEL, &spec, &url, &dir, &quick(), &AtomicBool::new(false), &mut |p| progress.push(p.clone())).unwrap();
     worker.join().unwrap();
     assert_eq!(std::fs::read(dir.join(name)).unwrap(), b"abc");
     assert!(progress.iter().all(|p| !p.mirror.contains("secret")));
@@ -408,3 +410,27 @@ fn hostile_file_specs_are_rejected_before_touching_disk() {
         assert!(!dir.exists());
     }
 }
+
+#[test]
+fn unknown_use_is_refused() {
+    let dir = std::env::temp_dir().join(format!("lc-fetch-unknown-{}", std::process::id()));
+    let f = FileSpec { name: "a.bin", size: Some(1), sha256: None, max: 1 };
+    let r = download("tracking", &[f], &["http://127.0.0.1:1".to_string()], &dir, &quick(), &AtomicBool::new(false), &mut |_| {});
+    assert_eq!(r, Err(DownloadError::UnknownUse("tracking".into())));
+    assert!(!dir.exists(), "nothing is created for a refused use");
+}
+
+#[test]
+fn network_off_refuses_downloads() {
+    // process-wide switch: serialised with the other test that flips it
+    let _g = SWITCH.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let dir = std::env::temp_dir().join(format!("lc-fetch-off-{}", std::process::id()));
+    let f = FileSpec { name: "a.bin", size: Some(1), sha256: None, max: 1 };
+    uses::set_network_off(true);
+    let r = download(uses::FACE_MODEL, &[f], &["http://127.0.0.1:1".to_string()], &dir, &quick(), &AtomicBool::new(false), &mut |_| {});
+    uses::set_network_off(false);
+    assert_eq!(r, Err(DownloadError::NetworkOff));
+    assert_eq!(r.unwrap_err().to_string(), "Network use is off in Settings ▸ Network");
+}
+
+static SWITCH: std::sync::RwLock<()> = std::sync::RwLock::new(());

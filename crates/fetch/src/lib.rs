@@ -20,6 +20,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod http;
+pub mod uses;
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -109,6 +110,10 @@ pub enum DownloadError {
     /// Invalid filename, size, hash or aggregate bound supplied by the caller.
     Invalid(String),
     Cancelled,
+    /// The caller named a network use that is not in [`uses::USES`].
+    UnknownUse(String),
+    /// "Never use the network" is on.
+    NetworkOff,
     /// A local file problem (folder not writable, disk full…).
     Disk(String),
     /// Every mirror failed for `file`; the reason for each.
@@ -124,6 +129,8 @@ impl std::fmt::Display for DownloadError {
             DownloadError::Invalid(e) => write!(f, "invalid download: {e}"),
             DownloadError::NoMirrors => write!(f, "no download location is configured for this model in this build"),
             DownloadError::Cancelled => write!(f, "the download was cancelled"),
+            DownloadError::UnknownUse(id) => write!(f, "unknown network use \"{id}\": it is not in the list of network uses"),
+            DownloadError::NetworkOff => write!(f, "{}", uses::NETWORK_OFF_MESSAGE),
             DownloadError::Disk(e) => write!(f, "{e}"),
             DownloadError::AllMirrorsFailed { file, errors } => write!(f, "could not download {file}: {}", errors.join("; ")),
         }
@@ -138,9 +145,11 @@ enum Fail {
     Disk(String),
 }
 
+/// `use_id` is an id of [`uses::USES`]; an unknown one, or the network switched off, is an error.
 /// Fetch a single file from its exact URL, preserving any query string. The local filename
 /// remains `file.name`; it never comes from redirects or response headers.
 pub fn download_url(
+    use_id: &str,
     file: &FileSpec<'_>,
     url: &str,
     dir: &Path,
@@ -148,12 +157,13 @@ pub fn download_url(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(&Progress),
 ) -> Result<(), DownloadError> {
-    download_source(std::slice::from_ref(file), &[url.to_string()], dir, opts, cancel, progress, true)
+    download_source(use_id, std::slice::from_ref(file), &[url.to_string()], dir, opts, cancel, progress, true)
 }
 
 /// Download `files` into `dir` from `mirrors` (in order; see [`mirrors`]). Verified files
 /// are kept. `progress` is called as bytes arrive (often: throttle in it).
 pub fn download(
+    use_id: &str,
     files: &[FileSpec<'_>],
     mirrors: &[String],
     dir: &Path,
@@ -161,10 +171,12 @@ pub fn download(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(&Progress),
 ) -> Result<(), DownloadError> {
-    download_source(files, mirrors, dir, opts, cancel, progress, false)
+    download_source(use_id, files, mirrors, dir, opts, cancel, progress, false)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn download_source(
+    use_id: &str,
     files: &[FileSpec<'_>],
     mirrors: &[String],
     dir: &Path,
@@ -173,6 +185,7 @@ fn download_source(
     progress: &mut dyn FnMut(&Progress),
     exact_urls: bool,
 ) -> Result<(), DownloadError> {
+    uses::check(use_id)?;
     let total = validate_files(files)?;
     if mirrors.len() > MAX_MIRRORS {
         return Err(DownloadError::Invalid("too many mirrors".into()));

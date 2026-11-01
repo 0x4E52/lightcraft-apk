@@ -137,6 +137,8 @@ mod tests_masking_layout;
 #[cfg(test)]
 mod tests_menubar;
 #[cfg(test)]
+mod tests_network;
+#[cfg(test)]
 mod tests_offline;
 #[cfg(test)]
 mod tests_open_lightroom;
@@ -541,6 +543,8 @@ pub struct LightcraftApp {
     pub window_is_fullscreen: bool,
     /// The GPU preference last applied (`app.gpu`), to apply Settings changes once.
     gpu_applied: Option<bool>,
+    /// The "Never use the network" setting last sent to the engine.
+    network_applied: Option<bool>,
     /// Say once, when the GPU device has been tried, that no graphics processor was found
     /// ([`panels::notices::gpu_notice`]). The desktop app sets it; headless sessions and tests don't.
     pub gpu_notice: bool,
@@ -641,6 +645,7 @@ impl LightcraftApp {
             hover_preview: None,
             window_is_fullscreen: false,
             gpu_applied: None,
+            network_applied: None,
             gpu_notice: false,
             memory_applied: None,
             display_applied: None,
@@ -1374,6 +1379,18 @@ impl LightcraftApp {
 
     /// Apply settings that act outside the UI state: GPU rendering and window full screen.
     fn apply_settings(&mut self, ctx: &egui::Context) {
+        // the process-wide switch (`app.networkOff`) follows the saved setting when the setting changes; a
+        // toggle from the control channel or MCP is adopted into the setting so it sticks and is saved
+        let live = lightcraft_engine::config::network_off();
+        if self.network_applied != Some(self.ui.settings.network_off) {
+            self.network_applied = Some(self.ui.settings.network_off);
+            if live != self.ui.settings.network_off {
+                let _ = self.session.execute("app.networkOff", &serde_json::json!({"enabled": self.ui.settings.network_off}));
+            }
+        } else if live != self.ui.settings.network_off {
+            self.ui.settings.network_off = live;
+            self.network_applied = Some(live);
+        }
         if self.gpu_applied != Some(self.ui.settings.gpu) {
             self.gpu_applied = Some(self.ui.settings.gpu);
             let _ = self.session.execute("app.gpu", &serde_json::json!({"enabled": self.ui.settings.gpu}));

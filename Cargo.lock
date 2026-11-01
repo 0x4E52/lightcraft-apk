@@ -3159,6 +3159,7 @@ dependencies = [
  "lightcraft-codecs",
  "lightcraft-denoise",
  "lightcraft-engine",
+ "lightcraft-fetch",
  "lightcraft-mcp",
  "lightcraft-merge",
  "lightcraft-raster",
@@ -3212,6 +3213,7 @@ version = "0.8.0"
 dependencies = [
  "faer-core",
  "lightcraft-denoise-core",
+ "lightcraft-fetch",
  "lightcraft-profile",
  "lightcraft-raster",
  "miniz_oxide 0.8.9",

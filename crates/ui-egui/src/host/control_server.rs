@@ -35,6 +35,7 @@ pub const BAD_TOKEN: &str = "bad token";
 /// accepts every well-formed request. A port that can't be bound is logged and nothing serves.
 pub fn start(port: u16, ctx: egui::Context, token: Option<String>) -> Receiver<ControlRequest> {
     let (tx, rx) = channel::<ControlRequest>();
+    // network-use: control-server
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {

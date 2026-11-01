@@ -53,6 +53,7 @@ impl Remote {
         self.conn = None;
         let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, format!("cannot resolve {}", self.addr));
         for sa in self.addr.to_socket_addrs()? {
+            // network-use: mcp-connect
             match TcpStream::connect_timeout(&sa, Duration::from_millis(800)) {
                 Ok(s) => {
                     s.set_nodelay(true).ok();

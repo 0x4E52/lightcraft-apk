@@ -336,7 +336,11 @@ impl Remote {
     }
 
     fn connect(&self) -> Result<(BufReader<TcpStream>, TcpStream), Error> {
+        // before resolving: a DNS query is network use too
+        #[cfg(not(target_arch = "wasm32"))]
+        lightcraft_fetch::uses::check(lightcraft_fetch::uses::REMOTE_DENOISE).map_err(|e| self.err(e))?;
         let addr = self.address.to_socket_addrs().map_err(|e| self.err(e))?.next().ok_or_else(|| self.err("the address doesn't resolve"))?;
+        // network-use: remote-denoise
         let s = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(|e| self.err(e))?;
         s.set_read_timeout(Some(self.timeout)).map_err(|e| self.err(e))?;
         s.set_write_timeout(Some(self.timeout)).map_err(|e| self.err(e))?;
@@ -499,6 +503,25 @@ mod tests {
         let got = remote.try_run(&input).unwrap().unwrap();
         let want = model(2.0)(&input).unwrap();
         assert!(got.iter().zip(&want).all(|(a, b)| (a - b).abs() < 2e-3));
+    }
+
+    #[test]
+    fn never_use_the_network_stops_the_remote_client() {
+        let addr = start("aa11", model(2.0));
+        let remote = Remote::new(&addr, TOKEN, "aa11", T);
+        lightcraft_fetch::uses::set_network_off_on_this_thread(true);
+        let r = remote.connect();
+        lightcraft_fetch::uses::set_network_off_on_this_thread(false);
+        let Err(e) = r else { panic!("connected while the network is off") };
+        assert!(e.to_string().contains("Network use is off"), "{e}");
+        assert!(remote.connect().is_ok());
+        // a host name is refused before any DNS query
+        let named = Remote::new("no-such-host.invalid:7000", TOKEN, "aa11", T);
+        lightcraft_fetch::uses::set_network_off_on_this_thread(true);
+        let r = named.connect();
+        lightcraft_fetch::uses::set_network_off_on_this_thread(false);
+        let Err(e) = r else { panic!("connected while the network is off") };
+        assert!(e.to_string().contains("Network use is off"), "{e}");
     }
 
     #[test]

@@ -235,6 +235,16 @@ pub fn specs() -> Vec<CommandSpec> {
                 "lastFallback": lightcraft_gpu::last_fallback(),
             }))
         }),
+        cmd!(query "app.networkOff", "Never Use the Network", [], None, "{enabled?: bool} — turn \"Never use the network\" on or off (saved for the CLI and MCP when the session has a file system); returns {enabled}", always, |s, p| {
+            let wanted = p.get("enabled").and_then(Value::as_bool).filter(|on| *on != crate::config::network_off());
+            if let Some(on) = wanted {
+                crate::config::set_network_off(on);
+                if s.media.file_loader.is_some() {
+                    crate::config::save_network_off(on);
+                }
+            }
+            Ok(json!({"enabled": crate::config::network_off()}))
+        }),
         cmd!(query "library.memory", "Memory Usage", [], None, "{} — bytes held by each cache (decoded sources, rendered previews, GPU buffers; heap when instrumented)", always, |s, _| {
             Ok(serde_json::to_value(s.memory_report()).unwrap_or_default())
         }),

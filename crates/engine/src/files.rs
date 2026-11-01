@@ -1098,6 +1098,7 @@ impl crate::Session {
         self.media.file_probe = Some(p);
         self.media.preview_loader = Some(fs_preview_loader());
         self.media.denoise.loader = Some(fs_pair_loader());
+        crate::config::load_network_off();
         #[cfg(target_os = "macos")]
         {
             self.apple_photos = Some(crate::apple_photos::osascript());

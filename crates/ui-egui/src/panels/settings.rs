@@ -30,6 +30,7 @@ pub const TABS: &[(&str, &str)] = &[
     ("faces", "Faces"),
     ("denoise", "AI Denoise"),
     ("storage", "Storage"),
+    ("network", "Network"),
 ];
 
 /// Thumbnail cache sizes offered (MB).
@@ -60,6 +61,7 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, tab: &mut String) {
         "faces" => super::faces::settings_tab(app, ui, &t),
         "denoise" => super::denoise::settings_tab(app, ui, &t),
         "storage" => crate::storage::tab(app, ui, &t),
+        "network" => network_tab(app, ui, &t),
         _ => general_tab(app, ui, &t),
     }
 }
@@ -404,6 +406,35 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     if app.session.library.is_none() {
         hint(ui, t, crate::i18n::tr("In-memory session: these settings last until LightCraft quits."));
     }
+}
+
+// ----------------------------------------------------------------------------------- Network
+
+/// Every use of the network, with the switch that stops the ones that leave the device.
+fn network_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
+    heading(ui, t, crate::i18n::tr("Network"));
+    hint(
+        ui,
+        t,
+        "LightCraft sends nothing about you or your photos anywhere: no telemetry, no account, no update check. It uses the network only for the downloads below, each started by something you do.",
+    );
+    check(ui, "settings.networkOff", &mut app.ui.settings.network_off, "Never use the network");
+    if app.ui.settings.network_off {
+        hint(ui, t, "Network use is off: downloads refuse until you turn this off.");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    for u in lightcraft_engine::config::NETWORK_USES {
+        ui.add_space(4.0);
+        let top = ui.cursor().min;
+        ui.label(RichText::new(crate::i18n::tr(u.purpose)).color(t.text));
+        let hosts = if u.hosts.is_empty() { crate::i18n::tr("an address you give").to_string() } else { u.hosts.join(", ") };
+        let kind = crate::i18n::tr(if u.switchable { "Contacts" } else { "Stays on this device or network" });
+        hint(ui, t, &format!("{kind}: {hosts}. {} {}", crate::i18n::tr("Starts with:"), crate::i18n::tr(u.action)));
+        let rect = egui::Rect::from_min_max(top, egui::pos2(top.x + 1.0, ui.cursor().min.y));
+        crate::widgets::register(ui.ctx(), format!("networkUse-{}", u.id), rect);
+    }
+    #[cfg(target_arch = "wasm32")]
+    hint(ui, t, "The browser version downloads no models and uses no network of its own.");
 }
 
 // --------------------------------------------------------------------------------- Performance

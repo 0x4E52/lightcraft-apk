@@ -201,6 +201,41 @@ locally instead of only in CI. To go on task by task, ask Claude Code in the rep
 For several cards in a row with an implementer, an adversarial reviewer and a fix round per card, run the workflow
 in [`tools/agents/android-runner.js`](../tools/agents/android-runner.js) (see the comment at its top).
 
+## Privacy
+
+LightCraft collects nothing and sends nothing about you or your photos: no telemetry, no analytics, no crash
+reports, no account, no update check, no advertising id. It uses the network only for downloads you start, and the
+list of them is code: `crates/fetch/src/uses.rs` (Settings ▸ Network shows it, and the "Never use the network"
+switch there refuses every download and the remote denoise connection, in the app, the CLI and MCP (`app.networkOff`), with "Network use is off in Settings ▸ Network"). The test
+`every_network_call_is_registered` (`crates/fetch/tests/uses_scan.rs`) fails when a source file opens a socket or
+calls the downloader without naming one of those uses.
+
+| Use | Starts with | Contacts |
+|---|---|---|
+| `denoise-model` | Settings ▸ AI Denoise ▸ Download | github.com (release file, pinned size and SHA-256) |
+| `face-model` | Settings ▸ Faces ▸ Download | github.com, huggingface.co (pinned) |
+| `sam3-model` | Masking ▸ Download the model | only mirrors you list (none by default) |
+| `place-names` | Map ▸ Download place names | download.geonames.org |
+| `remote-denoise` | Settings ▸ AI Denoise ▸ Remote computer | a computer you name, on your network |
+| `control-server` | `--control` (on Android only in debug builds, with a token) | 127.0.0.1 only |
+| `segment-worker` | Masking with a remote SAM endpoint set | 127.0.0.1 only |
+| `mcp-connect` | `lightcraft-cli mcp --connect` | the address you give |
+
+Downloads send no identifier and no data from your library: a plain GET with a user agent. The one exception is a Hugging Face token you enter yourself, which is sent only over HTTPS to huggingface.co. Nothing is uploaded, except photo tiles that remote denoise sends to the computer you name, and only when you turn it on.
+
+### Data safety form (Google Play)
+
+Answers, from the list above (APK-43 copies them):
+
+- Does your app collect or share any of the required user data types? **No.** No data is collected, no data is
+  shared with third parties.
+- Is all of the user data encrypted in transit? **Not applicable** (no user data is transmitted). The downloads
+  use HTTPS.
+- Do you provide a way for users to request that their data is deleted? **Not applicable** (no data leaves the
+  device; everything is in the app's folders, removed by uninstalling, or by Settings ▸ Storage).
+- Network use to disclose in the store text: optional downloads of AI models and place names, started by the user
+  and switchable off in Settings ▸ Network.
+
 ## Device checklist
 
 What only a device (or a CI run an agent cannot start) can show. Whoever saw it ticks the line.
@@ -208,6 +243,8 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [x] The debug APK from the Android workflow starts and renders on a real phone (maintainer, 2026-10-17); the
   layout is the desktop one until Phase 3.
 
+- [ ] Privacy (APK-57): Settings ▸ Network lists the eight uses; with Never use the network on, a model download
+  on the phone says so and starts nothing.
 - [ ] Launcher icon (APK-14): under circle and squircle masks the ear tufts and the shoulder are not cut, and as a
   themed (monochrome) icon it reads as the LightCraft mark.
 - [ ] First start with a 20k-photo library (APK-11): no ANR, the "Opening library…" frame is visible, then the grid.

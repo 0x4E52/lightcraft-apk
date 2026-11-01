@@ -1009,6 +1009,8 @@ fn denoise_serve(args: &[String]) -> Result<(), String> {
     }
     let token = std::env::var(&token_env).map_err(|_| format!("denoise-serve: set the shared token in ${token_env}"))?;
     let s = lightcraft_engine::denoise::serving(dir.as_deref().map(Path::new), model.as_deref(), run_on)?;
+    lightcraft_fetch::uses::check(lightcraft_fetch::uses::REMOTE_DENOISE).map_err(|e| format!("denoise-serve: {e}"))?;
+    // network-use: remote-denoise
     let listener = std::net::TcpListener::bind(&listen).map_err(|e| format!("denoise-serve: {listen}: {e}"))?;
     eprintln!("lightcraft-cli denoise-serve: {} {} ({}) on {listen} via {}", s.model.id, s.model.version, s.model.sha256, s.device);
     if listen.starts_with("0.0.0.0") || listen.starts_with("[::]") {
