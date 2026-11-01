@@ -9,7 +9,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::LightcraftApp;
-#[cfg(not(target_arch = "wasm32"))]
 use lightcraft_engine::activity::Cancel;
 #[cfg(not(target_arch = "wasm32"))]
 use lightcraft_engine::storage_report::Limits;
