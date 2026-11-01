@@ -26,6 +26,7 @@ pub mod host;
 pub mod i18n;
 pub mod icons;
 pub mod import;
+pub mod library_backup;
 pub mod licences;
 pub mod lightroom_import;
 pub mod links;
@@ -130,6 +131,8 @@ mod tests_keywording;
 mod tests_labels;
 #[cfg(test)]
 mod tests_layout_image;
+#[cfg(test)]
+mod tests_library_backup;
 #[cfg(test)]
 mod tests_library_problem;
 #[cfg(test)]
@@ -250,9 +253,12 @@ pub type ScreenProfileFn = Box<dyn FnMut() -> Option<Vec<u8>>>;
 /// Whether an external editor can be started (its name as in [`Services::open_with`]); the
 /// error says why not and what to do (e.g. PhotoCraft isn't installed).
 pub type CheckEditorFn = Box<dyn Fn(&str) -> Result<(), String>>;
-/// Something the host does with the session (web: back up or restore the library in browser
-/// storage); the work may finish asynchronously.
+/// Something the host does with the session (Back on Android); the work may finish asynchronously.
 pub type HostAction = Box<dyn FnMut(&mut Session) -> Result<Value, String>>;
+/// File ▸ Back Up Library… / Restore Library from Backup…: the host's way, given the app and the
+/// command's parameters (web: browser storage; Android: [`library_backup::device_backup`] and
+/// [`library_backup::device_restore`]); the work may finish asynchronously.
+pub type LibraryAction = Box<dyn FnMut(&mut LightcraftApp, &Value) -> Result<Value, String>>;
 /// Reopen the library at a folder off the UI thread (Android, where the UI thread is the process's
 /// main thread and a large library's replay would block it): `Ok` once the host has started
 /// opening it and will replace the session when it is open, `Err` with why it could not start.
@@ -359,11 +365,14 @@ pub struct Services {
     /// assume it can).
     pub check_editor: Option<CheckEditorFn>,
     /// File ▸ Back Up Library…: save the whole library (catalog and originals) as one file the
-    /// user keeps (web only: there the library lives in browser storage, which the browser may
-    /// clear; on the desktop it is a folder backed up like any other).
-    pub backup_library: Option<HostAction>,
-    /// File ▸ Restore Library from Backup… (web only; keeps the current library).
-    pub restore_library: Option<HostAction>,
+    /// user keeps, where the host's library can vanish: the web (browser storage, which the
+    /// browser may clear) and Android (the app's private storage, deleted with the app: a zip in
+    /// Documents/LightCraft, then the share sheet, [`library_backup::device_backup`]). `None` on
+    /// the desktop, where the library is a folder backed up like any other.
+    pub backup_library: Option<LibraryAction>,
+    /// File ▸ Restore Library from Backup…: the web and Android; the current library is kept
+    /// until the restored one has opened ([`library_backup::device_restore`]).
+    pub restore_library: Option<LibraryAction>,
     /// The system appearance for Appearance Mode ▸ Auto, ahead of egui's own report.
     pub system_theme: Option<SystemThemeFn>,
     /// The export folder for each kind of file, used when an export names none and none was used
@@ -611,6 +620,10 @@ pub struct LightcraftApp {
     pub share_after_export: bool,
     /// File ▸ Share handing files to the host's share sheet (`Services::share`).
     pub share: Option<share::ShareTask>,
+    /// A device backup or restore of the library on its worker ([`library_backup`]).
+    pub library_backup: Option<library_backup::Task>,
+    /// A restore that swapped the library in was looked for since this app opened it.
+    pub restore_checked: bool,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
     /// When (egui time) the free space was last looked at (`storage::low_space_tick`).
@@ -726,6 +739,8 @@ impl LightcraftApp {
             export: None,
             share_after_export: false,
             share: None,
+            library_backup: None,
+            restore_checked: false,
             tasks: Default::default(),
             storage_checked: None,
             last_export_result: None,
@@ -1888,6 +1903,7 @@ impl LightcraftApp {
         pick_browser::show(self, &ctx);
         export_task::poll(self, &ctx);
         share::poll(self, &ctx);
+        library_backup::poll(self, &ctx);
         slideshow_export::poll(self, &ctx);
         panels::activity::show(self, &ctx);
         export_task::poll_photos(self, &ctx);

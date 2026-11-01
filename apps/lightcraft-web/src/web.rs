@@ -171,7 +171,8 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         picker: None,
         pick_display_profile: None,
         screen_profile: None,
-        backup_library: Some(Box::new(move |session: &mut Session| {
+        backup_library: Some(Box::new(move |app: &mut LightcraftApp, _: &serde_json::Value| {
+            let session = &mut app.session;
             let Some(b) = backup_backend.clone() else { return Err("nothing is stored in this browser session (?store=memory)".into()) };
             // the photos' own names for the originals in the zip
             let names: std::collections::HashMap<String, String> = session
@@ -196,7 +197,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
             });
             Ok(json!({"started": true}))
         })),
-        restore_library: Some(Box::new(move |_session: &mut Session| {
+        restore_library: Some(Box::new(move |_app: &mut LightcraftApp, _: &serde_json::Value| {
             let Some(b) = restore_backend.clone() else { return Err("nothing is stored in this browser session (?store=memory)".into()) };
             let frozen = frozen.clone();
             // once the backup is in place, stop saving the old library (the page reloads)

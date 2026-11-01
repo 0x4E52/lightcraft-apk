@@ -303,6 +303,37 @@ system's share sheet with them (one file: `ACTION_SEND`, several: `ACTION_SEND_M
 to the app chosen). `{"paths": [...]}` shares files already exported there. A file outside shared storage can't be
 shared and the message says where to export it.
 
+## Backing up the library before uninstalling
+
+The library lives in LightCraft's private storage (`files/library`), and Android deletes it when LightCraft is
+uninstalled or its data is cleared (APK-50). Back it up first:
+
+- **File ▸ Back Up Library…** (also **Back Up Now** in the first-start notice) writes one zip,
+  `lightcraft-library-backup-<date>-<time>.zip`, to **`Documents/LightCraft`**, under the activity row "Backing up the
+  library" (✕ stops it and leaves no file). It holds the catalog (edits, albums, keywords, history), presets and
+  library settings, and every photo copied into the library (Copy imports, received shares). Photos added in place,
+  such as a DCIM folder browsed or added without a copy, stay where they are: the backup lists them by path
+  (`backup.json`), so they come back as long as the files are still on the phone. When there isn't room the backup is
+  refused before anything is written ("needs 3.2 GB, 1.1 GB free"). Once written, the share sheet opens, so the file
+  can go to a computer, a card or a cloud folder of your choice: `Documents/` survives an uninstall, but not a reset
+  of the phone. The format is the browser build's zip (`lightcraft_engine::backup`), at most 4 GB and 65,535 files per
+  backup (no zip64 yet): a larger library is refused with that reason before anything is read or written. Only the
+  photos in the library's `Originals` folder are copied; any other photo, also one elsewhere in the library's folder,
+  is listed by path like a photo added in place.
+- **File ▸ Restore Library from Backup…** opens the in-app chooser. After an uninstall and reinstall, share the zip to
+  LightCraft (from Files, a messenger or the cloud app), so it lands in the Inbox, and pick it there: the new install
+  no longer owns the zip the old one wrote to `Documents/LightCraft`, and Android's scoped storage generally won't let
+  it read that file by path. Picking it in `Documents/LightCraft` works only for the install that wrote it. (Neither
+  route has been tried on a device yet.) Under "Restoring the library", every entry is read and its checksum and
+  each photo's content hash checked before anything is written; a damaged or altered backup changes nothing. The
+  files are then written to `files/library.restoring`; a marker (`files/library.restore.json`) is written before
+  anything moves, the current library moves aside to `files/library.before-restore`, the restored one takes its place
+  and opens behind the loading frame. Only once it has opened is the previous library deleted; if it doesn't open, the
+  previous one is put back and the restored copy removed. A crash anywhere in between is put right at the next start,
+  before the library is opened: the previous library is moved back unless the swap had completed. A
+  `files/library.before-restore` that no marker accounts for is never deleted: the next restore keeps it as
+  `files/library.before-restore-<time>`.
+
 ## Clipboard
 
 Copy and paste reach other apps (APK-28): every copy (a text field's Copy or Cut, a dialog's Copy to Clipboard, Ctrl+C
@@ -397,6 +428,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   `Pictures/LightCraft` (Gallery shows them) and no `.lightcraft-…-tmp` file is left; a Contact Sheet PDF saved
   from the chooser's Documents place is in `Documents/LightCraft` (Files shows it). File ▸ Share… one photo, then
   three, to a messenger: the photos arrive. The Export dialog with a folder in Pictures doesn't offer Original files.
+- [ ] Library backup (APK-50): back up a 500-photo library (File ▸ Back Up Library…), the zip is in
+  `Documents/LightCraft` and the share sheet opens; uninstall, reinstall, share the zip to LightCraft and restore it
+  from the Inbox: edits, albums and Copy-imported originals are back.
 - [ ] Clipboard (APK-28): copy a keyword from the keyword field (long press or right-click ▸ Copy) and paste it into
   another app; copy text in another app and paste it into the keyword field with the field's Paste; with a hardware
   keyboard, Ctrl+C and Ctrl+V do the same. The UI doesn't stall on a paste.

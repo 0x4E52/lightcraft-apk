@@ -3259,6 +3259,7 @@ name = "lightcraft-engine"
 version = "0.8.0"
 dependencies = [
  "ab_glyph",
+ "crc32fast",
  "harfrust",
  "jxl-oxide",
  "libc",
@@ -3580,7 +3581,6 @@ dependencies = [
 name = "lightcraft-web"
 version = "0.8.0"
 dependencies = [
- "crc32fast",
  "eframe",
  "egui",
  "js-sys",

@@ -107,6 +107,25 @@ as stated):
 - **Done when:** tests pass; `docs/android.md` explains backup before uninstall.
 - **Maintainer checks on a device:** back up a 500-photo library, uninstall, reinstall, restore from the shared zip:
   edits, albums and Copy-imported originals are back.
+- **As built (2026-11-01):** the format moved to `crates/engine/src/backup.rs` (zip writer and reader, entry names,
+  checks, the `backup.json` manifest); the library-folder side is its own file, `crates/engine/src/backup_dir.rs`
+  (plan on the UI thread, streamed write in 1 MiB pieces, verify, extract, rebase). The Android flow is shared code in
+  `crates/ui-egui/src/library_backup.rs`, which the host installs as `Services::backup_library` /
+  `restore_library`; those fields became `LibraryAction` (the app and the command's parameters, so the restore can
+  ask the chooser and the backup can start `file.share`), the web's closures adapted. The catalog goes into the zip
+  as the files on disk after a save on the UI thread (a compaction resets the log only there). Restore swaps
+  `files/library.restoring` in for `files/library`, the previous one waits in `files/library.before-restore` with a
+  marker (`files/library.restore.json`) until the restored one opened, then the originals are relinked (when the
+  backed-up folder's path differs) and the previous one is deleted; a restored library that doesn't open gives the
+  previous one back. The marker is written before the first move and records the phase (moving, swapped, rolled
+  back); `library_backup::recover` runs in `open_library_session` before the library is opened, so a crash between
+  the moves or a failed rollback moves the previous library back instead of creating an empty one, and a
+  `.before-restore` without a marker is kept under a new name, never deleted. A restore writes originals only below
+  `Originals/` (a crafted `backup.json` can't overwrite the catalog). A web backup (no `backup.json`) is refused on
+  the device with where to restore it. No zip64: a library over 4 GB or 65,535 files is refused with that reason before the space check and before the
+  worker starts (`Plan::check_limits`). Only originals below `Originals/` are copied (what a restore writes); any other
+  photo inside the library folder is listed by path. The backup's row has kind `export`, the restore's `import`; a
+  service that panics is caught in its command and stays installed.
 
 ### APK-51 SD cards and USB drives
 - **Answers:** [C5](android-competitive.md#c5-raw-and-card-import-on-android) (OTG readers not listed, confused card
@@ -450,3 +469,4 @@ Phase 3.
   APK-51 and APK-52.
 - 2026-11-01 (APK-25): the MTP card stages imports in `files/incoming/`, outside the library (the importer adds a
   file inside the library where it is).
+- 2026-11-01 (APK-50): "As built" note on the card.

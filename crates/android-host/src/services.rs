@@ -1,7 +1,8 @@
 //! The platform services the Android host gives the UI (`lightcraft_ui_egui::Services`).
 //!
 //! Writing files (exports, `ui.screenshot`, presets), encoding PNGs, naming the log file, the
-//! first-start library notice, the memory a SAM-based mask needs, reopening the library behind the
+//! first-start library notice, backing the library up and restoring it (APK-50,
+//! `lightcraft_ui_egui::library_backup`), the memory a SAM-based mask needs, reopening the library behind the
 //! loading frame, and Back and Quit: Back at the root moves the app to the background (`run` passes
 //! the JNI call in), and Quit is never offered, since the system ends the Activity and the process's
 //! one event loop can't start again. Commands that need a file dialog get the in-app chooser over
@@ -43,8 +44,7 @@ use crate::state::Reopen;
 
 /// Told once at the first start (in the notices panel): the library lives in the app's private
 /// storage, which Android deletes with the app.
-pub const LIBRARY_NOTICE: &str =
-    "Your library is stored inside LightCraft. Uninstalling it or Clear data deletes the library; back it up with File ▸ Export…";
+pub const LIBRARY_NOTICE: &str = "Your library is stored inside LightCraft. Uninstalling it or Clear data deletes the library; back it up with File ▸ Back Up Library… or Back Up Now below.";
 
 /// The thumbnail cache limit a phone starts with (the desktop's is 2 GB); the user can raise it in
 /// Settings ▸ Storage.
@@ -380,6 +380,11 @@ pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_b
         touch: true,
         // photos added in place from shared storage are other apps' files: read-only to LightCraft
         prefer_copy_import: true,
+        // the library goes with the app: File ▸ Back Up Library… writes a zip to
+        // Documents/LightCraft and offers it to the share sheet; Restore reads one from the in-app
+        // chooser (APK-50)
+        backup_library: Some(lightcraft_ui_egui::library_backup::device_backup()),
+        restore_library: Some(lightcraft_ui_egui::library_backup::device_restore()),
         ..Services::default()
     }
 }
@@ -423,6 +428,7 @@ mod tests {
         assert_eq!(s.library_notice.as_deref(), Some(LIBRARY_NOTICE));
         assert_eq!(s.min_ram_for_sam, Some(crate::memory::SAM_MIN_RAM));
         assert!(s.reopen_library.is_none());
+        assert!(s.backup_library.is_some() && s.restore_library.is_some(), "the library can be backed up and restored");
         // nothing a desktop-only picker would need
         assert!(s.picker.is_none() && s.pick_files.is_none() && s.reveal.is_none());
         // Quit is never offered; without a way to the background, Back at the root does nothing

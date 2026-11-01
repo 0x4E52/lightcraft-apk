@@ -195,8 +195,8 @@ impl Store for FilesStore {
     }
 }
 
-/// Names of the library files read at start-up.
-pub const LIBRARY_FILES: [&str; 6] = ["catalog.snap", "catalog.log", "presets.json", "view.json", "prefs.json", "ui.json"];
+/// Names of the library files read at start-up (the ones a backup carries).
+pub use lightcraft_engine::backup::LIBRARY_FILES;
 
 #[cfg(test)]
 mod tests {

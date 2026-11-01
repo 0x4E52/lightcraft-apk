@@ -8,6 +8,11 @@
 //! ```text
 //! files/config/    settings folder: ui.json, panic.log, models/, cache/ (engine::config::use_dir)
 //! files/library/   the library (catalog, previews, Copy-imported originals)
+//! files/library.restoring/, library.before-restore/, library.restore.json
+//!                  only during File ▸ Restore Library from Backup… (APK-50); library.restore-failed/
+//!                  only while a restored library that didn't open is swapped back (removed then,
+//!                  or at the next start); library.before-restore-<time>/ a previous library an
+//!                  unfinished restore left without a marker, kept (never deleted)
 //! files/logs/      lightcraft.log and the two before it
 //! files/inbox/     files shared to LightCraft, before they are imported (APK-24, APK-25)
 //! files/incoming/  received photos, until the import moved them into the library (APK-25)

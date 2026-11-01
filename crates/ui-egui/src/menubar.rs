@@ -1161,8 +1161,9 @@ mod tests {
         assert!(!text.contains("Add Folder") && !text.contains("\"Add Photos"), "no add-folder wording left in the menus");
     }
 
-    /// Back Up / Restore Library are the browser build's (its library lives in browser storage):
-    /// absent from the desktop's menus, present and wired to the host where it provides them.
+    /// Back Up / Restore Library are the browser's and Android's (their library can vanish with
+    /// the browser's storage or the app): absent from the desktop's menus, present and wired to
+    /// the host where it provides them.
     #[test]
     fn library_backup_items_follow_the_host() {
         let all = |app: &LightcraftApp| -> Vec<MenuNode> { menu_bar(app).into_iter().flat_map(|(_, v)| v).collect() };
@@ -1172,11 +1173,11 @@ mod tests {
         let calls = std::rc::Rc::new(std::cell::Cell::new(0));
         let c = calls.clone();
         let services = crate::Services {
-            backup_library: Some(Box::new(move |s: &mut lightcraft_engine::Session| {
+            backup_library: Some(Box::new(move |app: &mut LightcraftApp, _: &Value| {
                 c.set(c.get() + 1);
-                Ok(json!({"photos": s.catalog.len()}))
+                Ok(json!({"photos": app.session.catalog.len()}))
             })),
-            restore_library: Some(Box::new(|_: &mut lightcraft_engine::Session| Ok(json!({"started": true})))),
+            restore_library: Some(Box::new(|_: &mut LightcraftApp, _: &Value| Ok(json!({"started": true})))),
             ..Default::default()
         };
         let mut web = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);

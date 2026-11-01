@@ -38,6 +38,9 @@ pub fn open_library_session(in_memory: bool, dir: Option<PathBuf>, seed_demo: bo
         log::warn!("no library location (set --library or LIGHTCRAFT_LIBRARY)");
         return (unopened(), Some(LibraryProblem::new("", "There is no home folder to keep the library in. Choose a folder for it.")));
     };
+    // a restore the process didn't live to finish: put the library's folders right before
+    // opening (or creating) it there
+    crate::library_backup::recover(&dir);
     let t0 = web_time::Instant::now();
     let mut s = Session::new().with_fs().with_default_denoise_models().with_system_clock();
     match s.open_library(&dir, seed_demo) {

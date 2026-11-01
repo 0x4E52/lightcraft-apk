@@ -114,6 +114,7 @@ pub fn may_close(app: &mut LightcraftApp) -> bool {
 }
 
 enum Choice {
+    BackUp,
     Retry,
     QuitAnyway,
     Cancel,
@@ -189,7 +190,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                 app.quit_confirmed = true;
                 app.ui.quit = true;
             }
-            Choice::Cancel | Choice::Ok => app.quit_prompt = None,
+            Choice::Cancel | Choice::Ok | Choice::BackUp => app.quit_prompt = None,
         }
         return;
     }
@@ -199,10 +200,19 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             app.notices.remove(0);
         }
     } else if let Some(text) = app.library_notice.clone() {
-        // information, not a problem: its own title, after any warning has been dealt with
-        let buttons = [("libraryNoticeOk", "OK", Choice::Ok)];
-        if window(ctx, "library-notice", "Your Library", &library_notice_text(&text), &buttons).is_some() {
+        // information, not a problem: its own title, after any warning has been dealt with; where
+        // the host backs the library up (Android), the way out is one tap away
+        let backup = [("libraryNoticeBackup", "Back Up Now", Choice::BackUp), ("libraryNoticeOk", "OK", Choice::Ok)];
+        let ok = [("libraryNoticeOk", "OK", Choice::Ok)];
+        let buttons: &[(&str, &str, Choice)] = if app.services.backup_library.is_some() { &backup } else { &ok };
+        if let Some(i) = window(ctx, "library-notice", "Your Library", &library_notice_text(&text), buttons) {
             library_notice_ok(app);
+            if matches!(buttons.get(i), Some((_, _, Choice::BackUp)))
+                && let Err(e) = app.run("file.backupLibrary", serde_json::json!({}))
+            {
+                app.ui.status = e.clone();
+                app.toast_for(ctx, e, 8.0);
+            }
         }
     }
 }

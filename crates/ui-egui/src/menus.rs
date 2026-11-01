@@ -793,9 +793,20 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "app.clearRecentLibraries" => crate::panels::settings::recent_libraries(app, &json!({"clear": true})),
         "app.displayProfile" => crate::panels::settings::display_profile(app, p),
         "file.backupLibrary" | "file.restoreLibrary" => {
-            let action = if id == "file.backupLibrary" { app.services.backup_library.as_mut() } else { app.services.restore_library.as_mut() };
+            let backup = id == "file.backupLibrary";
+            let action = if backup { app.services.backup_library.take() } else { app.services.restore_library.take() };
             match action {
-                Some(f) => f(&mut app.session),
+                Some(mut f) => {
+                    // (a panic is caught here, not by the dispatch's guard, so the action is
+                    // always put back and the command keeps working for the rest of the session)
+                    let r = lightcraft_engine::guard::catch(id, || f(app, p)).and_then(|r| r);
+                    // (put back unless the action replaced it)
+                    let slot = if backup { &mut app.services.backup_library } else { &mut app.services.restore_library };
+                    if slot.is_none() {
+                        *slot = Some(f);
+                    }
+                    r
+                }
                 None => Err("not available here: on the desktop the library is a folder; back it up with your other files".into()),
             }
         }
