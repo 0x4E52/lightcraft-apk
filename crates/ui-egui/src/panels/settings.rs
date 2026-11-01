@@ -120,17 +120,28 @@ fn general_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     });
     row(ui, t, "", |ui| {
         let can = app.services.pick_folder.is_some();
-        let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Open Library…")));
+        // where the in-app chooser stands in (Android) the buttons say why they are off, as the
+        // menu items do
+        let why = crate::pick_browser::unavailable(&app.services, "app.openLibrary");
+        let mut r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Open Library…")));
+        if let Some(why) = why {
+            r = r.on_disabled_hover_text(why);
+        }
         register(ui.ctx(), "button:settingsOpenLibrary", r.rect);
         if r.clicked() {
             let _ = app.run("app.openLibrary", json!({}));
         }
-        let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("New Library…")));
+        let mut r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("New Library…")));
+        if let Some(why) = crate::pick_browser::unavailable(&app.services, "app.newLibrary") {
+            r = r.on_disabled_hover_text(why);
+        }
         register(ui.ctx(), "button:settingsNewLibrary", r.rect);
         if r.clicked() {
             let _ = app.run("app.newLibrary", json!({}));
         }
-        if !can {
+        if let Some(why) = why {
+            hint(ui, t, why);
+        } else if !can {
             hint(ui, t, crate::i18n::tr("not available here"));
         }
     });
@@ -373,7 +384,10 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         row(ui, t, crate::i18n::tr("Watched folder"), |ui| {
             ui.label(RichText::new(d.auto_folder.clone().unwrap_or_else(|| crate::i18n::tr("Off").into())).color(t.text));
             let can = app.services.pick_folder.is_some();
-            let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Choose…")));
+            let mut r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Choose…")));
+            if !can && crate::pick_browser::in_use(&app.services) {
+                r = r.on_disabled_hover_text(crate::pick_browser::AUTO_IMPORT_REASON);
+            }
             register(ui.ctx(), "button:settingsAutoFolder", r.rect);
             if r.clicked()
                 && let Some(f) = app.services.pick_folder.as_mut().and_then(|f| f())
@@ -383,6 +397,9 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
             }
             if d.auto_folder.is_some() && ui.button(crate::i18n::tr("Turn Off")).clicked() {
                 let _ = app.run("library.autoImport", json!({"folder": null}));
+            }
+            if !can && crate::pick_browser::in_use(&app.services) {
+                hint(ui, t, crate::pick_browser::AUTO_IMPORT_REASON);
             }
         });
         if d.auto_folder.is_some() {
@@ -628,7 +645,11 @@ fn display_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     });
     row(ui, t, "", |ui| {
         let can = app.services.pick_display_profile.is_some();
-        let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Choose Profile…")));
+        let why = (!can && crate::pick_browser::in_use(&app.services)).then_some(crate::pick_browser::DISPLAY_PROFILE_REASON);
+        let mut r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Choose Profile…")));
+        if let Some(why) = why {
+            r = r.on_disabled_hover_text(why);
+        }
         register(ui.ctx(), "button:settingsDisplayProfile", r.rect);
         if r.clicked()
             && let Some(path) = app.services.pick_display_profile.as_mut().and_then(|pick| pick().into_iter().next())
@@ -642,7 +663,9 @@ fn display_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         if r.clicked() {
             app.ui.settings.display_profile.clear();
         }
-        if !can {
+        if let Some(why) = why {
+            hint(ui, t, why);
+        } else if !can {
             hint(ui, t, crate::i18n::tr("not available here"));
         }
     });
@@ -1139,6 +1162,31 @@ pub fn open_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String>
             }
         }
     };
+    // the library problem window's Choose, answered by the in-app chooser (Android, where Open
+    // Library… is otherwise off): only an existing library, never a new one in the Inbox or
+    // inside the library
+    if crate::pick_browser::in_use(&app.services) {
+        let current = app.library_problem.as_ref().map(|p| std::path::PathBuf::from(&p.path));
+        if let Err(e) = crate::pick_browser::check_library_choice(std::path::Path::new(&path), current.as_deref()) {
+            if let Some(problem) = app.library_problem.as_mut() {
+                problem.error = e.clone();
+            }
+            return Err(e);
+        }
+    }
+    // a host that opens libraries off the UI thread does it behind its loading frame, as Try
+    // Again does
+    if app.library_problem.is_some()
+        && let Some(reopen) = app.services.reopen_library.as_mut()
+    {
+        if let Err(e) = reopen(&path) {
+            if let Some(problem) = app.library_problem.as_mut() {
+                problem.error = e.clone();
+            }
+            return Err(e);
+        }
+        return Ok(json!({"opening": path}));
+    }
     // A Lightroom catalog folder (or part of one) is not a library: before closing the library
     // open now, offer to import it instead (issue #891). The engine refuses it too.
     if let Some(place) = lightcraft_engine::lightroom_folder::lightroom_catalog_at(std::path::Path::new(&path)) {

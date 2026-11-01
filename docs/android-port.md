@@ -983,7 +983,7 @@ Each pushed card leaves a debug APK in the Android workflow's artifacts, so the 
   `pick_lightroom_catalog`, the `save_*` dialogs; lib.rs:239-282, pick.rs) and list it in `docs/android.md`.
   2. `pick_browser.rs`: an in-app egui `Picker` that browses only `pick_roots`, used when `Services::picker` is
   `None` and `pick_roots` is non-empty (desktop and web: empty, unchanged). Android roots: an `Inbox`
-  (`<config>/inbox/`, filled by shares in APK-25) and the library; APK-27 adds the app's own export folders (files
+  (`files/inbox/`, `Paths::inbox` since APK-11, filled by shares in APK-25) and the library; APK-27 adds the app's own export folders (files
   LightCraft created stay readable to it). Not `Download` or `Documents`: under scoped storage the photo permission
   opens only media files of other apps, so the presets (.xmp/.lcpreset/.zip), .gpx, keyword .txt, .onnx and .lrcat
   files a browser downloaded are hidden from `readdir` and can't be opened by path (reaching them needs SAF, which is

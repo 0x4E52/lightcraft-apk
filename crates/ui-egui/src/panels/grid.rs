@@ -1186,7 +1186,7 @@ pub fn context_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     if ui.button(crate::i18n::tr("Rename…")).clicked() {
         let _ = app.run("dialog.rename", json!({}));
     }
-    let can_pick = app.services.pick_folder.is_some() || app.services.picker.is_some();
+    let can_pick = app.services.pick_folder.is_some() || app.services.picker.is_some() || crate::pick_browser::in_use(&app.services);
     if can_pick && ui.button(crate::i18n::tr("Move to Folder…")).clicked() {
         // the folder dialog goes through the shared picker (off the UI thread where the host has
         // one: then photo.moveToFolder runs when it closes)

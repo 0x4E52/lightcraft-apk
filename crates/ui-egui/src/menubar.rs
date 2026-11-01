@@ -937,7 +937,7 @@ pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32
             egui::Popup::menu(r)
                 .close_behavior(close)
                 .open_memory(None)
-                .show(|ui| crate::menu_level::level(ui, 1, bar_bottom, |ui| nodes_ui(ui, items, mac, &mut clicked, 1, bar_bottom)));
+                .show(|ui| crate::menu_level::level(ui, 1, bar_bottom, |ui| nodes_ui(ui, items, &app.services, mac, &mut clicked, 1, bar_bottom)));
         }
         ui.spacing_mut().item_spacing.x = saved;
     } else {
@@ -952,7 +952,9 @@ pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32
         egui::Popup::menu(&r).show(|ui| {
             crate::menu_level::level(ui, 1, bar_bottom, |ui| {
                 for (title, items) in &bar {
-                    submenu(ui, title, crate::i18n::tr(title).to_string(), 1, bar_bottom, |ui| nodes_ui(ui, items, mac, &mut clicked, 2, bar_bottom));
+                    submenu(ui, title, crate::i18n::tr(title).to_string(), 1, bar_bottom, |ui| {
+                        nodes_ui(ui, items, &app.services, mac, &mut clicked, 2, bar_bottom)
+                    });
                 }
             });
         });
@@ -1022,7 +1024,16 @@ fn submenu(ui: &mut egui::Ui, label: &str, text: String, depth: usize, bar_botto
 }
 
 /// `depth` is 1 for a top-level menu's rows; `bar_bottom` is where the menu bar ends.
-fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Option<(String, Value)>, depth: usize, bar_bottom: Option<f32>) {
+#[allow(clippy::too_many_arguments)]
+fn nodes_ui(
+    ui: &mut egui::Ui,
+    nodes: &[MenuNode],
+    services: &crate::Services,
+    mac: bool,
+    clicked: &mut Option<(String, Value)>,
+    depth: usize,
+    bar_bottom: Option<f32>,
+) {
     ui.set_min_width(220.0);
     for n in nodes {
         match n {
@@ -1031,7 +1042,7 @@ fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Opti
             }
             MenuNode::Submenu { label, children } => {
                 submenu(ui, label, format!("      {}", crate::i18n::tr(label)), depth, bar_bottom, |ui| {
-                    nodes_ui(ui, children, mac, clicked, depth + 1, bar_bottom)
+                    nodes_ui(ui, children, services, mac, clicked, depth + 1, bar_bottom)
                 });
             }
             MenuNode::Item { id, params, label, shortcut, enabled, checked } => {
@@ -1041,6 +1052,11 @@ fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Opti
                     b = b.shortcut_text(shortcut_text(sc, mac));
                 }
                 let r = ui.add_enabled(*enabled, b);
+                // a command the host can't offer says why (Android: no place to save the file)
+                let r = match crate::pick_browser::unavailable(services, id) {
+                    Some(why) => r.on_disabled_hover_text(crate::i18n::tr(why)),
+                    None => r,
+                };
                 // tests read the rows actually drawn: `menuitem:<id>` / `menuitem-off:<id>` (disabled)
                 crate::widgets::register(ui.ctx(), format!("{}:{id}", if *enabled { "menuitem" } else { "menuitem-off" }), r.rect);
                 if *checked == Some(true) {

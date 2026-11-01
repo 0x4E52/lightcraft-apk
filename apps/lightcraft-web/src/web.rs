@@ -255,6 +255,8 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         // no device photo library in the browser; imports add in place by default as on the desktop
         import_media: None,
         prefer_copy_import: false,
+        // the browser's own file pickers answer: no in-app chooser
+        pick_roots: Vec::new(),
     }
 }
 

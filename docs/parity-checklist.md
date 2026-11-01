@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-01 · **Change:** minor (LR-IMP-PHOTOLIB: new row, Android's Import from Photo Library, APK-23; LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-01 · **Change:** minor (LR-IMP-PICKER-ANDROID: new row, the in-app file chooser and the commands disabled on Android, APK-24; LR-IMP-PHOTOLIB: new row, Android's Import from Photo Library, APK-23; LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -26,7 +26,7 @@ cited here still exists. Formerly docs/parity.md.
 <!-- parity:summary -->
 | Section | ✅ | 🟡 | ⬜ | 🚫 | P0 done | P1 done |
 |---|---:|---:|---:|---:|---:|---:|
-| A. Import (IMP) | 12 | 4 | 1 | 1 | 4/6 (67%) | 5/6 (83%) |
+| A. Import (IMP) | 12 | 5 | 1 | 1 | 4/6 (67%) | 5/7 (71%) |
 | B. Library management (LIB) | 22 | 2 | 1 | 2 | 9/9 (100%) | 9/9 (100%) |
 | C. Views & navigation (VIEW) | 16 | 1 | 1 | 0 | 9/9 (100%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
@@ -53,9 +53,9 @@ cited here still exists. Formerly docs/parity.md.
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 78 | 4 | 2 | 1 | 49/52 (94%) | 24/26 (92%) |
 | Lightroom Classic extras | 40 | 23 | 23 | 8 | — | 24/26 (92%) |
-| **Total** | 420 | 63 | 58 | 35 | 194/201 (97%) | 148/162 (91%) |
+| **Total** | 420 | 64 | 58 | 35 | 194/201 (97%) | 148/163 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.5%** of 541 in-scope rows — P0 98.3% of 201 · P1 94.8% of 162 · P2 56.2% of 177.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.4%** of 542 in-scope rows — P0 98.3% of 201 · P1 94.5% of 163 · P2 56.2% of 177.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -76,6 +76,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-IMP-DUPES | Skip duplicates by content | P1 | ✅ | `crates/engine/src/import.rs`, `crates/engine/src/tests_import.rs` | |
 | LR-IMP-DEVICE | Import from camera/card | P1 | ✅ | `cmd:library.devices`, `cmd:file.addFromDevice`, `crates/engine/src/devices.rs` | mounted volumes with a DCIM folder (macOS /Volumes, Linux /media and /run/media, Windows drive letters); File → Import from Device → the import review, copying into the library by default; menus serve the last scan and rescan in the background (never blocking a frame; hot-plugs repaint); copies are verified (a new file, synced, checked against the content hash the scan computed — byte compare with the source when there is none, issue #134; a bad copy is removed and reported as failed, never counted as imported; taken names get -1, -2…, never replaced — issue #96, `crates/engine/src/import_move.rs`); no PTP/MTP (cameras that don't mount as a disk); Settings → Import → Cameras and Cards can open the import review when a camera or card is connected (off by default; a card that was already in doesn't ask, and an open dialog or running import is finished first; `crates/ui-egui/src/import.rs`) |
 | LR-IMP-PHOTOLIB | Import from the phone's photo library (Android) | P1 | 🟡 | `cmd:file.importMediaLibrary`, `crates/android-sys/src/media_store.rs`, `crates/ui-egui/src/media_import.rs`, `crates/android-host/src/services.rs` | File → Import from Photo Library… (Android only): a MediaStore query on a worker (activity row "Reading the photo library") lists the library's folders (buckets) as the import review's source; the chosen folder is scanned and imported by path like Import from Folder…; asks for the photo permission first (APK-22); the review starts on Copy, since originals added in place are read-only to LightCraft (no XMP, rename, move or delete; those errors say to import with Copy); primary shared volume only (no SD card), raws MediaStore doesn't list as images come through sharing (APK-25); not yet run on a device (APK-23 checks in `docs/android.md`) |
+| LR-IMP-PICKER-ANDROID | Choosing files without system dialogs (Android) | P1 | 🟡 | `crates/ui-egui/src/pick_browser.rs`, `crates/ui-egui/src/pick.rs`, `crates/android-host/src/services.rs`, `cmd:file.importPresets`, `cmd:file.importLightroom` | commands that ask for a file or folder open an in-app chooser over the host's places (Android: Inbox, filled by shares from APK-25, and the library; never Download or Documents, whose non-media files scoped storage hides); `..` and symbolic links refused; Back closes it; save dialogs (Export Presets / Keywords / Point Curve Presets, Print to PDF, contact sheet, slideshow export), Import Lightroom Catalog, Open Library and New Library are disabled (one library, inside the app; the library problem window's Choose Another Library… takes only an existing library) with "Not available on Android: …" and refuse with it from the control channel and MCP; the command table is in `docs/android.md`; not yet run on a device |
 | LR-IMP-AUTO | Watched-folder auto import | P2 | ✅ | `cmd:library.autoImport`, `cmd:library.autoImportScan`, `crates/ui-egui/src/panels/settings.rs` | Settings ▸ Import ▸ Auto Import: a watched folder whose new photos are added (in place or copied) once complete, into an optional album; scanned every 3 s |
 | LR-IMP-PRESET | Preset on import | P2 | ✅ | `cmd:library.import` (`preset`) | chosen in the import review; one History entry |
 | LR-IMP-RAWDEFAULT | Raw defaults | P1 | ✅ | `cmd:library.preferences`, `crates/engine/src/import.rs`, `crates/ui-egui/src/panels/settings.rs` | LightCraft default / a preset / per camera (make + model); non-raw default too; the preset look counts as unedited and Reset returns to it |
@@ -890,5 +891,6 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 | 2026-10-14 | patch | LRC-LIB-CATALOG-IMPORT: reconciled with upstream phased progress, cancellation kinds, WAL-only import, translations and current progress tracking. Status and summary counts unchanged. |
 | 2026-10-13 | minor | KEYC-COMPARE: `=` / `-` (also `+`) increase / decrease the grid thumbnail size (`view.thumbSizeUp` / `view.thumbSizeDown`, View menu), grids only; status unchanged (🟡) |
 | 2026-11-01 | minor | LR-PRIVACY-NETWORK: new row, Settings ▸ Network lists every network use and has Never use the network (APK-57) |
+| 2026-11-01 | minor | LR-IMP-PICKER-ANDROID: new row (🟡), the in-app file chooser over the Inbox and the library; save dialogs, Lightroom catalog import, Open Library and New Library disabled on Android with why (APK-24) |
 | 2026-11-01 | minor | LR-IMP-PHOTOLIB: new row (🟡), File → Import from Photo Library… on Android: MediaStore folders as the import review's source, Copy by default (APK-23) |
 | 2026-11-01 | minor | LR-MASK-UPDATE ⬜ → 🟡: Photo ▸ Update AI Masks (`mask.updateAi`) and Paste Selected Settings' "Recompute subject and sky on each photo" compute SAM 3 selections again per photo (kept and reported where the model can't run); LR-EDIT-AUTO: Auto Settings on a selection, each photo its own analysis, one undo step (APK-60) |

@@ -8,7 +8,8 @@
 //! [`ask`]s for one and returns at once; when the dialog closes, [`poll`] runs the command again
 //! with the answer filled in under the parameter it was missing. Hosts without a `Picker` (the
 //! web, where browser pickers are asynchronous already; tests) answer through the synchronous
-//! services as before.
+//! services as before, unless the host names folders for the in-app chooser
+//! ([`crate::pick_browser`], Android): then it answers through the same channel.
 
 use crate::{LightcraftApp, Services};
 use serde_json::{Value, json};
@@ -74,6 +75,8 @@ pub struct Pending {
     key: &'static str,
     kind: PickKind,
     rx: Receiver<Vec<String>>,
+    /// Answered by the in-app chooser (`pick_browser`), of which one is up at a time.
+    from_browser: bool,
 }
 
 /// How a command's request for a path was answered.
@@ -105,10 +108,18 @@ pub fn ask(
         let kind = request.kind;
         match start(request) {
             Ok(rx) => {
-                app.pending_picks.push(Pending { command: command.to_string(), params: params.clone(), key, kind, rx });
+                app.pending_picks.push(Pending { command: command.to_string(), params: params.clone(), key, kind, rx, from_browser: false });
                 return Picked::Later;
             }
             Err(e) => log::warn!("{command}: no background file dialog ({e}); asking on the UI thread"),
+        }
+    } else if crate::pick_browser::in_use(&app.services) {
+        // no system dialogs (Android): the in-app chooser over the host's folders answers
+        let kind = request.kind;
+        if let Some(rx) = crate::pick_browser::start(app, request) {
+            app.pending_picks.retain(|p| !p.from_browser);
+            app.pending_picks.push(Pending { command: command.to_string(), params: params.clone(), key, kind, rx, from_browser: true });
+            return Picked::Later;
         }
     }
     match now(&mut app.services) {

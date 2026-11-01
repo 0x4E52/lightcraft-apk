@@ -4,8 +4,9 @@
 //! first-start library notice, the memory a SAM-based mask needs, reopening the library behind the
 //! loading frame, and Back and Quit: Back at the root moves the app to the background (`run` passes
 //! the JNI call in), and Quit is never offered, since the system ends the Activity and the process's
-//! one event loop can't start again. Pickers, sharing, the clipboard and MediaStore come with their
-//! cards (APK-23 on), each as a `Services` field.
+//! one event loop can't start again. Commands that need a file dialog get the in-app chooser over
+//! [`pick_roots`] (APK-24); sharing and the clipboard come with their cards, each as a `Services`
+//! field.
 //!
 //! Access to the photo library ([`PhotoAccess`], APK-22) is the host's: the eframe app's `logic`
 //! feeds it the window's focus changes and a tick while a request is pending, and the commands
@@ -54,6 +55,23 @@ impl StorageDirs {
         roots.extend(files.parent().map(|app| app.join("cache")));
         StorageDirs { roots, inbox: Some(inbox.to_path_buf()) }
     }
+}
+
+/// The places the in-app file chooser browses (`Services::pick_roots`): the Inbox, where shared
+/// presets, track logs, keyword lists and models wait, then the library. Not `Download` or
+/// `Documents`: under scoped storage the photo permission opens only other apps' *media* files,
+/// so the non-media files a browser saved there are hidden from listings and can't be opened by
+/// path. The Inbox folder is created here, so it can be listed before anything was shared.
+pub fn pick_roots(inbox: Option<&Path>, library: &Path) -> Vec<(String, std::path::PathBuf)> {
+    let mut roots = Vec::new();
+    if let Some(inbox) = inbox {
+        if let Err(e) = std::fs::create_dir_all(inbox) {
+            log::warn!("can't create the Inbox {}: {e}", inbox.display());
+        }
+        roots.push(("Inbox".to_owned(), inbox.to_path_buf()));
+    }
+    roots.push(("Library".to_owned(), library.to_path_buf()));
+    roots
 }
 
 /// Back's last step: moves the app to the background without waiting for it (Android: JNI
@@ -405,6 +423,21 @@ mod tests {
         let s = base_services(None, None, None, &StorageDirs::default());
         assert!(s.prefer_copy_import);
         assert!(s.import_media.is_none(), "offered only with a device to query");
+    }
+
+    /// The in-app file chooser browses the Inbox (created if missing) and the library, never
+    /// Download or Documents.
+    #[test]
+    fn pick_roots_are_inbox_and_library() {
+        let dir = std::env::temp_dir().join(format!("lc-android-pick-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (inbox, library) = (dir.join("files/inbox"), dir.join("files/library"));
+        let roots = pick_roots(Some(&inbox), &library);
+        assert_eq!(roots, [("Inbox".to_owned(), inbox.clone()), ("Library".to_owned(), library.clone())]);
+        assert!(inbox.is_dir(), "the Inbox can be listed before anything was shared");
+        assert_eq!(pick_roots(None, &library), [("Library".to_owned(), library)]);
+        assert!(roots.iter().all(|(_, p)| !p.ends_with("Download") && !p.ends_with("Documents")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Settings ▸ Storage counts `files/` and the sibling `cache/`, so its total is App info's.

@@ -620,7 +620,10 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             // what is drawn over the sheet (a dialog, lights-out, the full-screen preview or a
             // slideshow, which hide it) closes before it
             let over_sheet = app.ui.dialog.is_some() || app.ui.lights_out != crate::state::LightsOut::On || app.ui.fullscreen;
-            if !over_sheet && crate::sheet::close(app) {
+            if app.pick_browser.is_some() {
+                // the in-app file chooser is over everything: it closes first, choosing nothing
+                crate::pick_browser::cancel(app);
+            } else if !over_sheet && crate::sheet::close(app) {
                 // then a phone's sheet goes down, before select mode, a tool or the photo (`crate::sheet`;
                 // never open on the desktop layout)
             } else if app.ui.dialog.is_some() {
@@ -1441,6 +1444,14 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "dialog.faceModel" => {
             let path = match p.get("path").and_then(Value::as_str) {
                 Some(x) => Some(x.to_string()),
+                // the in-app chooser where the host has no dialogs (Android: a model shared to the Inbox)
+                None if crate::pick_browser::in_use(&app.services) => {
+                    let req = PickRequest::file(crate::i18n::tr("Add a model file…"), crate::i18n::tr("ONNX model"), &["onnx"]);
+                    match crate::pick::ask(app, id, p, "path", req, |_| None) {
+                        Picked::Now(paths) => paths.into_iter().next(),
+                        Picked::Later | Picked::Unavailable => None,
+                    }
+                }
                 None => app.services.pick_model_file.as_mut().and_then(|f| f().into_iter().next()),
             };
             match path {
@@ -2149,6 +2160,12 @@ fn thumb_size_view(app: &LightcraftApp) -> bool {
 pub const QUIT_DISABLED: &str = "Quit isn't available here: the system closes LightCraft. Press Back or Home to leave it.";
 
 pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
+    if crate::pick_browser::refusal(app, id).is_some() {
+        return false;
+    }
+    // where the in-app chooser stands in for file dialogs (Android), commands that ask for a
+    // file or folder through `pick::ask` work without the desktop's synchronous dialogs
+    let in_app = crate::pick_browser::in_use(&app.services);
     match id {
         "library.selectOnlyActive" => app.session.active().is_some(),
         "view.thumbSizeUp" | "view.thumbSizeDown" => thumb_size_view(app),
@@ -2162,7 +2179,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "app.export" | "dialog.export" | "dialog.createPreset" | "dialog.rename" | "dialog.captureTime" | "dialog.copySettings" => {
             app.session.active().is_some()
         }
-        "photo.tagFromTracklog" => app.session.active().is_some() && app.services.pick_tracklog.is_some(),
+        "photo.tagFromTracklog" => app.session.active().is_some() && (app.services.pick_tracklog.is_some() || in_app),
         "photo.editInPhotoCraft" | "photo.editInExternal" => app.session.active().is_some() && app.services.open_with.is_some(),
         "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
@@ -2190,8 +2207,11 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "file.exportCurvePresets" => !app.session.curve_presets.is_empty(),
         "view.compare" => app.session.catalog.len() > 1,
         "view.fullScreenPreview" | "view.infoOverlay" | "view.navigator" => app.session.active().is_some() || app.ui.fullscreen,
-        "app.openLibrary" | "app.newLibrary" => app.services.pick_folder.is_some() && crate::panels::settings::can_switch_library(app).is_ok(),
-        "file.addFolder" => app.services.pick_folder.is_some() && !crate::lightroom_import::is_running(app),
+        // (on Android only from the library problem window: `pick_browser::refusal`)
+        "app.openLibrary" | "app.newLibrary" => {
+            (app.services.pick_folder.is_some() || in_app) && crate::panels::settings::can_switch_library(app).is_ok()
+        }
+        "file.addFolder" => (app.services.pick_folder.is_some() || in_app) && !crate::lightroom_import::is_running(app),
         "file.importMediaLibrary" => app.services.import_media.is_some() && app.media_query.is_none(),
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.quit" => !app.services.quit_disabled,

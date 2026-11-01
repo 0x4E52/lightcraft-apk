@@ -220,6 +220,43 @@ Limitations:
 - Denied for good: the import says "allow it in Settings ▸ Apps ▸ LightCraft ▸ Permissions"; after allowing it
   there, choose Import from Photo Library again.
 
+## Choosing files: the Inbox
+
+Android has no file dialog LightCraft can open without Java, and under scoped storage the photo permission opens
+only *media* files of other apps: presets (`.xmp`, `.lcpreset`, `.zip`), track logs (`.gpx`), keyword lists
+(`.txt`), models (`.onnx`) and Lightroom catalogs a browser saved in `Download/` or `Documents/` are hidden from
+LightCraft. So a command that asks for a file opens LightCraft's own chooser (`crates/ui-egui/src/pick_browser.rs`),
+which shows only two places: **Inbox** (`files/inbox/`, where files shared to LightCraft land, APK-25) and
+**Library** (the library's folder). **Share the file to LightCraft from Files or the browser, then pick it from
+Inbox.** The chooser never leaves those places: `..` and symbolic links are refused, hidden files are not listed.
+Back closes it, choosing nothing.
+
+| Command | Dialog | On Android |
+|---|---|---|
+| File ▸ Import Profiles & Presets… (`file.importPresets`; also the mask effects menu's Import Presets…) | `pick_preset_files` | in-app chooser (Inbox) |
+| Point Curve ▸ Import Presets… (`file.importCurvePresets`) | `pick_curve_preset_files` | in-app chooser (Inbox) |
+| File ▸ Import Keywords… (`file.importKeywords`) | `pick_keyword_list` | in-app chooser (Inbox) |
+| Photo ▸ Auto-Tag from Tracklog… (`photo.tagFromTracklog`) | `pick_tracklog` | in-app chooser (Inbox) |
+| Settings ▸ Faces ▸ Add a model file… (`dialog.faceModel`) | `pick_model_file` | in-app chooser (Inbox) |
+| File ▸ Import Photos… / Import from Folder… (`file.addPhotos`, `file.addFolder`) | `pick_files`, `pick_folder` | in-app chooser; Import from Photo Library… is the usual way |
+| Locate Missing File…, File ▸ Find Missing Photos… (`photo.locate`, `file.findMissing`) | `pick_files`, `pick_folder` | in-app chooser |
+| Move to Folder… (`photo.moveToFolder`), Choose Layout Image… (`view.chooseLayoutImage`) | `pick_folder`, `pick_files` | in-app chooser |
+| Open Library… (`app.openLibrary`), New Library… (`app.newLibrary`) | `pick_folder` | disabled: LightCraft keeps one library, inside the app |
+| Settings ▸ General ▸ Open Library…, New Library… | `pick_folder` | disabled with why, as the menu items |
+| Library problem window ▸ Choose Another Library… | `pick_folder` | in-app chooser; only a folder that already holds a LightCraft library (not the one that couldn't be opened, not one inside another library), opened behind the "Opening library…" frame; any other folder is refused with why and no library is created there. On a phone this normally finds nothing to open: the Library place is the library that couldn't be opened, its subfolders are inside it, and shares put single files in the Inbox, so until library backup and restore land Try Again is the way out |
+| File ▸ Import Lightroom Catalog… (`file.importLightroom`) | `pick_lightroom_catalog` | disabled: the catalog points to originals on the computer it came from |
+| Export Presets…, Export Effect Presets…, Point Curve ▸ Export Presets…, Export Keywords… | `save_preset_file`, `save_curve_preset_file`, `save_keyword_list` | disabled until LightCraft has export folders other apps can read (APK-27) |
+| Print to PDF, Export Contact Sheet PDF, Export Slideshow (`app.print`, `app.contactSheet`, `app.slideshowExport` and their dialogs) | save dialogs | disabled, as above |
+| Settings ▸ AI Denoise ▸ Install from file… | `pick_denoise_model` | disabled with why; the model list's downloads work |
+| Settings ▸ Import ▸ Auto Import ▸ Watched folder Choose… | `pick_folder` | disabled with why: other apps can't save photos into a folder LightCraft can watch; share them or use Import from Photo Library… |
+| Settings ▸ Display ▸ Choose Profile… | `pick_display_profile` | disabled with why; previews are shown as sRGB |
+| Develop ▸ Soft Proofing profile Other…, Print's profile Other…, Settings ▸ Performance ▸ smart previews Choose Folder…, slideshow templates Import/Export, watermark and overlay images, the Export and Import dialogs' Choose… folder buttons, the Local sidebar's Browse Folder… and Move Folder To… | synchronous dialogs in panels | not shown (desktop only) |
+
+A disabled command's menu item says why ("Not available on Android: …") as its tooltip, and run from the control
+channel or MCP it answers the same reason. Known gaps: a touch screen shows that tooltip only where egui gets a hover
+(a later Phase 3 card shows the reason on a tap), and the chooser's own texts and these reasons are not yet in the
+translation catalogs (`crates/ui-egui/locales/`; they show in English).
+
 ## Privacy
 
 LightCraft collects nothing and sends nothing about you or your photos: no telemetry, no analytics, no crash
@@ -296,6 +333,8 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] Renderer failure (APK-19, needs APK-20): make the first renderer fail (an emulator image without Vulkan with
   `debug.lightcraft.gpu_backend vulkan`), the failure dialog shows, dismiss it, tap the icon **once**: the app opens on
   GL, with the notice that the window could not start with its Vulkan renderer last time.
+- [ ] File pickers (APK-24, after APK-25): share a `.xmp` preset from Files to LightCraft, then File ▸ Import
+  Profiles & Presets… ▸ Inbox imports it; the chooser's rows are finger-sized and Back closes it.
 - [ ] Debug control server (APK-21): the recipe in "Debug control server" returns a screenshot; the same request
   without the token is answered `bad token`.
 - [ ] CI `ui.inspect` over the forwarded port answers (APK-21): the `android.yml` `emulator` job's `control-check.sh`

@@ -1195,7 +1195,8 @@ fn curve_footer(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &DevelopSettings)
                     crate::panels::dialogs::prompt(app, "Save Point Curve Preset", "Preset name", "", "curve.savePreset", json!({}), "name");
                     ui.close();
                 }
-                if ui.add_enabled(app.services.pick_curve_preset_files.is_some(), egui::Button::new(crate::i18n::tr("Import Presets…"))).clicked() {
+                let can_import = app.services.pick_curve_preset_files.is_some() || crate::pick_browser::in_use(&app.services);
+                if ui.add_enabled(can_import, egui::Button::new(crate::i18n::tr("Import Presets…"))).clicked() {
                     let _ = app.run("file.importCurvePresets", json!({}));
                     ui.close();
                 }

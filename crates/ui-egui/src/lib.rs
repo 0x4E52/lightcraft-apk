@@ -36,6 +36,7 @@ pub mod merge;
 mod model_setup;
 pub mod panels;
 pub mod pick;
+pub mod pick_browser;
 pub mod print_view;
 pub mod recheck;
 pub mod region;
@@ -149,6 +150,8 @@ mod tests_open_lightroom;
 mod tests_panels;
 #[cfg(test)]
 mod tests_phone_limits;
+#[cfg(test)]
+mod tests_pick_browser;
 #[cfg(test)]
 mod tests_preset_import;
 #[cfg(test)]
@@ -374,6 +377,11 @@ pub struct Services {
     /// sidecars, rename, move and delete fail), and those failures say to import with Copy.
     /// `false` = the desktop (Add in place for a folder).
     pub prefer_copy_import: bool,
+    /// The folders the in-app file chooser (`pick_browser`) may browse, as `(label, path)`, used
+    /// for commands when there is no [`Services::picker`] (Android: the Inbox and the library).
+    /// Commands whose file can't live there are disabled with why. Empty = no in-app chooser (the
+    /// desktop and the web, which have their own dialogs).
+    pub pick_roots: Vec<(String, std::path::PathBuf)>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -471,6 +479,8 @@ pub struct LightcraftApp {
     pub copied: Option<String>,
     /// Native file dialogs up for commands (`pick`): each command runs again when its closes.
     pub(crate) pending_picks: Vec<pick::Pending>,
+    /// The in-app file chooser while it is up (`pick_browser`; hosts without file dialogs).
+    pub pick_browser: Option<pick_browser::Browser>,
     /// Modifiers announced for synthetic input (held from a button down to its release).
     synthetic_mods: egui::Modifiers,
     /// Clear `synthetic_mods` on the next frame.
@@ -617,6 +627,7 @@ impl LightcraftApp {
             touch_shift: 0.0,
             copied: None,
             pending_picks: vec![],
+            pick_browser: None,
             synthetic_mods: egui::Modifiers::NONE,
             synthetic_mods_release: false,
             styled: false,
@@ -724,6 +735,9 @@ impl LightcraftApp {
     /// (offer a model's download, treat a cancel as one) instead of reading the message.
     pub fn run_typed(&mut self, id: &str, params: Value) -> Result<Value, CommandError> {
         if let Some(reason) = self.sam_command_refusal(id, &params) {
+            return Err(CommandError::from(reason.to_string()));
+        }
+        if let Some(reason) = pick_browser::refusal(self, id) {
             return Err(CommandError::from(reason.to_string()));
         }
         if let Some(result) = model_setup::intercept(self, id, &params) {
@@ -1725,6 +1739,7 @@ impl LightcraftApp {
             panels::notices::show(self, &ctx);
             panels::dialogs::show(self, &ctx);
             panels::library_problem::show(self, &ctx);
+            pick_browser::show(self, &ctx);
             panels::toast(self, &ctx);
             self.widgets = widgets::take_registry(&ctx);
             self.end_frame(&ctx, t0);
@@ -1755,6 +1770,7 @@ impl LightcraftApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        pick_browser::show(self, &ctx);
         export_task::poll(self, &ctx);
         slideshow_export::poll(self, &ctx);
         panels::activity::show(self, &ctx);

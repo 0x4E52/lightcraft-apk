@@ -125,6 +125,8 @@ impl HostState {
         };
         let mut services =
             crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref(), start.move_to_back.as_ref(), &start.storage);
+        // no system file dialogs: the in-app chooser over the Inbox and the library
+        services.pick_roots = crate::services::pick_roots(start.storage.inbox.as_deref(), &start.library);
         if let (Some(photos), Some(query)) = (&start.photos, &start.media_query) {
             services.import_media = Some(crate::services::import_media(photos.gate(), query.clone()));
         }
@@ -220,6 +222,7 @@ mod tests {
         assert!(state.app.library_problem.is_none());
         assert!(state.app.services.write.is_some(), "the Android services are in place");
         assert!(state.app.services.import_media.is_none(), "no device: no photo library to import from");
+        assert_eq!(state.app.services.pick_roots, [("Library".to_owned(), lib.clone())], "the in-app chooser browses the library");
         let id = *state.app.session.visible().get(1).unwrap();
         state.app.run("library.select", json!({"ids": [id.0]})).unwrap();
         state.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();

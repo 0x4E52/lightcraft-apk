@@ -246,6 +246,8 @@ pub fn settings_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         .unwrap_or_default();
     heading(ui, t, "Models");
     let r = ui.add_enabled(runtime && app.services.pick_denoise_model.is_some(), egui::Button::new(tr("Install from file…")));
+    // the button asks a synchronous dialog, which a host with only the in-app chooser lacks (Android)
+    let r = if crate::pick_browser::in_use(&app.services) { r.on_disabled_hover_text(tr(crate::pick_browser::DENOISE_FILE_REASON)) } else { r };
     register(ui.ctx(), "denoise:installFile", r.rect);
     if r.clicked()
         && let Some(path) = app.services.pick_denoise_model.as_mut().and_then(|f| f().into_iter().next())

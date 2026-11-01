@@ -144,7 +144,9 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     }
                 };
                 button(ui, "libraryRetry", "Try Again", problem.can_retry && !problem.path.is_empty(), Choice::Retry);
-                button(ui, "libraryChoose", "Choose Another Library…", app.services.pick_folder.is_some(), Choice::Choose);
+                // (where the host has no dialogs, through the in-app chooser: Android)
+                let can_choose = app.services.pick_folder.is_some() || crate::pick_browser::in_use(&app.services);
+                button(ui, "libraryChoose", "Choose Another Library…", can_choose, Choice::Choose);
                 button(ui, "libraryTemporary", "Continue Without Saving", true, Choice::Temporary);
                 // a host that can't quit (Android) offers no Quit that would do nothing
                 if !app.services.quit_disabled {
