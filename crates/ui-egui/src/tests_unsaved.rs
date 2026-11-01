@@ -16,9 +16,9 @@ const T: Duration = Duration::from_secs(20);
 
 /// Appends fail while `fail` is set.
 #[derive(Clone, Default)]
-struct Flaky {
-    files: MemStore,
-    fail: Arc<AtomicBool>,
+pub(crate) struct Flaky {
+    pub(crate) files: MemStore,
+    pub(crate) fail: Arc<AtomicBool>,
 }
 
 impl Store for Flaky {

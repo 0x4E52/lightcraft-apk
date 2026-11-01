@@ -52,9 +52,10 @@ edit, import or delete in the personal library). Screenshots of Adobe apps never
   the tab rows wrap.
 - **Menu bar:** LightCraft (APK-34, `menubar::show_in_window`): below 600 pt (`state::PHONE_WIDTH`) the in-window
   menu is one "Menu" button (`menu:all`, finger-sized) whatever room is left; its popup lists the six menus as
-  submenu rows built from the same `menu_bar()` tree as the desktop (same command ids, same enabled state). At 412 pt
-  the centred search field still covers that button until APK-34b rearranges the top bar, so the menus are reachable
-  on a portrait phone only once APK-34b lands.
+  submenu rows built from the same `menu_bar()` tree as the desktop (same command ids, same enabled state). APK-34b
+  (`panels/topbar.rs`): on a phone the search field collapses to a magnifier (`icon:search`) that opens it full-width
+  with a close button (`icon:searchClose`, clears the query); the right-hand icons except Share (and the cloud, only
+  while saving fails) are left to the overflow menu, where their commands already are.
 
 ## 2. Gestures
 
@@ -143,4 +144,4 @@ toolbar and sheets of §1, APK-34 the top bar and overflow menu. A card that has
 - 2026-10-17: first version from public sources; the maintainer's device checks pending.
 - 2026-11-01: the phone layout as built (APK-33): edit toolbar and bottom sheet below 600 pt width.
 - 2026-11-01: dialogs fit a phone (APK-33b).
-- 2026-11-01: the menu bar collapses to one overflow button on a phone (APK-34; reachable at 412 pt with APK-34b).
+- 2026-11-01: the menu bar collapses to one overflow button on a phone (APK-34); the top bar's search collapses to a magnifier (APK-34b).

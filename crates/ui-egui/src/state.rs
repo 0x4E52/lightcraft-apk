@@ -784,6 +784,9 @@ pub struct UiState {
     /// Focus the search field on the next frame (Edit → Find…).
     #[serde(skip)]
     pub focus_search: bool,
+    /// Phone top bar (APK-34b): the search field is open full-width (otherwise only the magnifier shows).
+    #[serde(skip)]
+    pub search_open: bool,
     /// A mask being renamed in the Masks list: its id and the edited name.
     #[serde(skip)]
     pub renaming_mask: Option<(u32, String)>,
@@ -1361,6 +1364,7 @@ impl Default for UiState {
             known_cards: None,
             search: String::new(),
             focus_search: false,
+            search_open: false,
             renaming_mask: None,
             describe: None,
             detail_due: None,

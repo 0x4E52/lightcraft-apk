@@ -48,6 +48,16 @@ fn window_handle(app: &LightcraftApp, ui: &mut egui::Ui, content: Rect, margin_l
 
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
+    // APK-34b: below the phone breakpoint the field collapses to a magnifier that opens it full-width
+    // and the other right-hand icons live in the overflow menu (all are commands in the menu tree)
+    let phone = app.ui.sheet.phone;
+    if !phone {
+        app.ui.search_open = false;
+    }
+    if phone && app.ui.focus_search {
+        app.ui.search_open = true;
+    }
+    let open = phone && app.ui.search_open;
     // room for the traffic lights; in full screen they are gone, and the sidebar button sits as far
     // from the left edge as the Discord button from the right (12 margin + 4)
     let left = match (app.integrated_titlebar, app.window_is_fullscreen) {
@@ -69,96 +79,116 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 sw = sw.min(2.0 * (full.center().x - menus_right)).max(190.0);
             }
             let search_left = full.center().x - sw / 2.0;
-            let sr = Rect::from_center_size(pos2(full.center().x, full.center().y), vec2(sw, 28.0));
+            let sr = if open {
+                Rect::from_min_max(pos2(full.left(), full.center().y - 18.0), pos2(full.right() - 52.0, full.center().y + 18.0))
+            } else if phone {
+                Rect::NOTHING
+            } else {
+                Rect::from_center_size(pos2(full.center().x, full.center().y), vec2(sw, 28.0))
+            };
             if app.integrated_titlebar {
                 window_handle(app, ui, full, left as f32, 12.0, sr);
             }
-            ui.horizontal_centered(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                if icon_button(ui, "sidebar", Icon::Sidebar, vec2(30.0, 30.0), app.ui.left_panel, true, crate::i18n::tr("Show/hide My Photos panel"))
+            if !open {
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if icon_button(
+                        ui,
+                        "sidebar",
+                        Icon::Sidebar,
+                        vec2(30.0, 30.0),
+                        app.ui.left_panel,
+                        true,
+                        crate::i18n::tr("Show/hide My Photos panel"),
+                    )
                     .clicked()
-                {
-                    let _ = app.run("view.leftPanel", json!({}));
-                }
-                ui.add_space(8.0);
-                if icon_button(ui, "back", Icon::Back, vec2(30.0, 30.0), false, true, crate::i18n::tr("Back")).clicked() {
-                    let _ = app.run("view.back", json!({}));
-                }
-                icon_button(ui, "forward", Icon::Forward, vec2(30.0, 30.0), false, false, crate::i18n::tr("Forward"));
-                if !app.native_menu {
-                    // no native menu bar (web, Windows, Linux): menus in the top bar
-                    ui.add_space(10.0);
-                    let room = search_left - ui.cursor().left() - 16.0;
-                    crate::menubar::show_in_window(app, ui, room);
-                }
-            });
-            // search field (centred on the window)
-            let id = crate::text_field::id("field:search");
-            if std::mem::take(&mut app.ui.focus_search) {
-                ui.memory_mut(|m| m.request_focus(id));
+                    {
+                        let _ = app.run("view.leftPanel", json!({}));
+                    }
+                    ui.add_space(8.0);
+                    if icon_button(ui, "back", Icon::Back, vec2(30.0, 30.0), false, true, crate::i18n::tr("Back")).clicked() {
+                        let _ = app.run("view.back", json!({}));
+                    }
+                    icon_button(ui, "forward", Icon::Forward, vec2(30.0, 30.0), false, false, crate::i18n::tr("Forward"));
+                    if !app.native_menu {
+                        // no native menu bar (web, Windows, Linux): menus in the top bar
+                        ui.add_space(10.0);
+                        let room = search_left - ui.cursor().left() - 16.0;
+                        crate::menubar::show_in_window(app, ui, room);
+                    }
+                });
             }
-            let focused = ui.memory(|m| m.has_focus(id));
-            ui.painter().rect(
-                sr,
-                4.0,
-                if focused { t.canvas } else { t.field },
-                Stroke::new(1.0, if focused { t.accent } else { t.field_border }),
-                StrokeKind::Inside,
-            );
-            let mut child =
-                ui.new_child(egui::UiBuilder::new().max_rect(sr.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-            let empty = app.ui.search.is_empty();
-            if empty && !focused {
-                let g = child.painter().layout_no_wrap(crate::i18n::tr("Search Photos").into(), t.font(13.5), t.text_dim);
-                let w = g.size().x + 24.0;
-                let x0 = sr.center().x - w / 2.0;
-                paint(child.painter(), Rect::from_min_size(pos2(x0, sr.center().y - 8.0), vec2(16.0, 16.0)), Icon::Search, t.text_dim);
-                child.painter().galley(pos2(x0 + 24.0, sr.center().y - g.size().y / 2.0), g, t.text_dim);
+            if !phone || open {
+                // search field (centred on the window)
+                let id = crate::text_field::id("field:search");
+                if std::mem::take(&mut app.ui.focus_search) {
+                    ui.memory_mut(|m| m.request_focus(id));
+                }
+                let focused = ui.memory(|m| m.has_focus(id));
+                ui.painter().rect(
+                    sr,
+                    4.0,
+                    if focused { t.canvas } else { t.field },
+                    Stroke::new(1.0, if focused { t.accent } else { t.field_border }),
+                    StrokeKind::Inside,
+                );
+                let mut child = ui
+                    .new_child(egui::UiBuilder::new().max_rect(sr.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                let empty = app.ui.search.is_empty();
+                if empty && !focused {
+                    let g = child.painter().layout_no_wrap(crate::i18n::tr("Search Photos").into(), t.font(13.5), t.text_dim);
+                    let w = g.size().x + 24.0;
+                    let x0 = sr.center().x - w / 2.0;
+                    paint(child.painter(), Rect::from_min_size(pos2(x0, sr.center().y - 8.0), vec2(16.0, 16.0)), Icon::Search, t.text_dim);
+                    child.painter().galley(pos2(x0 + 24.0, sr.center().y - g.size().y / 2.0), g, t.text_dim);
+                }
+                let resp = crate::text_field::TextField::singleline("field:search", &mut app.ui.search)
+                    .label(crate::i18n::tr("Search Photos"))
+                    .frame(false)
+                    .width(sr.width() - 20.0)
+                    .font(t.font(13.5))
+                    .text_color(t.text)
+                    .show(&mut child)
+                    .response;
+                if resp.changed() {
+                    let q = app.ui.search.clone();
+                    let _ = app.run("library.filter", json!({"text": q}));
+                }
             }
-            let resp = crate::text_field::TextField::singleline("field:search", &mut app.ui.search)
-                .label(crate::i18n::tr("Search Photos"))
-                .frame(false)
-                .width(sr.width() - 20.0)
-                .font(t.font(13.5))
-                .text_color(t.text)
-                .show(&mut child)
-                .response;
-            if resp.changed() {
-                let q = app.ui.search.clone();
-                let _ = app.run("library.filter", json!({"text": q}));
-            }
-            // filter icon right of the search field
-            let fr = Rect::from_center_size(pos2(sr.right() + 22.0, sr.center().y), vec2(28.0, 28.0));
-            let fresp = ui.interact(fr, egui::Id::new("filter-btn"), Sense::click());
-            crate::widgets::announce(&fresp, crate::i18n::tr("Filters"));
-            register(ui.ctx(), "icon:filter", fr);
-            let filtering = app.session.filter != Default::default() || app.ui.filter_bar;
-            paint(
-                ui.painter(),
-                fr.shrink(6.0),
-                Icon::Filter,
-                if filtering {
-                    t.accent
-                } else if fresp.hovered() {
-                    t.text
+            if !phone {
+                // filter icon right of the search field
+                let fr = Rect::from_center_size(pos2(sr.right() + 22.0, sr.center().y), vec2(28.0, 28.0));
+                let fresp = ui.interact(fr, egui::Id::new("filter-btn"), Sense::click());
+                crate::widgets::announce(&fresp, crate::i18n::tr("Filters"));
+                register(ui.ctx(), "icon:filter", fr);
+                let filtering = app.session.filter != Default::default() || app.ui.filter_bar;
+                paint(
+                    ui.painter(),
+                    fr.shrink(6.0),
+                    Icon::Filter,
+                    if filtering {
+                        t.accent
+                    } else if fresp.hovered() {
+                        t.text
+                    } else {
+                        t.icon
+                    },
+                );
+                // badge: how many filters are on, even with the filter bar closed
+                let active = lightcraft_engine::filter_chips(&app.session.filter, &app.session.catalog).len();
+                if active > 0 {
+                    let c = fr.right_top() + vec2(-3.0, 8.0);
+                    ui.painter().circle_filled(c, 7.0, t.accent);
+                    ui.painter().text(c, Align2::CENTER_CENTER, active.to_string(), t.semibold(9.5), t.canvas);
+                }
+                let fresp = fresp.on_hover_text(if active > 0 {
+                    crate::i18n::tr_format!("Filter bar — {active} active filter{}", if active == 1 { "" } else { "s" }, active = active)
                 } else {
-                    t.icon
-                },
-            );
-            // badge: how many filters are on, even with the filter bar closed
-            let active = lightcraft_engine::filter_chips(&app.session.filter, &app.session.catalog).len();
-            if active > 0 {
-                let c = fr.right_top() + vec2(-3.0, 8.0);
-                ui.painter().circle_filled(c, 7.0, t.accent);
-                ui.painter().text(c, Align2::CENTER_CENTER, active.to_string(), t.semibold(9.5), t.canvas);
-            }
-            let fresp = fresp.on_hover_text(if active > 0 {
-                crate::i18n::tr_format!("Filter bar — {active} active filter{}", if active == 1 { "" } else { "s" }, active = active)
-            } else {
-                crate::i18n::tr("Filter bar").into()
-            });
-            if fresp.clicked() {
-                let _ = app.run("view.filterBar", json!({}));
+                    crate::i18n::tr("Filter bar").into()
+                });
+                if fresp.clicked() {
+                    let _ = app.run("view.filterBar", json!({}));
+                }
             }
             // right icons
             let mut x = full.right() - 18.0;
@@ -179,13 +209,61 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 Some(sc) => format!("{} ({})", crate::i18n::tr("Import Photos…"), crate::menubar::shortcut_text(sc, mac)),
                 None => crate::i18n::tr("Import Photos…").to_string(),
             };
-            for (id, icon, tip, cmd) in [
+            if open {
+                // close: clears the query (the filter with it) and gives the bar back
+                let r = Rect::from_center_size(pos2(full.right() - 24.0, full.center().y), vec2(48.0, 48.0));
+                let resp = ui.interact(r, egui::Id::new(("top", "search-close")), Sense::click());
+                crate::widgets::announce(&resp, crate::i18n::tr("Close search"));
+                register(ui.ctx(), "icon:searchClose", r);
+                // the close button carries the warning while saving fails (the cloud icon is hidden)
+                let col = if unsaved.is_some() {
+                    t.caution
+                } else if resp.hovered() {
+                    t.text
+                } else {
+                    t.icon
+                };
+                paint(ui.painter(), r.shrink(15.0), Icon::Close, col);
+                if unsaved.is_some() {
+                    register(ui.ctx(), "indicator:unsaved", r);
+                }
+                if resp.clicked() {
+                    app.ui.search_open = false;
+                    if !app.ui.search.is_empty() {
+                        app.ui.search.clear();
+                        let _ = app.run("library.filter", json!({"text": ""}));
+                    }
+                }
+            } else if phone {
+                // Share sits at the right edge and the warning cloud (when shown) beside it: the
+                // magnifier takes the next slot, so no two targets overlap
+                let slots = if unsaved.is_some() { 2.5 } else { 1.0 };
+                let r = Rect::from_center_size(pos2(full.right() - 18.0 - 40.0 * slots, full.center().y), vec2(48.0, 48.0));
+                let resp = ui.interact(r, egui::Id::new(("top", "search-open")), Sense::click());
+                crate::widgets::announce(&resp, crate::i18n::tr("Search Photos"));
+                register(ui.ctx(), "icon:search", r);
+                let on = !app.ui.search.is_empty();
+                paint(ui.painter(), r.shrink(13.0), Icon::Search, if on { t.accent } else { t.icon });
+                if resp.clicked() {
+                    app.ui.search_open = true;
+                    app.ui.focus_search = true;
+                }
+            }
+            let mut icons = vec![
                 ("cloud", Icon::Cloud, cloud_tip, ""),
                 ("help", Icon::Help, "Keyboard shortcuts", "app.shortcuts"),
                 ("share", Icon::Share, "Export", "dialog.export"),
                 ("import", Icon::Plus, import_tip.as_str(), "file.addPhotos"),
                 ("bell", Icon::Bell, "Activity", "panel.activity"),
-            ] {
+            ];
+            if open {
+                icons.clear();
+            } else if phone {
+                // Share stays at the right edge; the cloud only shows when it warns that saving fails
+                icons.retain(|i| i.0 == "share" || (i.0 == "cloud" && unsaved.is_some()));
+                icons.sort_by_key(|i| i.0 != "share");
+            }
+            for (id, icon, tip, cmd) in icons {
                 let r = Rect::from_center_size(pos2(x, full.center().y), vec2(28.0, 28.0));
                 let resp = ui.interact(r, egui::Id::new(("top", id)), Sense::click()).on_hover_text(crate::i18n::tr(tip));
                 crate::widgets::announce(&resp, crate::i18n::tr(tip));
@@ -213,6 +291,9 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     app.toast_error(ui.ctx(), e);
                 }
                 x -= 40.0;
+            }
+            if phone {
+                return;
             }
             // Appearance Mode: a click steps Auto → Light → Dark → Auto; the icon shows the mode
             let (icon, mode) = appearance_icon(app.ui.settings.appearance_mode);

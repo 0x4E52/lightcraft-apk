@@ -198,8 +198,8 @@ fn overflow_lists_every_menu_command() {
     desk.settle(SETTLE);
 
     let svc = Services { png: None, ..Default::default() };
-    // 412 pt: the search field still runs over the button (APK-34b), so only look; 590 pt, still
-    // below the breakpoint, leaves the button free to tap
+    // 412 pt: the button is present (tapping it is menu_button_is_tappable_at_412); 590 pt, still
+    // below the breakpoint, is tapped here
     let mut narrow = Headless::new(
         LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() }),
         [412.0, 915.0],
@@ -281,10 +281,8 @@ fn overflow_lists_every_menu_command() {
     assert!(disabled > 0, "some disabled item was compared");
 }
 
-/// APK-34b turns this on: at the real portrait-phone width the search field still runs over the
-/// Menu button, so a tap lands on the field.
+/// At the real portrait-phone width the search field no longer runs over the Menu button.
 #[test]
-#[ignore = "APK-34b: the search field covers menu:all at 412 pt"]
 fn menu_button_is_tappable_at_412() {
     let mut h = Headless::new(
         LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() }),
@@ -293,8 +291,9 @@ fn menu_button_is_tappable_at_412() {
     );
     h.settle(SETTLE);
     let r = widget(&h, "menu:all").expect("menu:all");
-    let field = widget(&h, "field:search").expect("field:search");
-    assert!(!r.intersects(field), "{r:?} vs {field:?}");
+    assert!(widget(&h, "field:search").is_none(), "the field is collapsed to the magnifier");
+    let mag = widget(&h, "icon:search").expect("icon:search");
+    assert!(!r.intersects(mag), "{r:?} vs {mag:?}");
 }
 
 /// A phone-sized window never puts the titles in the bar, however much room the bar has (APK-34).
@@ -320,4 +319,113 @@ fn phone_bar_is_one_button_even_with_room() {
     let phone = run(true);
     assert!(phone.iter().any(|i| i == "menu:all"), "{phone:?}");
     assert!(!phone.iter().any(|i| i.starts_with("menu:") && i != "menu:all"), "{phone:?}");
+}
+
+/// Every widget of the top bar, as (id, rect).
+fn bar_widgets(h: &Headless) -> Vec<(String, egui::Rect)> {
+    let bar = widget(h, "region:titlebar");
+    h.app
+        .widgets
+        .iter()
+        .filter(|(id, r)| {
+            [
+                "menu:all",
+                "icon:sidebar",
+                "icon:back",
+                "icon:forward",
+                "field:search",
+                "icon:search",
+                "icon:searchClose",
+                "icon:filter",
+                "icon:cloud",
+                "icon:help",
+                "icon:share",
+                "icon:import",
+                "icon:bell",
+                "icon:appearance",
+            ]
+            .contains(&id.as_str())
+                && bar.is_none_or(|b| r.top() < b.bottom())
+        })
+        .cloned()
+        .collect()
+}
+
+/// APK-34b: nothing in the top bar overlaps another widget, in both phone orientations, with the
+/// system bars as insets, and while saving fails (the warning cloud takes a slot).
+#[test]
+fn topbar_widgets_do_not_overlap() {
+    for failing in [false, true] {
+        for size in [[412.0, 915.0], [915.0, 412.0]] {
+            let flaky = crate::tests_unsaved::Flaky::default();
+            let mut s = lightcraft_engine::Session::new();
+            let stores = lightcraft_engine::library::LibraryStores {
+                dir: "flaky".into(),
+                catalog: Box::new(flaky.clone()),
+                files: Box::new(lightcraft_catalog::MemStore::new()),
+                on_disk: false,
+            };
+            let ok = s.open_library_in(stores, false).is_ok();
+            assert!(ok);
+            let mut h = Headless::new(LightcraftApp::new(s, Services { png: None, ..Default::default() }), size, 2.625);
+            let side = if size[0] > size[1] { 32.0 } else { 0.0 };
+            h.safe_area = Some(egui::epaint::MarginF32 { left: side, right: 0.0, top: 28.0, bottom: 24.0 });
+            h.settle(SETTLE);
+            if failing {
+                flaky.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+                let _ = h.request("engine.execute", json!({"command": "album.create", "params": {"name": "Kept"}}), T);
+                h.settle(SETTLE);
+            }
+            for search_open in [false, true] {
+                h.app.ui.search_open = search_open;
+                h.settle(SETTLE);
+                let ws = bar_widgets(&h);
+                let names: Vec<&str> = ws.iter().map(|w| w.0.as_str()).collect();
+                let phone = h.app.ui.sheet.phone;
+                assert_eq!(phone, size[0] < size[1], "{size:?}: phone layout");
+                let expect: &[&str] = if !phone {
+                    &["icon:sidebar", "field:search", "icon:share"]
+                } else if search_open {
+                    &["field:search", "icon:searchClose"]
+                } else {
+                    &["icon:sidebar", "menu:all", "icon:search", "icon:share"]
+                };
+                for e in expect {
+                    assert!(names.contains(e), "{size:?} failing={failing} open={search_open}: {e} missing in {names:?}");
+                }
+                if failing && !(search_open && phone) {
+                    assert!(names.contains(&"icon:cloud"), "{size:?}: warning cloud missing in {names:?}");
+                }
+                let content = h.view.ctx.content_rect();
+                for (i, (a, ra)) in ws.iter().enumerate() {
+                    assert!(ra.left() >= content.left() - 0.5 && ra.right() <= content.right() + 0.5, "{size:?}: {a} {ra:?} leaves {content:?}");
+                    for (b, rb) in &ws[i + 1..] {
+                        assert!(!ra.intersects(*rb), "{size:?} failing={failing} open={search_open}: {a} {ra:?} overlaps {b} {rb:?}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// APK-34b: the magnifier opens the search field full-width and a tap on its close button gives the bar back.
+#[test]
+fn search_opens_from_the_magnifier() {
+    let mut h = Headless::new(
+        LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() }),
+        [412.0, 915.0],
+        2.625,
+    );
+    h.settle(SETTLE);
+    assert!(widget(&h, "field:search").is_none());
+    let r = h.request("ui.clickWidget", json!({"id": "icon:search"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let field = widget(&h, "field:search").expect("field:search after the tap");
+    assert!(field.width() > 412.0 * 0.7, "full width: {field:?}");
+    assert!(widget(&h, "icon:search").is_none() && widget(&h, "menu:all").is_none(), "the rest of the bar steps aside");
+    let r = h.request("ui.clickWidget", json!({"id": "icon:searchClose"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(widget(&h, "field:search").is_none() && widget(&h, "icon:search").is_some());
 }
