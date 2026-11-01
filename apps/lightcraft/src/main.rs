@@ -467,6 +467,11 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         move_to_back: None,
         quit_disabled: false,
         touch: false,
+        // no device photo library on the desktop; imports add in place by default
+        import_media: None,
+        prefer_copy_import: false,
+        // the native dialogs answer: no in-app chooser
+        pick_roots: Vec::new(),
     }
 }
 
