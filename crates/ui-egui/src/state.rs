@@ -599,6 +599,10 @@ pub const MIN_PHOTO_WIDTH: f32 = 360.0;
 /// Windows shorter than this many points (a phone held sideways, about 412 pt high) start with the
 /// filmstrip folded; the bottom bar's Filmstrip button pulls it out.
 pub const SHORT_WINDOW_HEIGHT: f32 = 500.0;
+/// Windows narrower than this many points (a phone held upright, about 412 pt wide; the
+/// "compact" width class) get the phone layout: the side panels open as a bottom sheet above an
+/// edit toolbar (`crate::sheet`). Follows the width on every platform, never the platform.
+pub const PHONE_WIDTH: f32 = 600.0;
 
 /// What the Keywording box shows: the keywords (chips to edit), them with the keywords containing
 /// them, or what exported files will carry (read only).
@@ -806,6 +810,10 @@ pub struct UiState {
     /// Finger-sized hit areas are applied to the theme (follows `touch_mode`, see `theme::set_density`).
     #[serde(skip)]
     pub touch_density: bool,
+    /// The phone layout and its bottom sheet (`crate::sheet`): set every frame from the window's
+    /// width ([`PHONE_WIDTH`]); the sheet's open state and height are the session's.
+    #[serde(skip)]
+    pub sheet: crate::sheet::SheetState,
     /// Select mode (touch): a tap on a grid cell toggles it; Done / Cancel / Back leave it.
     #[serde(skip)]
     pub select_mode: bool,
@@ -1361,6 +1369,7 @@ impl Default for UiState {
             quit: false,
             touch_mode: false,
             touch_density: false,
+            sheet: Default::default(),
             select_mode: false,
             dragging_photos: None,
             reveal_album: None,

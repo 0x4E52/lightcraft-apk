@@ -67,6 +67,12 @@ pub fn escape_taken(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(egui::Id::new("lc-escape-taken"))) == Some(ctx.cumulative_frame_nr())
 }
 
+/// How many widgets have been registered so far this frame (where the next one lands in
+/// [`take_registry`]'s list).
+pub fn registry_len(ctx: &egui::Context) -> usize {
+    ctx.data_mut(|d| d.get_temp_mut_or_default::<Registry>(egui::Id::new("lc-registry")).0.len())
+}
+
 pub fn take_registry(ctx: &egui::Context) -> Vec<(String, Rect)> {
     ctx.data_mut(|d| std::mem::take(&mut d.get_temp_mut_or_default::<Registry>(egui::Id::new("lc-registry")).0))
 }

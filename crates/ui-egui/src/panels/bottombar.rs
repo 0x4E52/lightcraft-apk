@@ -47,7 +47,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         egui::Popup::menu(&sort).show(|ui| sort_menu(app, ui));
                     } else {
                         let current_icon = VIEW_MODES.iter().find(|(_, _, mode, _)| *mode == app.ui.view).map_or(Icon::More, |(_, icon, _, _)| *icon);
-                        let more = icon_button(ui, "viewOptions", current_icon, vec2(40.0, 32.0), true, true, "View");
+                        // a finger-sized target under touch density (a phone's narrow bottom bar)
+                        let size =
+                            if crate::theme::density(ui.ctx()) { vec2(crate::theme::TOUCH_HIT, crate::theme::TOUCH_HIT) } else { vec2(40.0, 32.0) };
+                        let more = icon_button(ui, "viewOptions", current_icon, size, true, true, "View");
                         paint(
                             ui.painter(),
                             Rect::from_center_size(more.rect.right_bottom() - vec2(5.0, 5.0), vec2(7.0, 7.0)),

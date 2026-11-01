@@ -1,6 +1,6 @@
 # Android touch UI: target behaviour
 
-*Last updated: 2026-10-17.* Revision history at the end.
+*Last updated: 2026-11-01.* Revision history at the end.
 
 What the Android build should feel like: someone who knows Lightroom on a phone finds every tool where they expect
 it and every gesture does what they expect. Phase 3 of [`android-port.md`](android-port.md) (APK-29 … APK-35)
@@ -37,6 +37,11 @@ edit, import or delete in the personal library). Screenshots of Adobe apps never
 - **Panel:** tapping a tool opens its sliders as a **sheet above the toolbar**; full-width sliders with name and
   value; the sheet collapses to show more of the photo; sub-tools (tone curve, colour mixer, colour grading) are
   buttons at the top of their panel that switch the sheet's content.
+  LightCraft (APK-33, `crates/ui-egui/src/sheet.rs`): below 600 pt window width (`state::PHONE_WIDTH`, any platform)
+  the tool strip becomes this toolbar (Library, Presets, Edit, Crop, Remove, Masking, Red Eye, Versions, History,
+  Keywords, Info; 68×56 pt buttons) and a tool opens the desktop's own panel as a full-width sheet above it, with a
+  drag handle for its height. Opening a tool there switches its desktop panel on (as the tool strip does); tapping
+  the shown tool or Back puts the sheet down and the panel choice stays.
 - **Tablet landscape:** the same panels in a right-hand column (on Android the panel side is fixed; iOS lets it move
   left) (verify).
 - **Premium badge:** in the free app, premium tools stay visible with a badge and open an upgrade screen. LightCraft
@@ -127,3 +132,4 @@ toolbar and sheets of §1, APK-34 the top bar and overflow menu. A card that has
 ## Revision history
 
 - 2026-10-17: first version from public sources; the maintainer's device checks pending.
+- 2026-11-01: the phone layout as built (APK-33): edit toolbar and bottom sheet below 600 pt width.

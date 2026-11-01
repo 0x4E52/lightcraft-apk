@@ -613,7 +613,13 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             Ok(json!({"autoAdvance": app.ui.auto_advance}))
         }
         "view.back" => {
-            if app.ui.dialog.is_some() {
+            // what is drawn over the sheet (a dialog, lights-out, the full-screen preview or a
+            // slideshow, which hide it) closes before it
+            let over_sheet = app.ui.dialog.is_some() || app.ui.lights_out != crate::state::LightsOut::On || app.ui.fullscreen;
+            if !over_sheet && crate::sheet::close(app) {
+                // then a phone's sheet goes down, before select mode, a tool or the photo (`crate::sheet`;
+                // never open on the desktop layout)
+            } else if app.ui.dialog.is_some() {
                 app.ui.dialog = None;
             } else if app.ui.select_mode {
                 app.ui.select_mode = false;

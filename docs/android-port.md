@@ -1253,7 +1253,8 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
   sheet above it); panel content never clips at the sheet's width; `view.back` (APK-17) closes the sheet first (a new
   arm at the front of the cascade, desktop unaffected).
 - **Tests:** `side_panels_become_sheet_below_breakpoint`, `back_closes_sheet_first`, `no_panel_widget_outside_sheet`
-  (every Edit section expanded, 412×915), `min_hit_size_48dp_at_phone`
+  (every Edit section expanded, 412×915 and 360×800: no registered widget past the sheet, and no text or shape
+  painted straight with the painter cut off by a clip at a side, scrolled-away rows included), `min_hit_size_48dp_at_phone`
   (APK-32b's allow-list check at 412×915 under touch density; new small widgets are fixed, not allow-listed);
   `desktop_layout_fingerprint_unchanged` stays green.
 - **Verify:** `cargo test -p lightcraft-ui-egui -- sheet min_hit_size desktop_layout && cargo run -p lightcraft-cli --

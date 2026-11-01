@@ -935,7 +935,13 @@ pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32
         }
         ui.spacing_mut().item_spacing.x = saved;
     } else {
-        let r = ui.add(egui::Button::new(egui::RichText::new(crate::i18n::tr("Menu")).font(font.clone()).color(t.text_label)).frame(false));
+        // finger-sized under touch density (a phone's top bar)
+        let hit = if crate::theme::density(ui.ctx()) { crate::theme::TOUCH_HIT } else { 0.0 };
+        let r = ui.add(
+            egui::Button::new(egui::RichText::new(crate::i18n::tr("Menu")).font(font.clone()).color(t.text_label))
+                .frame(false)
+                .min_size(egui::vec2(hit, hit)),
+        );
         crate::widgets::register(ui.ctx(), "menu:all", r.rect);
         egui::Popup::menu(&r).show(|ui| {
             crate::menu_level::level(ui, 1, bar_bottom, |ui| {

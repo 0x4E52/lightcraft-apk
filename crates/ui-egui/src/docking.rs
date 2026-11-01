@@ -447,25 +447,7 @@ pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
         },
     );
     if let Some(mut canvas) = canvas {
-        let ui = &mut canvas;
-        crate::panels::bottombar::show(app, ui);
-        let bg = if matches!(
-            app.ui.view,
-            crate::state::ViewMode::Detail | crate::state::ViewMode::Compare | crate::state::ViewMode::Survey | crate::state::ViewMode::Reference
-        ) {
-            t.canvas
-        } else {
-            t.grid_bg
-        };
-        crate::panels::compare::prepare(app);
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| match app.ui.view {
-            crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid => crate::panels::grid::show(app, ui),
-            crate::state::ViewMode::Detail => crate::panels::detail::show(app, ui),
-            crate::state::ViewMode::Compare => crate::panels::compare::show_compare(app, ui),
-            crate::state::ViewMode::Survey => crate::panels::compare::show_survey(app, ui),
-            crate::state::ViewMode::Reference => crate::panels::compare::show_reference(app, ui),
-            crate::state::ViewMode::People => crate::panels::people::show(app, ui),
-        });
+        photo_view(app, &mut canvas);
     }
 
     let rendered = workspace;
@@ -488,6 +470,30 @@ pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
             app.ui.toast = Some((format!("Panel move was not applied: {error}"), ui.input(|input| input.time) + 8.0, None));
         }
     }
+}
+
+/// The photo area: the bottom bar (and filmstrip) and the current view. The dock's canvas pane
+/// on the desktop; the whole middle of the window in the phone layout (`crate::sheet`).
+pub(crate) fn photo_view(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    crate::panels::bottombar::show(app, ui);
+    let bg = if matches!(
+        app.ui.view,
+        crate::state::ViewMode::Detail | crate::state::ViewMode::Compare | crate::state::ViewMode::Survey | crate::state::ViewMode::Reference
+    ) {
+        t.canvas
+    } else {
+        t.grid_bg
+    };
+    crate::panels::compare::prepare(app);
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| match app.ui.view {
+        crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid => crate::panels::grid::show(app, ui),
+        crate::state::ViewMode::Detail => crate::panels::detail::show(app, ui),
+        crate::state::ViewMode::Compare => crate::panels::compare::show_compare(app, ui),
+        crate::state::ViewMode::Survey => crate::panels::compare::show_survey(app, ui),
+        crate::state::ViewMode::Reference => crate::panels::compare::show_reference(app, ui),
+        crate::state::ViewMode::People => crate::panels::people::show(app, ui),
+    });
 }
 
 /// Keep the established ui.set width controls connected to the panel's current parent split.

@@ -39,6 +39,7 @@ pub mod print_view;
 pub mod recheck;
 pub mod region;
 pub mod render;
+pub mod sheet;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod slideshow_export;
@@ -160,6 +161,8 @@ mod tests_rename_person;
 mod tests_sam_setup;
 #[cfg(test)]
 mod tests_scroll;
+#[cfg(test)]
+mod tests_sheet;
 #[cfg(test)]
 mod tests_slider_reset;
 #[cfg(test)]
@@ -1593,6 +1596,7 @@ impl LightcraftApp {
             theme::set_density(&ctx, self.ui.touch_density);
         }
         self.ui.set_short_window(ctx.viewport_rect().height() < state::SHORT_WINDOW_HEIGHT);
+        sheet::set_width(self, ui.max_rect().width());
         panels::dialogs::prepare(self, ui);
         let t0 = now_ms();
         if std::mem::take(&mut self.ui.quit) && !self.services.quit_disabled {
@@ -1621,10 +1625,22 @@ impl LightcraftApp {
         // right panels and left panel run to the bottom; the bottom bar sits between them).
         panels::topbar::show(self, ui);
         panels::library_problem::banner(self, ui);
-        panels::strip::show(self, ui);
         // filled: the gaps the dock leaves between its panes show chrome, not the dark clear colour
         let chrome = theme::Tokens::get(&ctx).chrome;
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
+        if self.ui.sheet.phone {
+            // a phone: the edit toolbar at the bottom, a tool's panel as the sheet above it, the
+            // photo in the rest (no dock beside it)
+            sheet::follow(self);
+            sheet::toolbar(self, ui);
+            sheet::show(self, ui);
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| {
+                let mut photo = ui.new_child(egui::UiBuilder::new().id_salt("photo-view").max_rect(ui.max_rect()));
+                docking::photo_view(self, &mut photo);
+            });
+        } else {
+            panels::strip::show(self, ui);
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
+        }
         self.lights_out(&ctx);
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
