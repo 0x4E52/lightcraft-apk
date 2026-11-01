@@ -41,6 +41,7 @@ pub mod print_view;
 pub mod recheck;
 pub mod region;
 pub mod render;
+pub mod share;
 pub mod sheet;
 pub mod shortcuts;
 pub mod sidebar;
@@ -171,6 +172,8 @@ mod tests_sam_setup;
 #[cfg(test)]
 mod tests_scroll;
 #[cfg(test)]
+mod tests_share;
+#[cfg(test)]
 mod tests_sheet;
 #[cfg(test)]
 mod tests_slider_reset;
@@ -257,6 +260,38 @@ pub type ReopenLibrary = Box<dyn FnMut(&str) -> Result<(), String>>;
 /// last heard and wakes the UI itself when that changes; it is never polled for changes.
 pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
 
+/// What an export writes, for the folder it goes to where the host keeps images and other files
+/// apart ([`Services::export_dir_for`]; Android: `Pictures/LightCraft` and `Documents/LightCraft`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExportKind {
+    /// Photo files (JPEG, PNG, TIFF, PSD, WebP, AVIF, JPEG XL, DNG).
+    Image,
+    /// PDFs, video and any other output, and original files with their XMP sidecars (which a
+    /// folder for images alone can't take).
+    Document,
+}
+
+impl ExportKind {
+    /// The kind of an export in `format`.
+    pub fn of_format(format: lightcraft_engine::export::ExportFormat) -> ExportKind {
+        match format {
+            lightcraft_engine::export::ExportFormat::Original => ExportKind::Document,
+            _ => ExportKind::Image,
+        }
+    }
+
+    /// The kind of a file by its extension (PDFs, video and anything unknown are documents).
+    pub fn of_extension(ext: &str) -> ExportKind {
+        match ext.trim_start_matches('.').to_ascii_lowercase().as_str() {
+            "jpg" | "jpeg" | "png" | "tif" | "tiff" | "psd" | "webp" | "avif" | "jxl" | "dng" | "heic" | "heif" | "gif" | "bmp" => ExportKind::Image,
+            _ => ExportKind::Document,
+        }
+    }
+}
+
+/// The host's export folder for each [`ExportKind`] ([`Services::export_dir_for`]).
+pub type ExportDirFn = Box<dyn Fn(ExportKind) -> String>;
+
 /// Platform services injected by the host app (desktop or web).
 #[derive(Default)]
 pub struct Services {
@@ -328,10 +363,20 @@ pub struct Services {
     pub restore_library: Option<HostAction>,
     /// The system appearance for Appearance Mode ▸ Auto, ahead of egui's own report.
     pub system_theme: Option<SystemThemeFn>,
-    /// The export folder used when an export names none and none was used before, and the Export
-    /// dialog's first Folder. `None` = `~/Pictures/LightCraft Exports` from `HOME` (a host without a
-    /// usable `HOME`, such as Android, names one).
-    pub default_export_dir: Option<String>,
+    /// The export folder for each kind of file, used when an export names none and none was used
+    /// before, for the Export dialog's first Folder, and by File ▸ Share. `None` =
+    /// `~/Pictures/LightCraft Exports` from `HOME` for every kind (a host without a usable `HOME`,
+    /// such as Android, names its own: there `Pictures/LightCraft` and `Documents/LightCraft`).
+    pub export_dir_for: Option<ExportDirFn>,
+    /// Folders that take only image and video files (Android: `Pictures/` and `DCIM/`, where
+    /// MediaProvider refuses any other file): no XMP sidecar is written inside them, and the Export
+    /// dialog doesn't offer Original files there. Empty = no such folder (the desktop).
+    pub media_only_dirs: Vec<std::path::PathBuf>,
+    /// File ▸ Share… (`file.share`): hands exported files to the system's share sheet, called on a
+    /// worker under the activity row "Preparing to share" (Android: a MediaStore lookup per file,
+    /// then the chooser). `None` = no share sheet (the desktop, the web): the command is disabled
+    /// and left out of the menus.
+    pub share: Option<share::ShareFn>,
     /// Folders for the Library sidebar's Local section, as `(label, path)`. Empty = Pictures, Desktop,
     /// Downloads and Home under `HOME` (those that exist). Not empty = exactly these (those that exist).
     pub local_roots: Vec<(String, std::path::PathBuf)>,
@@ -552,6 +597,10 @@ pub struct LightcraftApp {
     pub shown_library: Option<u64>,
     /// A background export in progress.
     pub export: Option<export_task::ExportTask>,
+    /// File ▸ Share's export: once it finishes, its files go to the share sheet.
+    pub share_after_export: bool,
+    /// File ▸ Share handing files to the host's share sheet (`Services::share`).
+    pub share: Option<share::ShareTask>,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
     /// When (egui time) the free space was last looked at (`storage::low_space_tick`).
@@ -664,6 +713,8 @@ impl LightcraftApp {
             lightroom_result: None,
             shown_library: None,
             export: None,
+            share_after_export: false,
+            share: None,
             tasks: Default::default(),
             storage_checked: None,
             last_export_result: None,
@@ -1772,6 +1823,7 @@ impl LightcraftApp {
         panels::library_problem::show(self, &ctx);
         pick_browser::show(self, &ctx);
         export_task::poll(self, &ctx);
+        share::poll(self, &ctx);
         slideshow_export::poll(self, &ctx);
         panels::activity::show(self, &ctx);
         export_task::poll_photos(self, &ctx);

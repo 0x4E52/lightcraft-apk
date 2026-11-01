@@ -82,6 +82,10 @@ pub struct Start {
     pub media_query: Option<crate::services::MediaQuery>,
     /// Starts the browser on a link (`None` in tests: Help and About links are unavailable).
     pub open_link: Option<crate::services::OpenLink>,
+    /// The device's shared folders (`None` in tests: no export folder, Local section from `HOME`).
+    pub shared: Option<lightcraft_android_sys::storage::Folders>,
+    /// File ▸ Share's service (`None` in tests: no share sheet).
+    pub share: Option<lightcraft_ui_egui::share::ShareFn>,
 }
 
 impl Start {
@@ -133,6 +137,10 @@ impl HostState {
             services.import_media = Some(crate::services::import_media(photos.gate(), query.clone()));
         }
         services.open_url = start.open_link.clone().map(crate::services::open_url);
+        if let Some(folders) = &start.shared {
+            crate::services::shared_storage(&mut services, folders);
+        }
+        services.share = start.share.clone();
         let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {
             app.ui = ui;

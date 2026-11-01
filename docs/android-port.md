@@ -1085,17 +1085,30 @@ Each pushed card leaves a debug APK in the Android workflow's artifacts, so the 
   row) on a worker like APK-25's (attached thread, `session.activity.start("export", "Preparing to share",
   Cancel::Flag(..))`), then start `Intent.createChooser(ACTION_SEND / ACTION_SEND_MULTIPLE)` with `EXTRA_STREAM` and
   `FLAG_GRANT_READ_URI_PERMISSION` (no FileProvider: that is Java). Enabled only with the service.
+- **As built:** the sidecar rule needs to know which folders take images alone, so `Services` also got
+  `media_only_dirs` (Android: Pictures and DCIM; empty on the desktop). `file.share` exports the selection with the
+  previous export's settings (an original as JPEG, Export with Previous unchanged) into `export_dir_for(kind)` and
+  shares the written files when the background export ends; `{paths}` shares given files. With the Documents folder in
+  `pick_roots`, Print to PDF and Contact Sheet PDF are no longer disabled on Android (their save opens in
+  Documents/LightCraft); the other save dialogs stay disabled. A file MediaStore has no row for stops the share with a
+  message naming it. Original files exported to "Same folder as original" are refused when an original's folder takes
+  images alone (a photo added in place from DCIM), as for a chosen folder. Every format but Original is an image
+  (Pictures/LightCraft), JPEG XL and AVIF included, though MediaProvider takes a file in `Pictures/` only when the
+  running release maps its extension to an image MIME type (a device check below).
 - **Tests:** `export_dir_for_images_and_documents`, `share_spec_single_and_multiple`, `uri_lookup_selection_for_path`
   (pure); headless `share_disabled_without_service`, `share_calls_service_with_exported_paths`,
   `share_lookup_shows_activity_row`, `sidecar_into_pictures_is_refused_with_reason`,
-  `export_without_folder_uses_export_dir_for` (APK-6's test, moved to the new field).
+  `export_without_folder_uses_export_dir_for` (APK-6's test, moved to the new field); as built also
+  `pdf_saves_open_in_documents_export_folder`, `sidecar_next_to_original_in_dcim_is_refused`.
 - **Verify:** `cargo test -p lightcraft-android-sys -- share export_dir && cargo test -p lightcraft-ui-egui -- share
   sidecar export_without_folder local_section && cargo xtask parity && cargo xtask ci`
 - **Depends on:** APK-6, APK-9, APK-22, APK-24, APK-25  **Needs:** rust-target  **Model:** opus — MediaStore and
   grants.
 - **Done when:** tests pass; parity row added.
 - **Maintainer checks on a device:** export a JPEG and a TIFF to Pictures/LightCraft (no stray temp file left), a
-  Contact Sheet PDF to Documents/LightCraft; share to a messenger; the photo arrives.
+  Contact Sheet PDF to Documents/LightCraft; share to a messenger; the photo arrives; on the oldest supported release,
+  export a JPEG XL and an AVIF to Pictures/LightCraft (MediaProvider must map `.jxl` / `.avif` to an image type, or
+  these formats have to go to Documents).
 
 #### APK-28 System clipboard
 - **Goal:** every copy (TextField, dialogs, egui's own shortcuts) and every paste reach other apps, without ever

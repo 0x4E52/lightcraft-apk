@@ -147,6 +147,141 @@ pub fn start_view(app: &android_activity::AndroidApp, spec: &IntentSpec) -> Resu
     })
 }
 
+/// `Intent.FLAG_GRANT_READ_URI_PERMISSION`.
+pub const FLAG_GRANT_READ_URI_PERMISSION: i32 = 0x0000_0001;
+
+/// What File ▸ Share hands the system's chooser (APK-27): `ACTION_SEND` for one file,
+/// `ACTION_SEND_MULTIPLE` for several, with their MediaStore content URIs as `EXTRA_STREAM` and
+/// read access granted to the app chosen (`FLAG_GRANT_READ_URI_PERMISSION`; no FileProvider,
+/// which is Java: MediaStore's URIs carry the grant).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareSpec {
+    pub action: &'static str,
+    /// The intent's type: the files' common MIME type, `image/*` for images of different types,
+    /// else `*/*`.
+    pub mime: String,
+    pub uris: Vec<String>,
+    pub flags: i32,
+}
+
+impl ShareSpec {
+    /// The share of `files` (`(content URI, MIME type)`), each URI once; `None` for no file or a
+    /// URI that is not `content://` (MediaStore's are).
+    pub fn new(files: &[(String, Option<String>)]) -> Option<ShareSpec> {
+        let mut uris: Vec<String> = Vec::new();
+        let mut mimes: Vec<&str> = Vec::new();
+        for (uri, mime) in files.iter().take(MAX_URIS) {
+            let uri = uri.trim();
+            if !uri.to_ascii_lowercase().starts_with("content://") || uri.len() <= "content://".len() || uri.chars().any(char::is_control) {
+                return None;
+            }
+            if uris.iter().any(|u| u == uri) {
+                continue;
+            }
+            uris.push(uri.to_owned());
+            mimes.push(mime.as_deref().map(str::trim).filter(|m| m.contains('/')).unwrap_or("*/*"));
+        }
+        let first = *mimes.first()?;
+        let mime = if mimes.iter().all(|m| *m == first) {
+            first.to_owned()
+        } else if mimes.iter().all(|m| m.starts_with("image/")) {
+            "image/*".to_owned()
+        } else {
+            "*/*".to_owned()
+        };
+        let action = if uris.len() == 1 { ACTION_SEND } else { ACTION_SEND_MULTIPLE };
+        Some(ShareSpec { action, mime, uris, flags: FLAG_GRANT_READ_URI_PERMISSION })
+    }
+}
+
+/// What File ▸ Share says when the chooser could not start.
+pub fn share_message(e: &crate::Error) -> String {
+    match e {
+        crate::Error::Java { class, .. } if class.rsplit(['.', '/', '$']).next() == Some("ActivityNotFoundException") => {
+            "No app can receive these files".to_owned()
+        }
+        other => other.user_message("share"),
+    }
+}
+
+/// `startActivity(Intent.createChooser(intent, title))` for `spec`, on the calling thread
+/// (attached through [`crate::jni_env::with_activity`]: a worker, never inside a `with_activity`
+/// closure). The chooser copies the target's `EXTRA_STREAM` into its `ClipData`, so the read grant
+/// reaches the app the user picks.
+#[cfg(target_os = "android")]
+pub fn start_share(app: &android_activity::AndroidApp, spec: &ShareSpec, title: &str) -> Result<(), crate::Error> {
+    crate::jni_env::with_activity(app, |env, activity| {
+        use crate::dialog::caught;
+        use jni::{JValue, jni_sig, jni_str};
+        env.with_local_frame(16, |env| -> Result<(), crate::Error> {
+            let action = env.new_string(spec.action)?;
+            let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("(Ljava/lang/String;)V"), &[JValue::Object(&action)]);
+            let intent = caught(env, intent)?;
+            let mime = env.new_string(&spec.mime)?;
+            let answer =
+                env.call_method(&intent, jni_str!("setType"), jni_sig!("(Ljava/lang/String;)Landroid/content/Intent;"), &[JValue::Object(&mime)]);
+            caught(env, answer)?;
+            let key = env.new_string(EXTRA_STREAM)?;
+            if let [only] = spec.uris.as_slice() {
+                let uri = parse_uri(env, only)?;
+                let answer = env.call_method(
+                    &intent,
+                    jni_str!("putExtra"),
+                    jni_sig!("(Ljava/lang/String;Landroid/os/Parcelable;)Landroid/content/Intent;"),
+                    &[JValue::Object(&key), JValue::Object(&uri)],
+                );
+                caught(env, answer)?;
+            } else {
+                let list = env.new_object(jni_str!("java/util/ArrayList"), jni_sig!("()V"), &[]);
+                let list = caught(env, list)?;
+                for text in &spec.uris {
+                    env.with_local_frame(8, |env| -> Result<(), crate::Error> {
+                        let uri = parse_uri(env, text)?;
+                        let answer = env.call_method(&list, jni_str!("add"), jni_sig!("(Ljava/lang/Object;)Z"), &[JValue::Object(&uri)]);
+                        caught(env, answer)?;
+                        Ok(())
+                    })?;
+                }
+                let answer = env.call_method(
+                    &intent,
+                    jni_str!("putParcelableArrayListExtra"),
+                    jni_sig!("(Ljava/lang/String;Ljava/util/ArrayList;)Landroid/content/Intent;"),
+                    &[JValue::Object(&key), JValue::Object(&list)],
+                );
+                caught(env, answer)?;
+            }
+            let answer = env.call_method(&intent, jni_str!("addFlags"), jni_sig!("(I)Landroid/content/Intent;"), &[JValue::Int(spec.flags)]);
+            caught(env, answer)?;
+            let title = env.new_string(title)?;
+            let answer = env.call_static_method(
+                jni_str!("android/content/Intent"),
+                jni_str!("createChooser"),
+                jni_sig!("(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;"),
+                &[JValue::Object(&intent), JValue::Object(&title)],
+            );
+            let chooser = caught(env, answer)?.l()?;
+            let started = env.call_method(activity, jni_str!("startActivity"), jni_sig!("(Landroid/content/Intent;)V"), &[JValue::Object(&chooser)]);
+            caught(env, started)?;
+            Ok(())
+        })
+    })
+}
+
+/// `Uri.parse(text)`.
+#[cfg(target_os = "android")]
+fn parse_uri<'local>(env: &mut jni::Env<'local>, text: &str) -> Result<jni::objects::JObject<'local>, crate::Error> {
+    use crate::dialog::caught;
+    use jni::{JValue, jni_sig, jni_str};
+    let text = env.new_string(text)?;
+    let answer = env.call_static_method(
+        jni_str!("android/net/Uri"),
+        jni_str!("parse"),
+        jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+        &[JValue::Object(&text)],
+    );
+    Ok(caught(env, answer)?.l()?)
+}
+
 /// A URI LightCraft opens through the ContentResolver: `content://…`, or `file://…` from an old
 /// sender (the resolver applies the file's own permissions).
 fn receivable(uri: &str) -> bool {
@@ -346,5 +481,47 @@ mod tests {
         assert!(again.received().is_empty());
         // empty parts are missing parts
         assert_eq!(IntentSpec::parse(Some(" "), Some(""), Some(""), 0, Extras::default()), IntentSpec::default());
+    }
+
+    #[test]
+    fn share_spec_single_and_multiple() {
+        let file = |uri: &str, mime: Option<&str>| (uri.to_owned(), mime.map(str::to_owned));
+        // one file: SEND with its own type
+        let one = ShareSpec::new(&[file("content://media/external/images/media/42", Some("image/jpeg"))]).unwrap();
+        assert_eq!(one.action, ACTION_SEND);
+        assert_eq!(one.mime, "image/jpeg");
+        assert_eq!(one.uris, ["content://media/external/images/media/42"]);
+        assert_eq!(one.flags & FLAG_GRANT_READ_URI_PERMISSION, FLAG_GRANT_READ_URI_PERMISSION);
+        // several: SEND_MULTIPLE; images of different types share as image/*, mixed as */*
+        let jpegs = [
+            file("content://media/external/images/media/1", Some("image/jpeg")),
+            file("content://media/external/images/media/2", Some("image/jpeg")),
+        ];
+        let two = ShareSpec::new(&jpegs).unwrap();
+        assert_eq!((two.action, two.mime.as_str(), two.uris.len()), (ACTION_SEND_MULTIPLE, "image/jpeg", 2));
+        let mixed_images = [
+            file("content://media/external/images/media/1", Some("image/jpeg")),
+            file("content://media/external/images/media/3", Some("image/tiff")),
+        ];
+        assert_eq!(ShareSpec::new(&mixed_images).unwrap().mime, "image/*");
+        let mixed =
+            [file("content://media/external/images/media/1", Some("image/jpeg")), file("content://media/external/file/4", Some("application/pdf"))];
+        assert_eq!(ShareSpec::new(&mixed).unwrap().mime, "*/*");
+        // an unknown type is */*; a URI listed twice is shared once (and is then one file)
+        assert_eq!(ShareSpec::new(&[file("content://media/external/file/5", None)]).unwrap().mime, "*/*");
+        let twice = ShareSpec::new(&[
+            file("content://media/external/file/5", Some("application/pdf")),
+            file("content://media/external/file/5", Some("application/pdf")),
+        ])
+        .unwrap();
+        assert_eq!((twice.action, twice.uris.len()), (ACTION_SEND, 1));
+        // nothing, or anything but a content URI: no share
+        assert!(ShareSpec::new(&[]).is_none());
+        for uri in ["file:///storage/emulated/0/Pictures/a.jpg", "content://", "https://x/a.jpg", "content://media/x\n1"] {
+            assert!(ShareSpec::new(&[file(uri, Some("image/jpeg"))]).is_none(), "{uri}");
+        }
+        let e = crate::Error::Java { class: "android.content.ActivityNotFoundException".into(), message: String::new() };
+        assert_eq!(share_message(&e), "No app can receive these files");
+        assert!(share_message(&crate::Error::Jni("x".into())).starts_with("Could not share"));
     }
 }

@@ -254,8 +254,9 @@ Android has no file dialog LightCraft can open without Java, and under scoped st
 only *media* files of other apps: presets (`.xmp`, `.lcpreset`, `.zip`), track logs (`.gpx`), keyword lists
 (`.txt`), models (`.onnx`) and Lightroom catalogs a browser saved in `Download/` or `Documents/` are hidden from
 LightCraft. So a command that asks for a file opens LightCraft's own chooser (`crates/ui-egui/src/pick_browser.rs`),
-which shows only two places: **Inbox** (`files/inbox/`, where files shared to LightCraft land, APK-25) and
-**Library** (the library's folder). **Share the file to LightCraft from Files or the browser, then pick it from
+which shows only these places: **Inbox** (`files/inbox/`, where files shared to LightCraft land, APK-25),
+**Library** (the library's folder), and the export folders **Pictures** (`Pictures/LightCraft`) and **Documents**
+(`Documents/LightCraft`, APK-27), which hold only files LightCraft wrote. **Share the file to LightCraft from Files or the browser, then pick it from
 Inbox.** The chooser never leaves those places: `..` and symbolic links are refused, hidden files are not listed.
 Back closes it, choosing nothing.
 
@@ -273,8 +274,9 @@ Back closes it, choosing nothing.
 | Settings ▸ General ▸ Open Library…, New Library… | `pick_folder` | disabled with why, as the menu items |
 | Library problem window ▸ Choose Another Library… | `pick_folder` | in-app chooser; only a folder that already holds a LightCraft library (not the one that couldn't be opened, not one inside another library), opened behind the "Opening library…" frame; any other folder is refused with why and no library is created there. On a phone this normally finds nothing to open: the Library place is the library that couldn't be opened, its subfolders are inside it, and shares put single files in the Inbox, so until library backup and restore land Try Again is the way out |
 | File ▸ Import Lightroom Catalog… (`file.importLightroom`) | `pick_lightroom_catalog` | disabled: the catalog points to originals on the computer it came from |
-| Export Presets…, Export Effect Presets…, Point Curve ▸ Export Presets…, Export Keywords… | `save_preset_file`, `save_curve_preset_file`, `save_keyword_list` | disabled until LightCraft has export folders other apps can read (APK-27) |
-| Print to PDF, Export Contact Sheet PDF, Export Slideshow (`app.print`, `app.contactSheet`, `app.slideshowExport` and their dialogs) | save dialogs | disabled, as above |
+| Export Presets…, Export Effect Presets…, Point Curve ▸ Export Presets…, Export Keywords… | `save_preset_file`, `save_curve_preset_file`, `save_keyword_list` | disabled: they ask the in-app chooser like the PDFs do, but where their files (`.lcpreset`, `.xmp`, `.txt`) should land in Documents/LightCraft hasn't been decided or tested yet, so `pick_browser::unavailable` still lists them |
+| Print to PDF, Export Contact Sheet PDF (`app.print`, `app.contactSheet` and their dialogs) | save dialogs | in-app chooser, opening in Documents/LightCraft (APK-27) |
+| Export Slideshow (`app.slideshowExport` and its dialog) | save dialog | disabled, as above |
 | Settings ▸ AI Denoise ▸ Install from file… | `pick_denoise_model` | disabled with why; the model list's downloads work |
 | Settings ▸ Import ▸ Auto Import ▸ Watched folder Choose… | `pick_folder` | disabled with why: other apps can't save photos into a folder LightCraft can watch; share them or use Import from Photo Library… |
 | Settings ▸ Display ▸ Choose Profile… | `pick_display_profile` | disabled with why; previews are shown as sRGB |
@@ -284,6 +286,22 @@ A disabled command's menu item says why ("Not available on Android: …") as its
 channel or MCP it answers the same reason. Known gaps: a touch screen shows that tooltip only where egui gets a hover
 (a later Phase 3 card shows the reason on a tap), and the chooser's own texts and these reasons are not yet in the
 translation catalogs (`crates/ui-egui/locales/`; they show in English).
+
+## Exports and Share
+
+Exports go where other apps (Gallery, Files, messengers) see them (APK-27): with no folder chosen, images (JPEG, PNG,
+TIFF, PSD, WebP, AVIF, JPEG XL, DNG) go to **`Pictures/LightCraft`** and everything else (PDFs, original files with
+their XMP sidecars) to **`Documents/LightCraft`**. The folders come from Android
+(`Environment.getExternalStoragePublicDirectory`, so a work profile or a second user gets its own), with
+`/storage/emulated/0/…` when it can't be asked. Android lets an app create only photos and videos in `Pictures/` and
+`DCIM/`: there the Export dialog doesn't offer Original files (it says why), and an export of originals into them is
+refused before anything is written. The Library sidebar's Local section lists DCIM, Pictures and Download.
+
+**File ▸ Share…** (`file.share`) exports the selected photos with the previous export's settings (originals as JPEG),
+then, under the activity row "Preparing to share" (✕ stops it), looks each file up in MediaStore and opens the
+system's share sheet with them (one file: `ACTION_SEND`, several: `ACTION_SEND_MULTIPLE`, with read access granted
+to the app chosen). `{"paths": [...]}` shares files already exported there. A file outside shared storage can't be
+shared and the message says where to export it.
 
 ## Privacy
 
@@ -367,6 +385,10 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   that uses a FileProvider; "Open with" a DNG from Files: all are imported into `Originals/`. Share a 1 GB file: the
   UI stays responsive and the activity row "Receiving 1 file" shows it until it is done. Share a `.xmp` preset: a
   notice says it is in the Inbox. Share again while LightCraft runs: it only comes to the front.
+- [ ] Exports and Share (APK-27): export a JPEG and a TIFF with no folder chosen: both are in
+  `Pictures/LightCraft` (Gallery shows them) and no `.lightcraft-…-tmp` file is left; a Contact Sheet PDF saved
+  from the chooser's Documents place is in `Documents/LightCraft` (Files shows it). File ▸ Share… one photo, then
+  three, to a messenger: the photos arrive. The Export dialog with a folder in Pictures doesn't offer Original files.
 - [ ] File pickers (APK-24, after APK-25): share a `.xmp` preset from Files to LightCraft, then File ▸ Import
   Profiles & Presets… ▸ Inbox imports it; the chooser's rows are finger-sized and Back closes it.
 - [ ] Debug control server (APK-21): the recipe in "Debug control server" returns a screenshot; the same request

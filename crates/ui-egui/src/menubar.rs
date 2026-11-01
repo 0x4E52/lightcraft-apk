@@ -88,6 +88,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "---",
             "dialog.export",
             "app.exportPrevious",
+            "file.share",
             "@Export with Preset",
             "---",
             "library.toggleAutoWriteXmp",
@@ -282,6 +283,8 @@ fn host_supports(app: &LightcraftApp, id: &str) -> bool {
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         // the device's photo library (Android)
         "file.importMediaLibrary" => app.services.import_media.is_some(),
+        // the system's share sheet (Android)
+        "file.share" => app.services.share.is_some(),
         // the system ends the app where it can't quit itself (Android)
         "app.quit" => !app.services.quit_disabled,
         "photo.restore" | "photo.deletePermanently" => selection_deleted(app),
@@ -963,7 +966,7 @@ pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32
         let r = run_item(app, &id, params);
         // an export that can't start (e.g. no folder) says why instead of doing nothing
         if let Err(e) = r
-            && matches!(id.as_str(), "app.export" | "app.exportPrevious")
+            && matches!(id.as_str(), "app.export" | "app.exportPrevious" | "file.share")
         {
             app.toast(ui.ctx(), e);
         }
@@ -1309,12 +1312,16 @@ mod tests {
         assert_eq!(written.lock().unwrap().len(), n, "nothing written for a photo without a folder");
     }
 
-    /// An export with no folder goes to the host's default folder, and so does the Export dialog's first
-    /// Folder; a previous export's folder still wins, and without a host default nothing changes.
+    /// An export with no folder goes to the host's folder for its kind of file, and so does the
+    /// Export dialog's first Folder; a previous export's folder still wins, and without a host
+    /// folder nothing changes.
     #[test]
-    fn export_without_folder_uses_service_default_dir() {
+    fn export_without_folder_uses_export_dir_for() {
         let mut app = app();
-        app.services.default_export_dir = Some("/lc-service-default".into());
+        app.services.export_dir_for = Some(Box::new(|kind| match kind {
+            crate::ExportKind::Image => "/lc-pictures".into(),
+            crate::ExportKind::Document => "/lc-documents".into(),
+        }));
         let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let w = written.clone();
         app.services.write = Some(Box::new(move |p: &str, _: &[u8]| {
@@ -1324,25 +1331,30 @@ mod tests {
         app.session.execute("export.savePreset", &json!({"name": "Tiny PNG", "params": {"format": "png", "width": 40}})).unwrap();
         run_item(&mut app, "dialog.export", Value::Null).unwrap();
         let Some(crate::state::Dialog::Export { dir, .. }) = &app.ui.dialog else { panic!("no export dialog") };
-        assert_eq!(dir, "/lc-service-default", "the dialog starts in the host's folder");
+        assert_eq!(dir, "/lc-pictures", "the dialog starts in the host's folder for images");
         app.ui.dialog = None;
-        // no folder in the request, no previous export: the host's folder
+        // no folder in the request, no previous export: the host's folder for images
         app.session.last_export = None;
         run_item(&mut app, "app.export", json!({"preset": "Tiny PNG"})).unwrap();
         {
             let w = written.lock().unwrap();
             assert_eq!(w.len(), 1, "{w:?}");
-            assert!(w[0].starts_with("/lc-service-default/") && w[0].ends_with(".png"), "{}", w[0]);
+            assert!(w[0].starts_with("/lc-pictures/") && w[0].ends_with(".png"), "{}", w[0]);
         }
         // a folder named in the request wins over the host's
         run_item(&mut app, "app.export", json!({"preset": "Tiny PNG", "dir": "/lc-named"})).unwrap();
         assert!(written.lock().unwrap()[1].starts_with("/lc-named/"));
-        // a blank host folder counts as none; without HOME that is the "choose a folder" error
+        // originals with their sidecars are documents
         assert_eq!(
-            crate::control::export_dir_for(&crate::Services { default_export_dir: Some("  ".into()), ..Default::default() }),
-            crate::control::default_export_dir()
+            crate::control::export_folder(&app.services, crate::ExportKind::of_format(lightcraft_engine::export::ExportFormat::Original)),
+            "/lc-documents"
         );
-        assert_eq!(crate::control::export_dir_for(&crate::Services::default()), crate::control::default_export_dir());
+        assert_eq!(crate::ExportKind::of_extension("PDF"), crate::ExportKind::Document);
+        assert_eq!(crate::ExportKind::of_extension(".tif"), crate::ExportKind::Image);
+        // a blank host folder counts as none; without HOME that is the "choose a folder" error
+        let blank = crate::Services { export_dir_for: Some(Box::new(|_| "  ".into())), ..Default::default() };
+        assert_eq!(crate::control::export_folder(&blank, crate::ExportKind::Image), crate::control::default_export_dir());
+        assert_eq!(crate::control::export_folder(&crate::Services::default(), crate::ExportKind::Document), crate::control::default_export_dir());
     }
 
     #[test]

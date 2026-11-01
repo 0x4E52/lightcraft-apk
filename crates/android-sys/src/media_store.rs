@@ -138,7 +138,7 @@ pub fn query_buckets(app: &android_activity::AndroidApp) -> Result<Vec<Bucket>, 
 
 /// `Environment.getExternalStorageDirectory().getAbsolutePath()`: `/storage/emulated/<user>`.
 #[cfg(target_os = "android")]
-fn primary_volume(env: &mut jni::Env<'_>) -> Result<PathBuf, crate::Error> {
+pub(crate) fn primary_volume(env: &mut jni::Env<'_>) -> Result<PathBuf, crate::Error> {
     use crate::dialog::caught;
     use jni::{jni_sig, jni_str};
     env.with_local_frame(16, |env| -> Result<PathBuf, crate::Error> {
@@ -236,6 +236,160 @@ fn read_cursor(env: &mut jni::Env<'_>, cursor: &jni::objects::JObject<'_>) -> Re
         }
     }
     Ok(rows)
+}
+
+/// `MediaColumns._ID` (`BaseColumns._ID`).
+pub const ID: &str = "_id";
+/// `FileColumns.MEDIA_TYPE`: 1 image, 3 video, 0 anything else.
+pub const MEDIA_TYPE: &str = "media_type";
+/// `FileColumns.MEDIA_TYPE_IMAGE`.
+pub const MEDIA_TYPE_IMAGE: i32 = 1;
+/// `FileColumns.MEDIA_TYPE_VIDEO`.
+pub const MEDIA_TYPE_VIDEO: i32 = 3;
+/// The columns the share lookup asks for, in this order.
+pub const LOOKUP_PROJECTION: [&str; 3] = [ID, MIME_TYPE, MEDIA_TYPE];
+/// The share lookup's selection: one file, by its folder in the volume and its name.
+pub const LOOKUP_SELECTION: &str = "relative_path=? AND _display_name=?";
+/// At most this many files are shared at once.
+pub const MAX_SHARED: usize = 500;
+
+/// The selection arguments that find `file` in MediaStore's `Files` collection (APK-27):
+/// `RELATIVE_PATH` (the folder inside `volume` with a trailing `/`, as MediaStore keeps it) and
+/// `DISPLAY_NAME`. `None` when the file is not inside the volume (only shared storage is in
+/// MediaStore) or its name is not plain text.
+pub fn lookup_args(file: &Path, volume: &Path) -> Option<[String; 2]> {
+    if !inside(file, volume) {
+        return None;
+    }
+    let rest = file.strip_prefix(volume).ok()?;
+    let name = rest.file_name()?.to_str()?;
+    let folder = rest.parent()?.to_str()?;
+    if folder.is_empty() {
+        // a file at the volume's root has no RELATIVE_PATH an app may write to
+        return None;
+    }
+    Some([format!("{folder}/"), name.to_owned()])
+}
+
+/// The content URI another app opens a MediaStore row through: the Images or Video collection for
+/// those media types (what galleries and messengers expect), else the Files collection. `None` for
+/// a negative id.
+pub fn content_uri(id: i64, media_type: i32) -> Option<String> {
+    if id < 0 {
+        return None;
+    }
+    let collection = match media_type {
+        MEDIA_TYPE_IMAGE => "images/media",
+        MEDIA_TYPE_VIDEO => "video/media",
+        _ => "file",
+    };
+    Some(format!("content://media/external/{collection}/{id}"))
+}
+
+/// A file found in MediaStore: the URI to share and its MIME type, if MediaStore knows one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedFile {
+    pub uri: String,
+    pub mime: Option<String>,
+}
+
+/// Each of `files` looked up in MediaStore's `Files` collection ([`LOOKUP_SELECTION`], one local
+/// frame per file), on the calling thread (attached through [`crate::jni_env::with_activity`]:
+/// meant for a worker, never inside a `with_activity` closure). `None` for a file MediaStore has no
+/// row for (outside shared storage, or not scanned). Stops with what it has when `cancel` is set.
+/// Files LightCraft created are its own, so no permission is needed to find them.
+#[cfg(target_os = "android")]
+pub fn lookup_files(
+    app: &android_activity::AndroidApp,
+    files: &[PathBuf],
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Vec<Option<SharedFile>>, crate::Error> {
+    use crate::dialog::caught;
+    use jni::{JValue, jni_sig, jni_str};
+    use std::sync::atomic::Ordering;
+    crate::jni_env::with_activity(app, |env, activity| {
+        let volume = primary_volume(env)?;
+        env.with_local_frame(16, |env| -> Result<Vec<Option<SharedFile>>, crate::Error> {
+            let answer = env.call_method(activity, jni_str!("getContentResolver"), jni_sig!("()Landroid/content/ContentResolver;"), &[]);
+            let resolver = caught(env, answer)?.l()?;
+            let external = env.new_string("external")?;
+            let answer = env.call_static_method(
+                jni_str!("android/provider/MediaStore$Files"),
+                jni_str!("getContentUri"),
+                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                &[JValue::Object(&external)],
+            );
+            let collection = caught(env, answer)?.l()?;
+            let len = i32::try_from(LOOKUP_PROJECTION.len()).map_err(|_| crate::Error::Jni("projection too long".to_owned()))?;
+            let projection = env.new_object_array(len, jni_str!("java/lang/String"), jni::objects::JObject::null())?;
+            for (i, column) in LOOKUP_PROJECTION.iter().enumerate() {
+                let name = env.new_string(column)?;
+                projection.set_element(env, i, &name)?;
+            }
+            let selection = env.new_string(LOOKUP_SELECTION)?;
+            let mut out = Vec::with_capacity(files.len().min(MAX_SHARED));
+            for file in files.iter().take(MAX_SHARED) {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                let Some(args) = lookup_args(file, &volume) else {
+                    out.push(None);
+                    continue;
+                };
+                let found = env.with_local_frame(16, |env| -> Result<Option<SharedFile>, crate::Error> {
+                    let values = env.new_object_array(2, jni_str!("java/lang/String"), jni::objects::JObject::null())?;
+                    for (i, arg) in args.iter().enumerate() {
+                        let arg = env.new_string(arg)?;
+                        values.set_element(env, i, &arg)?;
+                    }
+                    let null = jni::objects::JObject::null();
+                    let answer = env.call_method(
+                        &resolver,
+                        jni_str!("query"),
+                        jni_sig!(
+                            "(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;"
+                        ),
+                        &[
+                            JValue::Object(&collection),
+                            JValue::Object(&projection),
+                            JValue::Object(&selection),
+                            JValue::Object(&values),
+                            JValue::Object(&null),
+                        ],
+                    );
+                    let cursor = caught(env, answer)?.l()?;
+                    if cursor.is_null() {
+                        return Ok(None);
+                    }
+                    let row = first_row(env, &cursor);
+                    let answer = env.call_method(&cursor, jni_str!("close"), jni_sig!("()V"), &[]);
+                    let _closed = caught(env, answer);
+                    row
+                })?;
+                out.push(found);
+            }
+            Ok(out)
+        })
+    })
+}
+
+/// The first row of a lookup cursor ([`LOOKUP_PROJECTION`]'s order), as a [`SharedFile`].
+#[cfg(target_os = "android")]
+fn first_row(env: &mut jni::Env<'_>, cursor: &jni::objects::JObject<'_>) -> Result<Option<SharedFile>, crate::Error> {
+    use crate::dialog::caught;
+    use jni::{JValue, jni_sig, jni_str};
+    let answer = env.call_method(cursor, jni_str!("moveToFirst"), jni_sig!("()Z"), &[]);
+    if !caught(env, answer)?.z()? {
+        return Ok(None);
+    }
+    let answer = env.call_method(cursor, jni_str!("getLong"), jni_sig!("(I)J"), &[JValue::Int(0)]);
+    let id = caught(env, answer)?.j()?;
+    let answer = env.call_method(cursor, jni_str!("getString"), jni_sig!("(I)Ljava/lang/String;"), &[JValue::Int(1)]);
+    let value = caught(env, answer)?.l()?;
+    let mime = string_of(env, value)?;
+    let answer = env.call_method(cursor, jni_str!("getInt"), jni_sig!("(I)I"), &[JValue::Int(2)]);
+    let media_type = caught(env, answer)?.i()?;
+    Ok(content_uri(id, media_type).map(|uri| SharedFile { uri, mime }))
 }
 
 #[cfg(test)]
@@ -336,5 +490,35 @@ mod tests {
     #[test]
     fn media_store_projection_names_the_columns() {
         assert_eq!(PROJECTION, ["_data", "relative_path", "_display_name", "bucket_display_name", "mime_type", "_size"]);
+    }
+
+    #[test]
+    fn uri_lookup_selection_for_path() {
+        let v = Path::new(VOLUME);
+        assert_eq!(LOOKUP_SELECTION, "relative_path=? AND _display_name=?");
+        assert_eq!(LOOKUP_PROJECTION, ["_id", "mime_type", "media_type"]);
+        assert_eq!(
+            lookup_args(Path::new("/storage/emulated/0/Pictures/LightCraft/IMG 1.jpg"), v),
+            Some(["Pictures/LightCraft/".to_owned(), "IMG 1.jpg".to_owned()])
+        );
+        assert_eq!(
+            lookup_args(Path::new("/storage/emulated/0/Documents/LightCraft/Trips/Contact Sheet.pdf"), v),
+            Some(["Documents/LightCraft/Trips/".to_owned(), "Contact Sheet.pdf".to_owned()])
+        );
+        // outside shared storage, at its root, or with `..`: not in MediaStore
+        for file in [
+            "/data/user/0/ai.storyteller.lightcraft/files/library/a.jpg",
+            "/storage/emulated/0/a.jpg",
+            "/storage/emulated/0/Pictures/../../1/a.jpg",
+            "/storage/emulated/10/Pictures/a.jpg",
+            "Pictures/a.jpg",
+        ] {
+            assert_eq!(lookup_args(Path::new(file), v), None, "{file}");
+        }
+        // the URI by media type
+        assert_eq!(content_uri(42, MEDIA_TYPE_IMAGE).as_deref(), Some("content://media/external/images/media/42"));
+        assert_eq!(content_uri(7, MEDIA_TYPE_VIDEO).as_deref(), Some("content://media/external/video/media/7"));
+        assert_eq!(content_uri(9, 0).as_deref(), Some("content://media/external/file/9"));
+        assert_eq!(content_uri(-1, MEDIA_TYPE_IMAGE), None);
     }
 }

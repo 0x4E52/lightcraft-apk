@@ -264,6 +264,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.captureTime", "Edit Capture Time…", None, "Photo"),
     ("photo.tagFromTracklog", "Auto-Tag from Tracklog…", None, "Photo"),
     ("app.exportPrevious", "Export with Previous", Some("Cmd+Alt+Shift+E"), "File"),
+    // {paths?, ids?}: export the selection where other apps see it, then the system's share sheet
+    // (Android); with paths, share those files
+    ("file.share", "Share…", None, "File"),
 ];
 
 fn panel(app: &mut LightcraftApp, ctx: &egui::Context, p: RightPanel, name: &str) {
@@ -1428,8 +1431,12 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "dialog.export" => {
             let prev = app.session.last_export.clone().unwrap_or_default();
             let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
-            let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| crate::control::export_dir_for(&app.services));
             let opts = lightcraft_engine::export::ExportOptions::from_json(&prev);
+            let dir = prev
+                .get("dir")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| crate::control::export_folder(&app.services, crate::ExportKind::of_format(opts.format)));
             // no previous export: 2048 px long edge; a previous full-size export: full size
             let full_size = opts.resize.is_none() && lightcraft_engine::export::ExportOptions::has_size_param(&prev);
             let resize = opts.resize.unwrap_or_default();
@@ -1782,6 +1789,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             import_into_album(app, p, r)
         }
         "file.importMediaLibrary" => crate::media_import::run(app, p),
+        "file.share" => crate::share::run(app, p),
         "file.addFolder" => {
             // a folder (searched recursively) into the import review
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2213,6 +2221,9 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         }
         "file.addFolder" => (app.services.pick_folder.is_some() || in_app) && !crate::lightroom_import::is_running(app),
         "file.importMediaLibrary" => app.services.import_media.is_some() && app.media_query.is_none(),
+        "file.share" => {
+            app.services.share.is_some() && app.share.is_none() && !app.share_after_export && app.export.is_none() && app.session.active().is_some()
+        }
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.quit" => !app.services.quit_disabled,
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),

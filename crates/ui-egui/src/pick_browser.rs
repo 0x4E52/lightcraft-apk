@@ -57,6 +57,8 @@ pub fn unavailable(services: &Services, command: &str) -> Option<&'static str> {
         return None;
     }
     match command {
+        // PDFs go to the host's folder for documents, where other apps open them (APK-27)
+        "app.print" | "dialog.print" | "app.contactSheet" | "dialog.contactSheet" if services.export_dir_for.is_some() => None,
         "file.exportPresets"
         | "file.exportMaskEffects"
         | "file.exportCurvePresets"
@@ -353,8 +355,16 @@ pub fn start(app: &mut LightcraftApp, request: PickRequest) -> Option<Receiver<V
         error: None,
         answer: tx,
     };
-    // with one place, it opens there
-    if let [(_, only)] = browser.roots.as_slice() {
+    // with one place, it opens there; a save opens in the host's folder for its kind of file
+    let save_dir = (browser.request.kind == PickKind::Save && app.services.export_dir_for.is_some())
+        .then(|| {
+            let ext = browser.request.filter.as_ref().and_then(|f| f.1.first().copied()).unwrap_or("");
+            PathBuf::from(crate::control::export_folder(&app.services, crate::ExportKind::of_extension(ext)))
+        })
+        .filter(|d| browser.roots.iter().any(|(_, r)| r == d));
+    if let Some(dir) = save_dir {
+        let _ = browser.open(&dir);
+    } else if let [(_, only)] = browser.roots.as_slice() {
         let only = only.clone();
         let _ = browser.open(&only);
     }

@@ -263,3 +263,49 @@ fn library_problem_choose_uses_in_app_picker() {
     assert!(h.app.library_problem.is_some(), "the window stays until the host's new session replaces this one");
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// With the host's export folders (APK-27) the PDF saves are served: Print to PDF and Contact
+/// Sheet PDF are on, and their Save As opens in the folder for documents rather than on the list
+/// of places; saves whose files have no export folder yet stay off with why.
+#[test]
+fn pdf_saves_open_in_documents_export_folder() {
+    let base = temp_dir("pdf-saves");
+    let (pictures, documents) = (base.join("Pictures/LightCraft"), base.join("Documents/LightCraft"));
+    std::fs::create_dir_all(&pictures).unwrap();
+    std::fs::create_dir_all(&documents).unwrap();
+    let mut places = roots(&base);
+    places.push(("Pictures".into(), pictures.clone()));
+    places.push(("Documents".into(), documents.clone()));
+    let (p, d) = (pictures.to_string_lossy().into_owned(), documents.to_string_lossy().into_owned());
+    let services = Services {
+        pick_roots: places,
+        export_dir_for: Some(Box::new(move |kind| match kind {
+            crate::ExportKind::Image => p.clone(),
+            crate::ExportKind::Document => d.clone(),
+        })),
+        ..Services::default()
+    };
+    let mut h = Headless::new(LightcraftApp::new(lightcraft_engine::Session::with_demo(), services), [1200.0, 800.0], 1.0);
+    h.settle(SETTLE);
+    assert!(h.app.session.active().is_some(), "the demo has a photo to print");
+    for id in ["app.print", "dialog.print", "app.contactSheet", "dialog.contactSheet"] {
+        assert!(pick_browser::unavailable(&h.app.services, id).is_none(), "{id}");
+        assert!(crate::menus::ui_enabled(&h.app, id), "{id}");
+    }
+    for id in ["file.exportPresets", "file.exportKeywords", "file.exportCurvePresets", "dialog.slideshowExport"] {
+        assert_eq!(pick_browser::unavailable(&h.app.services, id), Some(pick_browser::SAVE_REASON), "{id}");
+        assert_eq!(h.app.run(id, json!({})), Err(pick_browser::SAVE_REASON.to_string()), "{id}");
+    }
+    // without the export folders the PDFs stay off (APK-24)
+    let bare = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { pick_roots: roots(&base), ..Services::default() });
+    assert_eq!(pick_browser::unavailable(&bare.services, "app.contactSheet"), Some(pick_browser::SAVE_REASON));
+
+    assert_eq!(h.app.run("app.contactSheet", json!({})).unwrap(), Value::Null);
+    let b = h.app.pick_browser.as_ref().expect("the in-app chooser is up");
+    assert_eq!(b.dir(), Some(documents.canonicalize().unwrap().as_path()), "opens in Documents/LightCraft, not on the places");
+    pick_browser::cancel(&mut h.app);
+    assert_eq!(h.app.run("app.print", json!({})).unwrap(), Value::Null);
+    assert_eq!(h.app.pick_browser.as_ref().unwrap().dir(), Some(documents.canonicalize().unwrap().as_path()));
+    pick_browser::cancel(&mut h.app);
+    let _ = std::fs::remove_dir_all(&base);
+}

@@ -12,6 +12,10 @@
 //! files/inbox/     files shared to LightCraft, before they are imported (APK-24, APK-25)
 //! files/incoming/  received photos, until the import moved them into the library (APK-25)
 //! ```
+//!
+//! Exports go to shared storage instead, where other apps see them (APK-27,
+//! `lightcraft_android_sys::storage`): images to `Pictures/LightCraft/`, PDFs and everything else
+//! to `Documents/LightCraft/`, both created at start by `services::shared_storage`.
 
 use std::path::{Path, PathBuf};
 

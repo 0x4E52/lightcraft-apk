@@ -459,7 +459,9 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         restore_library: None,
         system_theme: appearance::service(),
         // the desktop's HOME-based defaults
-        default_export_dir: None,
+        export_dir_for: None,
+        media_only_dirs: Vec::new(),
+        share: None,
         local_roots: Vec::new(),
         library_notice: None,
         min_ram_for_sam: None,

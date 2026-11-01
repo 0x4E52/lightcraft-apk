@@ -545,11 +545,26 @@ pub fn default_export_dir() -> String {
         .unwrap_or_default()
 }
 
-/// The folder an export goes to when nothing else names one: the host's
-/// [`Services::default_export_dir`](crate::Services::default_export_dir) when it set a non-blank one,
+/// The folder an export of `kind` goes to when nothing else names one: the host's
+/// [`Services::export_dir_for`](crate::Services::export_dir_for) when it names a non-blank one,
 /// else [`default_export_dir`].
-pub fn export_dir_for(services: &crate::Services) -> String {
-    services.default_export_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()).map(str::to_string).unwrap_or_else(default_export_dir)
+pub fn export_folder(services: &crate::Services, kind: crate::ExportKind) -> String {
+    services.export_dir_for.as_ref().map(|f| f(kind)).map(|d| d.trim().to_string()).filter(|d| !d.is_empty()).unwrap_or_else(default_export_dir)
+}
+
+/// Why original files with XMP sidecars can't be exported into `dir` (`None`: they can): it is
+/// inside one of the host's folders for images alone
+/// ([`Services::media_only_dirs`](crate::Services::media_only_dirs); Android's Pictures and DCIM).
+pub fn sidecar_refusal(services: &crate::Services, dir: &str) -> Option<String> {
+    let dir = std::path::Path::new(dir.trim());
+    let blocked = services.media_only_dirs.iter().find(|m| dir.starts_with(m))?;
+    let name = blocked.file_name().map_or_else(|| blocked.display().to_string(), |n| n.to_string_lossy().into_owned());
+    let elsewhere = export_folder(services, crate::ExportKind::Document);
+    let instead =
+        if elsewhere.is_empty() || std::path::Path::new(&elsewhere).starts_with(blocked) { "a folder outside it".to_owned() } else { elsewhere };
+    Some(format!(
+        "Original files can't be exported into {name}: it takes only photos and videos, not their XMP sidecars. Export them to {instead}, or choose another format."
+    ))
 }
 
 /// Export the selected photos (UI command `app.export`). Params: see
@@ -589,12 +604,32 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
         None => {
             let last_dir =
                 app.session.last_export.as_ref().and_then(|l| l.get("dir")).and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty());
-            last_dir.map(str::to_string).unwrap_or_else(|| export_dir_for(&app.services))
+            last_dir.map(str::to_string).unwrap_or_else(|| export_folder(&app.services, crate::ExportKind::of_format(opts.format)))
         }
     };
     let own_folders = opts.destination_mode == lightcraft_engine::export::DestinationMode::SameAsOriginal;
     if dir.is_empty() && exact.is_none() && !own_folders {
         return Err(NO_EXPORT_FOLDER.into());
+    }
+    if opts.format == lightcraft_engine::export::ExportFormat::Original {
+        // the sidecar can't be placed there: refused before anything is written. "Same folder as
+        // original" writes next to each photo's own original (a photo added in place from DCIM).
+        let targets: Vec<String> = if own_folders {
+            ids.iter()
+                .filter_map(|id| app.session.catalog.photo(*id))
+                .filter_map(|p| match &p.source {
+                    lightcraft_engine::catalog::Source::File { path } => {
+                        std::path::Path::new(path).parent().map(|d| d.to_string_lossy().into_owned())
+                    }
+                    _ => None,
+                })
+                .collect()
+        } else {
+            vec![exact.as_deref().and_then(|e| std::path::Path::new(e).parent()).map_or_else(|| dir.clone(), |p| p.to_string_lossy().into_owned())]
+        };
+        if let Some(why) = targets.iter().find_map(|t| sidecar_refusal(&app.services, t)) {
+            return Err(why);
+        }
     }
     let to = Destination { dir: dir.clone(), exact };
     // Add to Apple Photos: refused here, before anything is written, when it can't be done

@@ -157,6 +157,8 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         photos: Some(photo_access(&app)),
         media_query: Some(media_query(&app)),
         open_link: Some(open_link(&app)),
+        shared: Some(shared_folders(&app)),
+        share: Some(share(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
     // what another app sent: `getIntent()` never changes while the Activity lives, so once
@@ -323,6 +325,33 @@ fn open_link(app: &android_activity::AndroidApp) -> crate::services::OpenLink {
             .ok_or_else(|| format!("Can't open {url}: only https links open in the browser"))?;
         lightcraft_android_sys::intents::start_view(&app, &spec).map_err(|e| lightcraft_android_sys::intents::open_link_message(&e))
     })
+}
+
+/// The device's shared folders (`Environment.getExternalStoragePublicDirectory`, right for
+/// secondary users and work profiles), or `/storage/emulated/0/…` when JNI fails.
+#[cfg(target_os = "android")]
+fn shared_folders(app: &android_activity::AndroidApp) -> lightcraft_android_sys::storage::Folders {
+    match lightcraft_android_sys::storage::query_folders(app) {
+        Ok(folders) => folders,
+        Err(e) => {
+            log::warn!("can't ask for the shared folders, using /storage/emulated/0: {e}");
+            lightcraft_android_sys::storage::Folders::fallback()
+        }
+    }
+}
+
+/// File ▸ Share: the MediaStore lookup and the chooser, both JNI on the share worker (attached by
+/// `with_activity` for each call).
+#[cfg(target_os = "android")]
+fn share(app: &android_activity::AndroidApp) -> lightcraft_ui_egui::share::ShareFn {
+    let (lookup_app, chooser_app) = (app.clone(), app.clone());
+    let lookup: crate::services::LookupFiles = std::sync::Arc::new(move |files: &[std::path::PathBuf], cancel: &std::sync::atomic::AtomicBool| {
+        lightcraft_android_sys::media_store::lookup_files(&lookup_app, files, cancel).map_err(|e| e.user_message("find the exported files"))
+    });
+    let chooser: crate::services::StartChooser = std::sync::Arc::new(move |spec: &lightcraft_android_sys::intents::ShareSpec| {
+        lightcraft_android_sys::intents::start_share(&chooser_app, spec, "Share").map_err(|e| lightcraft_android_sys::intents::share_message(&e))
+    });
+    crate::services::share_fn(lookup, chooser)
 }
 
 /// The content URIs of the intent that started the Activity ("Open with", a share), read on

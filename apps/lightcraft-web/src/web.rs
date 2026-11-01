@@ -240,7 +240,9 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         // the browser reports prefers-color-scheme to egui
         system_theme: None,
         // no folders in the browser: exports download, and Local is not offered
-        default_export_dir: None,
+        export_dir_for: None,
+        media_only_dirs: Vec::new(),
+        share: None,
         local_roots: Vec::new(),
         // no private folders to total, no Inbox and no volume to measure in the browser
         storage_roots: Vec::new(),

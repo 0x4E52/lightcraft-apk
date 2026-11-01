@@ -5,8 +5,13 @@
 //! loading frame, and Back and Quit: Back at the root moves the app to the background (`run` passes
 //! the JNI call in), and Quit is never offered, since the system ends the Activity and the process's
 //! one event loop can't start again. Commands that need a file dialog get the in-app chooser over
-//! [`pick_roots`] (APK-24); sharing and the clipboard come with their cards, each as a `Services`
-//! field.
+//! [`pick_roots`] (APK-24); the clipboard comes with its card as a `Services` field.
+//!
+//! Shared storage (APK-27, [`shared_storage`]): exported images go to `Pictures/LightCraft`, PDFs
+//! and everything else to `Documents/LightCraft` (both also in the in-app chooser), the Library
+//! sidebar's Local section lists DCIM, Pictures and Download, and no XMP sidecar is written into
+//! Pictures or DCIM. File ▸ Share ([`share_fn`]) looks each exported file up in MediaStore and
+//! starts the system's chooser.
 //!
 //! Access to the photo library ([`PhotoAccess`], APK-22) is the host's: the eframe app's `logic`
 //! feeds it the window's focus changes and a tick while a request is pending, and the commands
@@ -17,13 +22,18 @@
 //! default to Copy (`prefer_copy_import`): LightCraft can't write next to other apps' photos.
 
 use std::cell::{Cell, RefCell};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use lightcraft_android_sys::intents::ShareSpec;
+use lightcraft_android_sys::media_store::SharedFile;
 use lightcraft_android_sys::permissions::{Access, Event, Grants, PhotoPermission};
+use lightcraft_android_sys::storage::{Folders, Kind};
+
+use lightcraft_ui_egui::ExportKind;
 
 use lightcraft_ui_egui::Services;
 use lightcraft_ui_egui::media_import::{ImportMedia, MediaBucket};
@@ -74,6 +84,64 @@ pub fn pick_roots(inbox: Option<&Path>, library: &Path) -> Vec<(String, std::pat
     }
     roots.push(("Library".to_owned(), library.to_path_buf()));
     roots
+}
+
+/// Exports, the Local section and the in-app chooser over the device's shared folders (APK-27):
+/// `Services::export_dir_for` from `folders`, `local_roots` DCIM, Pictures and Download,
+/// `media_only_dirs` Pictures and DCIM, and the two export folders after the Inbox and the
+/// library in `pick_roots`. The export folders are created here (a few `mkdir`s through FUSE), so
+/// the chooser can list them before the first export; one that can't be created is logged and
+/// left out of the chooser (an export then says why it can't write there).
+pub fn shared_storage(services: &mut Services, folders: &Folders) {
+    let kinds = folders.clone();
+    services.export_dir_for = Some(Box::new(move |kind| kinds.export_dir(storage_kind(kind)).to_string_lossy().into_owned()));
+    services.local_roots = folders.local_roots();
+    services.media_only_dirs = folders.media_only();
+    for (label, dir) in folders.export_roots() {
+        match std::fs::create_dir_all(&dir) {
+            Ok(()) => services.pick_roots.push((label, dir)),
+            Err(e) => log::warn!("can't create the export folder {}: {e}", dir.display()),
+        }
+    }
+}
+
+/// The shared folder for an export of `kind`.
+pub fn storage_kind(kind: ExportKind) -> Kind {
+    match kind {
+        ExportKind::Image => Kind::Image,
+        ExportKind::Document => Kind::Document,
+    }
+}
+
+/// Looks exported files up in MediaStore on the calling worker (Android:
+/// `media_store::lookup_files`); `None` for a file MediaStore doesn't know. `Err` is the message.
+pub type LookupFiles = Arc<dyn Fn(&[PathBuf], &AtomicBool) -> Result<Vec<Option<SharedFile>>, String> + Send + Sync>;
+/// Starts the system's chooser for a share (Android: `intents::start_share` on the calling worker).
+pub type StartChooser = Arc<dyn Fn(&ShareSpec) -> Result<(), String> + Send + Sync>;
+
+/// File ▸ Share's service: every file looked up (`lookup`), then the chooser (`chooser`) for their
+/// content URIs. A file MediaStore doesn't know is an error naming it (nothing is shared then), and
+/// a cancel during the lookup shares nothing.
+pub fn share_fn(lookup: LookupFiles, chooser: StartChooser) -> lightcraft_ui_egui::share::ShareFn {
+    Arc::new(move |paths: &[String], cancel: &AtomicBool| {
+        let files: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        let found = lookup(&files, cancel)?;
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Sharing was cancelled".to_owned());
+        }
+        let mut shared = Vec::with_capacity(found.len());
+        for (i, path) in paths.iter().enumerate() {
+            let Some(Some(file)) = found.get(i) else {
+                let name = Path::new(path).file_name().map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+                return Err(format!(
+                    "Can't share {name}: it isn't in the device's shared storage. Export it to Pictures/LightCraft or Documents/LightCraft and share it from there."
+                ));
+            };
+            shared.push((file.uri.clone(), file.mime.clone()));
+        }
+        let spec = ShareSpec::new(&shared).ok_or_else(|| "Nothing to share".to_owned())?;
+        chooser(&spec)
+    })
 }
 
 /// Back's last step: moves the app to the background without waiting for it (Android: JNI
@@ -488,5 +556,64 @@ mod tests {
         // the low-space rule has a probe, and it answers for a real folder
         let free = s.free_space.as_ref().unwrap();
         assert!(free(&std::env::temp_dir()).is_some());
+    }
+
+    /// The shared folders reach the UI: images to Pictures/LightCraft and the rest to
+    /// Documents/LightCraft (both created and in the chooser after the Inbox and the library),
+    /// DCIM, Pictures and Download in the Local section, and no sidecars into Pictures or DCIM.
+    #[test]
+    fn shared_storage_sets_export_folders_and_roots() {
+        let dir = std::env::temp_dir().join(format!("lc-android-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let volume = dir.join("storage/emulated/0");
+        let folders = Folders::in_volume(&volume);
+        let mut s = base_services(None, None, None, &StorageDirs::default());
+        let library = dir.join("files/library");
+        s.pick_roots = pick_roots(None, &library);
+        shared_storage(&mut s, &folders);
+        let at = |kind| lightcraft_ui_egui::control::export_folder(&s, kind);
+        assert_eq!(PathBuf::from(at(ExportKind::Image)), volume.join("Pictures/LightCraft"));
+        assert_eq!(PathBuf::from(at(ExportKind::Document)), volume.join("Documents/LightCraft"));
+        assert!(volume.join("Pictures/LightCraft").is_dir() && volume.join("Documents/LightCraft").is_dir());
+        let labels: Vec<&str> = s.pick_roots.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, ["Library", "Pictures", "Documents"]);
+        assert_eq!(s.local_roots, folders.local_roots());
+        let refused = lightcraft_ui_egui::control::sidecar_refusal(&s, &at(ExportKind::Image)).unwrap();
+        assert!(refused.contains("Documents/LightCraft"), "{refused}");
+        assert!(lightcraft_ui_egui::control::sidecar_refusal(&s, &at(ExportKind::Document)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Share looks every file up, then starts the chooser with their URIs; a file MediaStore
+    /// doesn't know stops it with a message naming the file, and a cancel shares nothing.
+    #[test]
+    fn share_looks_up_files_then_starts_chooser() {
+        let started = Arc::new(Mutex::new(Vec::<ShareSpec>::new()));
+        let seen = started.clone();
+        let chooser: StartChooser = Arc::new(move |spec: &ShareSpec| {
+            seen.lock().unwrap().push(spec.clone());
+            Ok(())
+        });
+        let lookup: LookupFiles = Arc::new(|files: &[PathBuf], _: &AtomicBool| {
+            Ok(files
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    (!f.ends_with("missing.jpg"))
+                        .then(|| SharedFile { uri: format!("content://media/external/images/media/{i}"), mime: Some("image/jpeg".into()) })
+                })
+                .collect())
+        });
+        let share = share_fn(lookup, chooser);
+        let no = AtomicBool::new(false);
+        let pics = "/storage/emulated/0/Pictures/LightCraft";
+        share(&[format!("{pics}/a.jpg"), format!("{pics}/b.jpg")], &no).unwrap();
+        let spec = started.lock().unwrap()[0].clone();
+        assert_eq!(spec.action, lightcraft_android_sys::intents::ACTION_SEND_MULTIPLE);
+        assert_eq!(spec.uris, ["content://media/external/images/media/0", "content://media/external/images/media/1"]);
+        let e = share(&[format!("{pics}/a.jpg"), format!("{pics}/missing.jpg")], &no).unwrap_err();
+        assert!(e.starts_with("Can't share missing.jpg"), "{e}");
+        assert!(share(&[format!("{pics}/a.jpg")], &AtomicBool::new(true)).is_err(), "cancelled");
+        assert_eq!(started.lock().unwrap().len(), 1, "the chooser started once");
     }
 }

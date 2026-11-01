@@ -788,13 +788,18 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     let before = opts.format;
                     // "Rendered DNG" is a DNG option (below), not a format of its own in this list
                     let mut shown = if opts.format == F::RenderedDng { F::Dng } else { opts.format };
-                    choices(
-                        ui,
-                        "Format",
-                        "exportFormat",
-                        &[(F::Jpeg, "JPEG"), (F::Png, "PNG"), (F::Tiff, "TIFF"), (F::Psd, "PSD"), (F::Webp, "WebP"), (F::Avif, "AVIF"), (F::Jxl, "JPEG XL"), (F::Dng, "DNG"), (F::Original, "Original files")],
-                        &mut shown,
-                    );
+                    let mut formats = vec![(F::Jpeg, "JPEG"), (F::Png, "PNG"), (F::Tiff, "TIFF"), (F::Psd, "PSD"), (F::Webp, "WebP"), (F::Avif, "AVIF"), (F::Jxl, "JPEG XL"), (F::Dng, "DNG"), (F::Original, "Original files")];
+                    // a folder for images alone (Android's Pictures) can't take the XMP sidecars
+                    let no_sidecars =
+                        if opts.destination_mode == lightcraft_engine::export::DestinationMode::SpecificFolder { crate::control::sidecar_refusal(&app.services, dir) } else { None };
+                    if no_sidecars.is_some() && opts.format != F::Original {
+                        formats.retain(|(f, _)| *f != F::Original);
+                    }
+                    choices(ui, "Format", "exportFormat", &formats, &mut shown);
+                    if let Some(why) = &no_sidecars {
+                        let note = ui.label(egui::RichText::new(why.as_str()).color(if opts.format == F::Original { t.caution } else { t.text_dim }));
+                        crate::widgets::register(ui.ctx(), "label:exportNoSidecars", note.rect);
+                    }
                     if shown != opts.format && !(shown == F::Dng && opts.format == F::RenderedDng) {
                         opts.format = shown;
                     }
