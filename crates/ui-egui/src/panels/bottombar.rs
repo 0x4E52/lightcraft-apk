@@ -258,7 +258,10 @@ fn right_side(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, compact_zo
         }
     } else {
         // thumbnail size slider
-        let (r, resp) = child.allocate_exact_size(vec2(110.0, 20.0), Sense::click_and_drag());
+        let (r, resp) = child.allocate_exact_size(
+            vec2(110.0, if crate::theme::density(child.ctx()) { crate::theme::TOUCH_HIT } else { 20.0 }),
+            Sense::click_and_drag(),
+        );
         crate::widgets::announce(&resp, crate::i18n::tr("Thumbnail size"));
         register(child.ctx(), "slider:thumbSize", r);
         let p = child.painter();

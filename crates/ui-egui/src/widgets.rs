@@ -239,11 +239,16 @@ const THUMB_RING: f32 = 7.0;
 pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>) -> SliderOut {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
-    let (row, _) = ui.allocate_exact_size(vec2(w, t.slider_row_h), Sense::hover());
+    // Under touch density the name/value line and the track are each a 48 pt target (APK-32b)
+    let touch = crate::theme::density(ui.ctx());
+    let hit = crate::theme::TOUCH_HIT;
+    let row_h = if touch { 2.0 * hit + 4.0 } else { t.slider_row_h };
+    let (row, _) = ui.allocate_exact_size(vec2(w, row_h), Sense::hover());
     let pad_l = 24.0;
     let pad_r = 22.0;
-    let label_rect = Rect::from_min_size(pos2(row.left() + pad_l, row.top() + 4.0), vec2(w - pad_l - pad_r, 18.0));
-    let track_rect = Rect::from_min_max(pos2(row.left() + pad_l, row.top() + 22.0), pos2(row.right() - pad_r, row.top() + 40.0));
+    let (label_top, label_h, track_top, track_h) = if touch { (0.0, hit, hit + 4.0, hit) } else { (4.0, 18.0, 22.0, 18.0) };
+    let label_rect = Rect::from_min_size(pos2(row.left() + pad_l, row.top() + label_top), vec2(w - pad_l - pad_r, label_h));
+    let track_rect = Rect::from_min_size(pos2(row.left() + pad_l, row.top() + track_top), vec2(w - pad_l - pad_r, track_h));
     let id = ui.id().with(spec.id);
     let resp = ui.interact(track_rect.expand2(vec2(8.0, 2.0)), id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
     // A click selects the slider for arrow/wheel adjustments. Keep scroll-to-adjust
