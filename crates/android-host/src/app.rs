@@ -10,6 +10,11 @@
 //! which would cut an open slider drag into one undo step per frame), and `on_exit` saves
 //! everything, closes the library and waits for renders in flight. A slot that is already
 //! borrowed (a re-entrant callback) is logged and the call skipped, never a panic.
+//!
+//! Photo access (APK-22): `raw_input_hook` keeps the window's focus changes, and `logic` hands them
+//! to [`crate::services::PhotoAccess`] (which checks `checkSelfPermission` on each `Focused(true)`)
+//! followed by a tick, and while a request is pending asks for the next frame within 500 ms, so
+//! the answer is read back even when nothing else moves on screen.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,6 +23,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
+use lightcraft_android_sys::permissions::Event;
 use lightcraft_ui_egui::ControlRequest;
 
 use crate::insets::{Tracker, insets_px_to_points};
@@ -50,11 +56,27 @@ pub struct HostApp {
     last_flush: Instant,
     /// The window's safe-area and keyboard insets (APK-31).
     insets: Tracker,
+    /// Focus changes `raw_input_hook` saw, for the photo access in the next `logic`.
+    focus: Vec<bool>,
 }
 
 impl HostApp {
     pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen, control: Option<Receiver<ControlRequest>>, insets: Tracker) -> HostApp {
-        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets }
+        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets, focus: Vec::new() }
+    }
+
+    /// The focus changes since the last frame, then a tick, to the photo access; asks for a frame
+    /// again while its request is pending.
+    fn drive_photo_access(&mut self, ctx: &egui::Context) {
+        let focus = std::mem::take(&mut self.focus);
+        let Some(photos) = &self.start.photos else { return };
+        let now = Instant::now();
+        for focused in focus {
+            photos.on_event(Event::Focused(focused), now);
+        }
+        if let Some(after) = photos.on_event(Event::Tick, now) {
+            ctx.request_repaint_after(after);
+        }
     }
 
     /// A reopen request: the state over the library problem ends (its session is empty and in
@@ -78,6 +100,7 @@ impl eframe::App for HostApp {
         if let Some(after) = self.insets.tick(Instant::now(), ctx.egui_wants_keyboard_input()) {
             ctx.request_repaint_after(after);
         }
+        self.drive_photo_access(ctx);
         // (the slot's own handle: the borrow must not hold `self`, which the reopen changes)
         let shared = self.slot.clone();
         let Ok(mut slot) = shared.try_borrow_mut() else {
@@ -124,6 +147,11 @@ impl eframe::App for HostApp {
         raw.safe_area_insets = Some(egui::SafeAreaInsets(insets_px_to_points(self.insets.cached(), scale)));
         // Back is Escape: popups and text fields take it first, then the Back cascade
         crate::input::browser_back_to_escape(&mut raw.events);
+        // (taken by the `logic` of this frame)
+        self.focus.extend(raw.events.iter().filter_map(|e| match e {
+            egui::Event::WindowFocused(focused) => Some(*focused),
+            _ => None,
+        }));
         match self.slot.try_borrow_mut() {
             Ok(mut slot) => {
                 if let Some(state) = slot.as_mut() {

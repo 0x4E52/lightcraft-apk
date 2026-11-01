@@ -911,7 +911,8 @@ Each pushed card leaves a debug APK in the Android workflow's artifacts, so the 
 #### APK-22 Photo permissions
 - **Goal:** ask for and track access to the photo library without blocking the UI thread.
 - **Files:** new `crates/android-sys/src/permissions.rs`; changed `packaging/android/AndroidManifest.xml`,
-  `xtask/src/android/manifest.rs` (test), `crates/android-host/src/{services.rs,app.rs}`.
+  `xtask/src/android/manifest.rs` (test), `crates/android-host/src/{services.rs,app.rs}` (plus `run.rs`, which
+  builds the JNI calls, and `state.rs`, whose `Start::photos` carries the handle to APK-23).
 - **Steps:** 1. Manifest: `READ_MEDIA_IMAGES`, `READ_MEDIA_VISUAL_USER_SELECTED`, `READ_EXTERNAL_STORAGE`
   `android:maxSdkVersion="32"`, `ACCESS_MEDIA_LOCATION`. 2. Pure `permissions_for_sdk(sdk) -> &[&str]`, three cases:
   30–32 `[READ_EXTERNAL_STORAGE, ACCESS_MEDIA_LOCATION]`; 33 `[READ_MEDIA_IMAGES, ACCESS_MEDIA_LOCATION]`; 34+

@@ -154,6 +154,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         reopen: Some(reopen.clone()),
         move_to_back: Some(move_to_back(&app)),
         storage: crate::services::StorageDirs::from_internal(&files_dir, &paths.inbox),
+        photos: Some(photo_access(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
 
@@ -271,6 +272,27 @@ fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, Str
 fn activity_probe(app: &android_activity::AndroidApp) -> crate::lifecycle_core::Probe {
     let app = app.clone();
     Box::new(move || lightcraft_android_sys::activity::activity_state(&app).map_err(|e| e.to_string()))
+}
+
+/// Access to the photo library: `checkSelfPermission` on this (the UI) thread, `requestPermissions`
+/// posted to the Java main thread; the API level from `ro.build.version.sdk`.
+#[cfg(target_os = "android")]
+fn photo_access(app: &android_activity::AndroidApp) -> crate::services::PhotoAccess {
+    let sdk = android_activity::AndroidApp::sdk_version();
+    log::info!("Android API level {sdk}");
+    let (check_app, ask_app) = (app.clone(), app.clone());
+    crate::services::PhotoAccess::new(
+        sdk,
+        Box::new(move || lightcraft_android_sys::permissions::check_grants(&check_app, sdk).map_err(|e| e.to_string())),
+        Box::new(move |permissions| {
+            lightcraft_android_sys::permissions::request_permissions(&ask_app, permissions, |asked| {
+                if let Err(e) = asked {
+                    log::warn!("photo permission request: {e}");
+                }
+            });
+        }),
+        std::time::Instant::now(),
+    )
 }
 
 /// Back at the root: `Activity.moveTaskToBack(true)`, posted to the Java main thread and not

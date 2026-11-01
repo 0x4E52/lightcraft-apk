@@ -256,6 +256,27 @@ mod tests {
         assert!(permissions.iter().any(|p| p == "android.permission.INTERNET"), "{permissions:?}");
     }
 
+    /// The photo permissions APK-22 asks for at run time; the legacy storage permission only up to
+    /// API 32, where READ_MEDIA_IMAGES replaces it.
+    #[test]
+    fn manifest_declares_photo_permissions() {
+        let xml = fill(&template(), "1.2.3", Build::Release).unwrap();
+        let declared: Vec<Vec<(String, String)>> =
+            elements(&xml).into_iter().filter(|(e, _)| e == "uses-permission").map(|(_, attrs)| attrs).collect();
+        let find = |name: &str| {
+            declared
+                .iter()
+                .find(|attrs| attrs.iter().any(|(k, v)| k == "android:name" && v == &format!("android.permission.{name}")))
+                .unwrap_or_else(|| panic!("no uses-permission {name}"))
+        };
+        let max_sdk = |name: &str| find(name).iter().find(|(k, _)| k == "android:maxSdkVersion").map(|(_, v)| v.clone());
+        assert_eq!(max_sdk("READ_EXTERNAL_STORAGE").as_deref(), Some("32"));
+        for name in ["READ_MEDIA_IMAGES", "READ_MEDIA_VISUAL_USER_SELECTED", "ACCESS_MEDIA_LOCATION", "INTERNET"] {
+            assert_eq!(max_sdk(name), None, "{name} is needed on every version from minSdk");
+        }
+        assert_eq!(declared.len(), 5, "only the permissions the features need: {declared:?}");
+    }
+
     #[test]
     fn debug_build_uses_debug_suffix() {
         let debug = fill(&template(), "0.1.0", Build::Debug).unwrap();

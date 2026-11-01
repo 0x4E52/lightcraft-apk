@@ -74,6 +74,9 @@ pub struct Start {
     pub move_to_back: Option<crate::services::MoveToBack>,
     /// The private folders Settings ▸ Storage counts.
     pub storage: crate::services::StorageDirs,
+    /// Access to the photo library (`None` in tests: no device to ask). The eframe app drives it;
+    /// the commands that read photos ask it.
+    pub photos: Option<crate::services::PhotoAccess>,
 }
 
 impl Start {

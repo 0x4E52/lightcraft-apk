@@ -5,11 +5,19 @@
 //! loading frame, and Back and Quit: Back at the root moves the app to the background (`run` passes
 //! the JNI call in), and Quit is never offered, since the system ends the Activity and the process's
 //! one event loop can't start again. Pickers, sharing, the clipboard and MediaStore come with their
-//! cards (APK-22 on), each as a `Services` field.
+//! cards (APK-23 on), each as a `Services` field.
+//!
+//! Access to the photo library ([`PhotoAccess`], APK-22) is the host's: the eframe app's `logic`
+//! feeds it the window's focus changes and a tick while a request is pending, and the commands
+//! that read photos (the MediaStore import, APK-23) ask it before they start.
 
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use lightcraft_android_sys::permissions::{Access, Event, Grants, PhotoPermission};
 
 use lightcraft_ui_egui::Services;
 
@@ -45,6 +53,90 @@ impl StorageDirs {
 /// Back's last step: moves the app to the background without waiting for it (Android: JNI
 /// `Activity.moveTaskToBack`); `Err` when it could not even be asked.
 pub type MoveToBack = Rc<dyn Fn() -> Result<(), String>>;
+
+/// Asks `checkSelfPermission` for the photo permissions (Android: JNI on the UI thread); `Err`
+/// when the call failed, for the log.
+pub type CheckPhotos = Box<dyn Fn() -> Result<Grants, String>>;
+/// Posts `requestPermissions` for these permissions and returns at once (Android: JNI on the Java
+/// main thread, never awaited).
+pub type AskPhotos = Box<dyn Fn(&'static [&'static str])>;
+
+/// Access to the photo library: the [`PhotoPermission`] state machine with the device's check and
+/// request calls. Clones share it; it lives on the UI thread. A state that is in use (a re-entrant
+/// call) is logged and the call skipped, never a panic.
+#[derive(Clone)]
+pub struct PhotoAccess(Rc<PhotoAccessInner>);
+
+struct PhotoAccessInner {
+    state: RefCell<PhotoPermission>,
+    check: CheckPhotos,
+    ask: AskPhotos,
+    /// The last answer that came back, used when a check fails (so a failed call never reads as
+    /// "denied").
+    last: Cell<Grants>,
+}
+
+impl PhotoAccess {
+    /// Access on API level `sdk`, checked once now: the user may have allowed it in an earlier run.
+    pub fn new(sdk: i32, check: CheckPhotos, ask: AskPhotos, now: Instant) -> PhotoAccess {
+        let inner = PhotoAccessInner { state: RefCell::new(PhotoPermission::new(sdk)), check, ask, last: Cell::new(Grants::default()) };
+        let access = PhotoAccess(Rc::new(inner));
+        let grants = access.grants();
+        if let Ok(mut state) = access.0.state.try_borrow_mut() {
+            state.refresh(now, grants);
+        }
+        access
+    }
+
+    /// Where access stands now.
+    pub fn access(&self) -> Access {
+        self.0.state.try_borrow().map_or(Access::Pending, |state| state.access())
+    }
+
+    /// Asks for access unless every photo is readable already or a request is pending; answers
+    /// where access stands then (`Pending` once asked). The answer arrives through
+    /// [`Self::on_event`].
+    pub fn request(&self, now: Instant) -> Access {
+        let Ok(mut state) = self.0.state.try_borrow_mut() else {
+            log::warn!("photo permission request skipped: the state is in use");
+            return Access::Pending;
+        };
+        if let Some(permissions) = state.request(now) {
+            log::info!("asking for {permissions:?}");
+            (self.0.ask)(permissions);
+        }
+        state.access()
+    }
+
+    /// One event at `now` (a focus change, or the frame's tick); answers when to tick again while
+    /// a request is pending.
+    pub fn on_event(&self, event: Event, now: Instant) -> Option<Duration> {
+        let Ok(mut state) = self.0.state.try_borrow_mut() else {
+            log::warn!("photo permission event skipped: the state is in use");
+            return None;
+        };
+        let before = state.access();
+        let after = state.on_event(event, now, || self.grants());
+        if state.access() != before {
+            log::info!("photo access: {:?} → {:?}", before, state.access());
+        }
+        after
+    }
+
+    /// What the device answers now, or the last answer when asking failed.
+    fn grants(&self) -> Grants {
+        match (self.0.check)() {
+            Ok(grants) => {
+                self.0.last.set(grants);
+                grants
+            }
+            Err(e) => {
+                log::warn!("photo permission check failed: {e}");
+                self.0.last.get()
+            }
+        }
+    }
+}
 
 /// The services every Android start has; `log_file` is the log being written, if any, `reopen`
 /// where Try Again in the library problem window asks the host to open the library again, and
@@ -126,6 +218,45 @@ mod tests {
         assert_eq!(f(&mut session), Err("no Activity".to_owned()));
         assert_eq!(calls.get(), 2);
         assert!(s.quit_disabled);
+    }
+
+    /// The host's photo access: checked at the start, asked once per request, read back from
+    /// the focus and the ticks while pending; a failed check keeps the last answer.
+    #[test]
+    fn photo_access_reads_the_answer_back() {
+        use lightcraft_android_sys::permissions::{DENIED_MESSAGE, READ_MEDIA_IMAGES};
+        let t0 = Instant::now();
+        let device = Rc::new(RefCell::new(Ok::<Grants, String>(Grants::default())));
+        let asked = Rc::new(RefCell::new(Vec::<Vec<&str>>::new()));
+        let (answer, log) = (device.clone(), asked.clone());
+        let photos =
+            PhotoAccess::new(34, Box::new(move || answer.borrow().clone()), Box::new(move |perms| log.borrow_mut().push(perms.to_vec())), t0);
+        assert_eq!(photos.access(), Access::NotAsked);
+        assert_eq!(photos.request(t0), Access::Pending);
+        assert_eq!(photos.request(t0), Access::Pending, "a pending request is not asked twice");
+        assert_eq!(asked.borrow().len(), 1);
+        assert!(asked.borrow()[0].contains(&READ_MEDIA_IMAGES));
+        // the frame ticks while pending, then the dialog takes the focus
+        assert!(photos.on_event(Event::Tick, t0).is_some());
+        photos.on_event(Event::Focused(false), t0 + Duration::from_millis(100));
+        // a check that fails is no answer: still pending, never denied by it
+        *device.borrow_mut() = Err("no JVM".into());
+        assert!(photos.on_event(Event::Tick, t0 + Duration::from_millis(600)).is_some());
+        assert_eq!(photos.access(), Access::Pending);
+        // the user allows every photo; the focus comes back
+        *device.borrow_mut() = Ok(Grants { all: true, selected: false, location: true });
+        assert!(photos.on_event(Event::Focused(true), t0 + Duration::from_millis(900)).is_none());
+        assert_eq!(photos.access(), Access::Granted);
+        assert_eq!(photos.request(t0 + Duration::from_secs(2)), Access::Granted);
+        assert_eq!(asked.borrow().len(), 1, "granted: nothing more is asked");
+
+        // allowed in an earlier run: granted from the start; denied: the command's error says where
+        let granted = PhotoAccess::new(33, Box::new(|| Ok(Grants { all: true, ..Grants::default() })), Box::new(|_| {}), t0);
+        assert_eq!(granted.access(), Access::Granted);
+        let denied = PhotoAccess::new(33, Box::new(|| Ok(Grants::default())), Box::new(|_| {}), t0);
+        denied.request(t0);
+        denied.on_event(Event::Tick, t0 + Duration::from_secs(1));
+        assert_eq!(denied.access().error(), Some(DENIED_MESSAGE));
     }
 
     /// Settings ▸ Storage counts `files/` and the sibling `cache/`, so its total is App info's.

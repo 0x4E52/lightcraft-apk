@@ -288,3 +288,7 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   Storage within the system's rounding; Clear on the thumbnail cache, smart previews and Inbox frees the space App
   info then shows; a fresh install starts with the 512 MB thumbnail cache limit.
 - [ ] APK-54: with under 1 GB free (fill the phone), the thumbnail and denoise caches shrink to half their limits within a minute and a notice says so (probe: `statvfs` through `storage_report::free_bytes`).
+- [ ] APK-22 (asked from APK-23's import): on API 33+, allow all (the import lists every bucket), allow selected
+  photos on 34+ (`photo access: Pending → Partial` in logcat), deny (`→ Denied`), deny twice then import again (no
+  dialog appears; within a second the import's error says to allow it in Settings ▸ Apps ▸ LightCraft ▸
+  Permissions); allow it there and return: logcat shows `→ Granted`. On an API 30–32 device, allow and deny.
