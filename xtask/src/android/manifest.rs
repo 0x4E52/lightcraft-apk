@@ -277,6 +277,65 @@ mod tests {
         assert_eq!(declared.len(), 5, "only the permissions the features need: {declared:?}");
     }
 
+    /// "Open with" (VIEW) takes photos and raws; SEND and SEND_MULTIPLE also the non-image files
+    /// the Inbox is for (APK-25). Each filter has category DEFAULT, without which an implicit
+    /// intent never matches.
+    #[test]
+    fn manifest_declares_share_filters() {
+        let xml = fill(&template(), "1.2.3", Build::Release).unwrap();
+        let mut filters = Vec::new();
+        let mut rest = xml.as_str();
+        while let Some(start) = rest.find("<intent-filter>") {
+            let end = rest[start..].find("</intent-filter>").expect("filter is closed");
+            filters.push(elements(&rest[start..start + end]));
+            rest = &rest[start + end..];
+        }
+        let values = |filter: &[(String, Vec<(String, String)>)], element: &str, name: &str| -> Vec<String> {
+            filter
+                .iter()
+                .filter(|(e, _)| e == element)
+                .filter_map(|(_, attrs)| attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone()))
+                .collect()
+        };
+        let find = |action: &str| {
+            let action = format!("android.intent.action.{action}");
+            let found: Vec<_> = filters.iter().filter(|f| values(f, "action", "android:name").contains(&action)).collect();
+            assert_eq!(found.len(), 1, "one filter for {action}");
+            found[0].clone()
+        };
+        let photos = [
+            "image/*",
+            "image/x-adobe-dng",
+            "image/x-canon-cr2",
+            "image/x-canon-cr3",
+            "image/x-nikon-nef",
+            "image/x-sony-arw",
+            "application/octet-stream",
+        ];
+        let inbox = ["application/zip", "application/xml", "application/rdf+xml", "application/gpx+xml", "text/plain"];
+        for action in ["VIEW", "SEND", "SEND_MULTIPLE"] {
+            let filter = find(action);
+            assert_eq!(values(&filter, "action", "android:name").len(), 1, "{action} has a filter of its own");
+            assert_eq!(values(&filter, "category", "android:name"), ["android.intent.category.DEFAULT"], "{action}");
+            let types = values(&filter, "data", "android:mimeType");
+            for t in photos {
+                assert!(types.iter().any(|have| have == t), "{action} lacks {t}");
+            }
+            let non_image: Vec<&String> = types.iter().filter(|t| inbox.contains(&t.as_str())).collect();
+            if action == "VIEW" {
+                assert!(non_image.is_empty(), "VIEW is for photos: {non_image:?}");
+                assert_eq!(types.len(), photos.len());
+            } else {
+                assert_eq!(non_image.len(), inbox.len(), "{action}: {types:?}");
+                assert_eq!(types.len(), photos.len() + inbox.len());
+            }
+        }
+        // the launcher's filter is unchanged, and nothing else is declared
+        let main = find("MAIN");
+        assert_eq!(values(&main, "category", "android:name"), ["android.intent.category.LAUNCHER"]);
+        assert_eq!(filters.len(), 4);
+    }
+
     #[test]
     fn debug_build_uses_debug_suffix() {
         let debug = fill(&template(), "0.1.0", Build::Debug).unwrap();

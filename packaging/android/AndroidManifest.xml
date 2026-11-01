@@ -55,6 +55,53 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- "Open with LightCraft" (APK-25, crates/android-host/src/incoming.rs): photos and raws; the URI is the data. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="image/x-adobe-dng" />
+                <data android:mimeType="image/x-canon-cr2" />
+                <data android:mimeType="image/x-canon-cr3" />
+                <data android:mimeType="image/x-nikon-nef" />
+                <data android:mimeType="image/x-sony-arw" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <!-- Share one file: photos are imported; presets (zip, xmp), track logs (gpx), keyword lists (text) and
+                 other files land in the Inbox. The URI is EXTRA_STREAM. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="image/x-adobe-dng" />
+                <data android:mimeType="image/x-canon-cr2" />
+                <data android:mimeType="image/x-canon-cr3" />
+                <data android:mimeType="image/x-nikon-nef" />
+                <data android:mimeType="image/x-sony-arw" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/rdf+xml" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Share several: as SEND, the URIs are the EXTRA_STREAM list. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="image/x-adobe-dng" />
+                <data android:mimeType="image/x-canon-cr2" />
+                <data android:mimeType="image/x-canon-cr3" />
+                <data android:mimeType="image/x-nikon-nef" />
+                <data android:mimeType="image/x-sony-arw" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/rdf+xml" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

@@ -153,16 +153,18 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         library: paths.library.clone(),
         reopen: Some(reopen.clone()),
         move_to_back: Some(move_to_back(&app)),
-        storage: crate::services::StorageDirs::from_internal(&files_dir, &paths.inbox),
+        storage: crate::services::StorageDirs::from_internal(&files_dir, &paths.inbox, &paths.incoming),
         photos: Some(photo_access(&app)),
         media_query: Some(media_query(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
+    // what another app sent: `getIntent()` never changes while the Activity lives, so once
+    let shares = received_shares(&app);
 
     // the renderer's start: a panic is caught here, so the dialog below can still say why
     let app_created = std::rc::Rc::new(std::cell::Cell::new(false));
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_eframe(&app, Eframe { renderer, files: files.clone(), app_created: app_created.clone(), loader, start, reopen, control })
+        run_eframe(&app, Eframe { renderer, files: files.clone(), app_created: app_created.clone(), loader, start, reopen, control, shares })
     }));
     let app_created = app_created.get();
     let (result, reason) = match ran {
@@ -208,6 +210,8 @@ struct Eframe {
     reopen: crate::state::Reopen,
     /// The debug control server to start with the window (`None`: off).
     control: Option<crate::control::Server>,
+    /// The files other apps sent at this start.
+    shares: crate::incoming::Shares,
 }
 
 /// Builds the event loop, starts eframe on `renderer` (its marker armed first) and runs the loop
@@ -215,7 +219,7 @@ struct Eframe {
 /// Activity went away, `Ok(false)` for any other end, `Err` when the event loop failed.
 #[cfg(target_os = "android")]
 fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, String> {
-    let Eframe { renderer, files, app_created, loader, start, reopen, control } = e;
+    let Eframe { renderer, files, app_created, loader, start, reopen, control, shares } = e;
     // our own event loop, so the lifecycle wrapper sees every callback (eframe's `run_native`
     // would build and run it out of reach)
     use winit::platform::android::EventLoopBuilderExtAndroid as _;
@@ -258,7 +262,7 @@ fn run_eframe(app: &android_activity::AndroidApp, e: Eframe) -> Result<bool, Str
             cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
             let control_rx =
                 control.map(|server| lightcraft_ui_egui::host::control_server::start(server.port, cc.egui_ctx.clone(), Some(server.token)));
-            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen, control_rx, insets)))
+            Ok(Box::new(crate::app::HostApp::new(app_slot, loader, start, reopen, control_rx, insets, shares)))
         }),
         &event_loop,
     );
@@ -306,6 +310,32 @@ fn media_query(app: &android_activity::AndroidApp) -> crate::services::MediaQuer
         log::info!("photo library: {} folders", buckets.len());
         Ok(crate::services::buckets_for_ui(buckets))
     })
+}
+
+/// The content URIs of the intent that started the Activity ("Open with", a share), read on
+/// android_main; they are copied on a worker once the library is open (`incoming.rs`), the
+/// worker attached to the JVM by `content::with_content`.
+#[cfg(target_os = "android")]
+fn received_shares(app: &android_activity::AndroidApp) -> crate::incoming::Shares {
+    let spec = match lightcraft_android_sys::intents::read_intent(app) {
+        Ok(spec) => spec,
+        Err(e) => {
+            log::warn!("can't read the starting intent: {e}");
+            return crate::incoming::Shares::none();
+        }
+    };
+    let uris = spec.received();
+    log::info!("started by {:?} ({:?}): {} files to receive", spec.action, spec.mime, uris.len());
+    if uris.is_empty() {
+        return crate::incoming::Shares::none();
+    }
+    let app = app.clone();
+    crate::incoming::Shares::new(
+        uris,
+        Some(Box::new(move |job| {
+            lightcraft_android_sys::content::with_content(&app, |reader| job(reader)).map_err(|e| e.user_message("receive the shared files"))
+        })),
+    )
 }
 
 /// Back at the root: `Activity.moveTaskToBack(true)`, posted to the Java main thread and not

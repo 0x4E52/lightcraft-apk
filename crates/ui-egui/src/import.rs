@@ -281,6 +281,11 @@ impl ImportTask {
         ImportTask { total: paths.len(), queue: paths, params, undo0, browse, ..Default::default() }
     }
 
+    /// The `library.import` parameters it runs with (without `paths`).
+    pub fn params(&self) -> &Value {
+        &self.params
+    }
+
     /// An Auto Import (see [`ImportTask::auto`]).
     pub fn auto(mut self) -> Self {
         self.auto = true;
@@ -714,13 +719,19 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
 
 /// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
 pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String> {
+    start_paths_with(app, paths, json!({"mode": "add"}))
+}
+
+/// [`start_paths`] with `library.import`'s other parameters (`paths` is filled in), e.g.
+/// `{"mode": "move"}` for files a host received into a folder of its own (Android shares).
+pub fn start_paths_with(app: &mut LightcraftApp, paths: Vec<String>, params: Value) -> Result<Value, String> {
     busy_synchronizing(app)?;
     if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
         return Err("an import is running".into());
     }
     let undo0 = app.session.undo.len();
     let total = paths.len();
-    app.import = Some(ImportTask::new(paths, json!({"mode": "add"}), undo0, false));
+    app.import = Some(ImportTask::new(paths, params, undo0, false));
     Ok(json!({"importing": total}))
 }
 

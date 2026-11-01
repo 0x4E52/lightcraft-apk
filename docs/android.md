@@ -220,6 +220,34 @@ Limitations:
 - Denied for good: the import says "allow it in Settings ▸ Apps ▸ LightCraft ▸ Permissions"; after allowing it
   there, choose Import from Photo Library again.
 
+## Open with LightCraft and sharing
+
+LightCraft is offered in "Open with" for photos and raws (JPEG, PNG, HEIC, DNG, CR2, CR3, NEF, ARW, other raws sent
+as `application/octet-stream`) and in the share sheet for one or several files, which may also be presets (`.xmp`,
+`.zip`), track logs (`.gpx`), keyword lists (`.txt`) and other files (`packaging/android/AndroidManifest.xml`). Once
+the library is open, LightCraft copies what it was sent in the background, with "Receiving N files" in the activity
+stack (cancellable), because the other app's permission to read the file ends with LightCraft's window
+(`crates/android-host/src/incoming.rs`):
+
+- **Photos and raws** are copied into the staging folder `files/incoming/` (next to the library, not inside it) and
+  then imported with Move: they end up in the library's own `Originals/` folder (so editing metadata, renaming and
+  deleting work), and the received copy is removed once the import verified it. A duplicate stays out of the
+  library, and the staging folder is emptied at the next start (never a file the catalog uses).
+- **Everything else** goes to the **Inbox** (next section): a notice names the files; open them with the command
+  that uses them (Import Profiles & Presets…, Import Keywords…, Auto-Tag from Tracklog…, a face model) and choose
+  Inbox in its chooser.
+- The sender's file name is kept, made safe: only the name (no folders), no hidden or control characters, at most
+  120 bytes, an extension from the file's type when it has none, and `-1`, `-2`… when the name is taken. Nothing in
+  the Inbox is overwritten.
+- A file that can't be received is named in the notices with why: access withdrawn, the file gone, reading stopped
+  part way, the device full, larger than 2 GB, or cancelled. Its partial copy is removed.
+
+Limitation: **a second "Open with" or share while LightCraft is already running only brings LightCraft to the
+front; the file is not received.** NativeActivity (LightCraft has no Java code) does not get `onNewIntent`, and the
+intent that started the window never changes while it lives. Leave LightCraft (Back to the background, then remove
+it from the recent apps) and share again. Starting LightCraft again from the recent apps does not receive the same
+files twice.
+
 ## Choosing files: the Inbox
 
 Android has no file dialog LightCraft can open without Java, and under scoped storage the photo permission opens
@@ -333,6 +361,10 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] Renderer failure (APK-19, needs APK-20): make the first renderer fail (an emulator image without Vulkan with
   `debug.lightcraft.gpu_backend vulkan`), the failure dialog shows, dismiss it, tap the icon **once**: the app opens on
   GL, with the notice that the window could not start with its Vulkan renderer last time.
+- [ ] Shares (APK-25): share from Google Photos (one photo, then several), from Files (Downloads) and from an app
+  that uses a FileProvider; "Open with" a DNG from Files: all are imported into `Originals/`. Share a 1 GB file: the
+  UI stays responsive and the activity row "Receiving 1 file" shows it until it is done. Share a `.xmp` preset: a
+  notice says it is in the Inbox. Share again while LightCraft runs: it only comes to the front.
 - [ ] File pickers (APK-24, after APK-25): share a `.xmp` preset from Files to LightCraft, then File ▸ Import
   Profiles & Presets… ▸ Inbox imports it; the chooser's rows are finger-sized and Back closes it.
 - [ ] Debug control server (APK-21): the recipe in "Debug control server" returns a screenshot; the same request

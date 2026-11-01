@@ -10,6 +10,7 @@
 //! files/library/   the library (catalog, previews, Copy-imported originals)
 //! files/logs/      lightcraft.log and the two before it
 //! files/inbox/     files shared to LightCraft, before they are imported (APK-24, APK-25)
+//! files/incoming/  received photos, until the import moved them into the library (APK-25)
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -25,6 +26,9 @@ pub struct Paths {
     pub logs: PathBuf,
     /// Shared files waiting to be imported.
     pub inbox: PathBuf,
+    /// Received photos until the import moved them into the library's `Originals/` (outside the
+    /// library, so the importer's Move moves them; created when something is received).
+    pub incoming: PathBuf,
 }
 
 /// The name of the panic log inside the settings folder (`engine::guard::install_hook`).
@@ -34,7 +38,13 @@ impl Paths {
     /// The folders inside `files` (the internal storage folder, `…/files`). Pure: nothing is
     /// created.
     pub fn from_internal(files: &Path) -> Paths {
-        Paths { config: files.join("config"), library: files.join("library"), logs: files.join("logs"), inbox: files.join("inbox") }
+        Paths {
+            config: files.join("config"),
+            library: files.join("library"),
+            logs: files.join("logs"),
+            inbox: files.join("inbox"),
+            incoming: files.join(crate::incoming::INCOMING_DIR),
+        }
     }
 
     /// The panic log, `<config>/panic.log`.
@@ -74,9 +84,11 @@ mod tests {
         assert_eq!(p.library, files.join("library"));
         assert_eq!(p.logs, files.join("logs"));
         assert_eq!(p.inbox, files.join("inbox"));
+        assert_eq!(p.incoming, files.join("incoming"));
+        assert!(!p.incoming.starts_with(&p.library), "staged photos are outside the library, so Move moves them");
         assert_eq!(p.panic_log(), files.join("config").join("panic.log"));
         // what `run-as <id>` sees: every folder under files/
-        for dir in [&p.config, &p.library, &p.logs, &p.inbox] {
+        for dir in [&p.config, &p.library, &p.logs, &p.inbox, &p.incoming] {
             assert!(dir.strip_prefix(files.parent().unwrap()).unwrap().starts_with("files"), "{}", dir.display());
         }
         assert_eq!(internal_dir(Some(files.to_path_buf())), Ok(files.to_path_buf()));

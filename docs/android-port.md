@@ -1018,7 +1018,7 @@ Each pushed card leaves a debug APK in the Android workflow's artifacts, so the 
   unsafe, **on a worker thread** (`incoming.rs`): it attaches with `JavaVM::singleton()?.attach_current_thread` and
   holds `session.activity.start("import", "Receiving N files", Cancel::Flag(..))` for the whole job. Per URI: query
   `OpenableColumns.DISPLAY_NAME` / `SIZE` and the MIME type; a pure `route_received(name, mime) -> Route { Import,
-  Inbox }` (photo or raw extension → Import, else Inbox); target `<library>/.incoming/<name>` or `<config>/inbox/<name>`
+  Inbox }` (photo or raw extension → Import, else Inbox); target `files/incoming/<name>` or `files/inbox/<name>`
   where a pure `sanitize_display_name` keeps only the final component, drops `/`, `\`, NUL and leading dots, caps it at
   120 bytes on a char boundary, adds an extension from the MIME type when missing and de-duplicates; refuse files over
   2 GiB (by `SIZE`, and again while copying). `ContentResolver.openInputStream(uri)` → loop `InputStream.read(byte[1
@@ -1026,7 +1026,16 @@ Each pushed card leaves a debug APK in the Android workflow's artifacts, so the 
   checks the cancel flag between chunks → `close()`, each step inside `with_local_frame`, Java exceptions mapped by
   APK-10's `user_message`. The worker hands the finished photo paths to the existing Copy import (the catalog stores
   the path under `Originals/`) through a channel polled in app.rs `logic`; Inbox files are only copied. `incoming.rs`
-  takes the content reader as a trait, so the job is tested on x86_64 with a fake. 4. Errors (revoked, unreadable,
+  takes the content reader as a trait, so the job is tested on x86_64 with a fake. (Card fix, as built:
+  `route_received` takes the importer's extensions, `lightcraft_engine::import::EXTENSIONS`, since android-sys is L0
+  and can't name them; the photos go to the import as **Move**, which copies into `Originals/` like Copy and then
+  removes the received file from the staging folder once verified, so a share doesn't take its space twice. The
+  staging folder is `files/incoming/`, **outside** the library: the importer adds a file already inside the library
+  where it is (no copy, no move), so a staging folder there would leave the catalog pointing into it. It is emptied
+  when a job starts and at a start without a share, never removing a file a catalog record points at; the test runs
+  the import to the end and checks the photo is under `Originals/`. A host without the Inbox or the staging folder
+  turns the files for it into per-file errors. A start from Recents (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`) receives nothing: it
+  carries the intent handled before.) 4. Errors (revoked, unreadable,
   half-read, too big, cancelled) become per-file import errors; partial files are removed. Limitation (decision 2):
   a second "Open with" / share while LightCraft runs only brings it to the front; the file is not received (no
   `onNewIntent` without Java). `docs/android.md` says so and explains the Inbox (APK-24).

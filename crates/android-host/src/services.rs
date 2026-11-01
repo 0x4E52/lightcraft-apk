@@ -46,14 +46,16 @@ pub struct StorageDirs {
     pub roots: Vec<std::path::PathBuf>,
     /// Shared files waiting to be imported.
     pub inbox: Option<std::path::PathBuf>,
+    /// Received photos waiting for the import to move them into the library (`files/incoming`).
+    pub incoming: Option<std::path::PathBuf>,
 }
 
 impl StorageDirs {
     /// From the internal storage folder (`…/files`): it and its sibling `cache`.
-    pub fn from_internal(files: &Path, inbox: &Path) -> StorageDirs {
+    pub fn from_internal(files: &Path, inbox: &Path, incoming: &Path) -> StorageDirs {
         let mut roots = vec![files.to_path_buf()];
         roots.extend(files.parent().map(|app| app.join("cache")));
-        StorageDirs { roots, inbox: Some(inbox.to_path_buf()) }
+        StorageDirs { roots, inbox: Some(inbox.to_path_buf()), incoming: Some(incoming.to_path_buf()) }
     }
 }
 
@@ -443,7 +445,12 @@ mod tests {
     /// Settings ▸ Storage counts `files/` and the sibling `cache/`, so its total is App info's.
     #[test]
     fn storage_counts_files_and_cache() {
-        let dirs = StorageDirs::from_internal(Path::new("/data/user/0/x/files"), Path::new("/data/user/0/x/files/inbox"));
+        let dirs = StorageDirs::from_internal(
+            Path::new("/data/user/0/x/files"),
+            Path::new("/data/user/0/x/files/inbox"),
+            Path::new("/data/user/0/x/files/incoming"),
+        );
+        assert_eq!(dirs.incoming.as_deref(), Some(Path::new("/data/user/0/x/files/incoming")));
         assert_eq!(dirs.roots, [Path::new("/data/user/0/x/files"), Path::new("/data/user/0/x/cache")]);
         let s = base_services(None, None, None, &dirs);
         assert_eq!(s.storage_roots, dirs.roots);

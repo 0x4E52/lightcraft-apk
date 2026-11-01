@@ -1,6 +1,6 @@
 # Android: beyond Lightroom (task cards APK-50 …)
 
-*Last updated: 2026-10-31.* Revision history at the end.
+*Last updated: 2026-11-01.* Revision history at the end.
 
 Task cards that answer what people criticise in Lightroom mobile and its rivals
 ([`android-competitive.md`](android-competitive.md)). They follow the port plan's rules and card format
@@ -311,7 +311,7 @@ as stated):
   `PendingIntent.getBroadcast` on an empty package-local intent (no receiver class), then `hasPermission` polled on
   `Focused(true)` and every 500 ms as APK-22 does. 2. `android.mtp.MtpDevice.open(UsbDeviceConnection)`,
   `getStorageIds`, `getObjectHandles`, `getObjectInfo` (name, size, date) for the review list, one local frame per
-  object. 3. Import copies with `MtpDevice.importFile(handle, path)` into `<library>/.incoming/` on an attached worker
+  object. 3. Import copies with `MtpDevice.importFile(handle, path)` into the staging folder `files/incoming/` (outside the library: the importer adds a file inside it where it is) on an attached worker
   (`TaskGuard`, `Cancel::Flag` checked between files), then the existing Copy import with its content-hash check;
   duplicates skipped by name + size + date before copying. 4. Unplugging mid-import gives per-file errors.
 - **Tests:** `object_rows_map_to_review_items`, `duplicate_objects_skipped`, `permission_poll_states` (pure);
@@ -448,3 +448,5 @@ Phase 3.
   checklist; 15 cards (APK-50 … 64), folds into APK-23, 25, 27, 41 and 43, proposed decisions 12 and 13.
 - 2026-10-31: decision 12 settled by the maintainer (no all-files access); decision 2 (no Java in release 1) applies to
   APK-51 and APK-52.
+- 2026-11-01 (APK-25): the MTP card stages imports in `files/incoming/`, outside the library (the importer adds a
+  file inside the library where it is).

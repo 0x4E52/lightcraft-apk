@@ -10,8 +10,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod activity;
+pub mod content;
 pub mod dialog;
 pub mod insets;
+pub mod intents;
 pub mod jni_env;
 pub mod media_store;
 pub mod permissions;

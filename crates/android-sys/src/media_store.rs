@@ -152,16 +152,8 @@ fn primary_volume(env: &mut jni::Env<'_>) -> Result<PathBuf, crate::Error> {
     })
 }
 
-/// A Java string as Rust text (`None` for null).
 #[cfg(target_os = "android")]
-fn string_of(env: &mut jni::Env<'_>, obj: jni::objects::JObject<'_>) -> Result<Option<String>, crate::Error> {
-    use jni::refs::Reference;
-    if obj.is_null() {
-        return Ok(None);
-    }
-    let text = env.cast_local::<jni::objects::JString>(obj)?;
-    Ok(Some(text.try_to_string(env)?))
-}
+use crate::content::string_of;
 
 /// Every row of the images query, the cursor closed afterwards whatever happened.
 #[cfg(target_os = "android")]

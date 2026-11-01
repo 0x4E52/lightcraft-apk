@@ -24,8 +24,7 @@ lightcraft-raster = { workspace = true }
 # egui's input types for the pure input rewrites (the same crate eframe re-exports on Android)
 egui = { workspace = true }
 log = { workspace = true }
-
-[dev-dependencies]
+# the import parameters handed to the UI's import (received photos are moved into the library)
 serde_json = { workspace = true }
 
 # Android only: android-activity has a `compile_error!` on every other OS, and winit without

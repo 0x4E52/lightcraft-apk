@@ -15,6 +15,9 @@
 //! to [`crate::services::PhotoAccess`] (which checks `checkSelfPermission` on each `Focused(true)`)
 //! followed by a tick, and while a request is pending asks for the next frame within 500 ms, so
 //! the answer is read back even when nothing else moves on screen.
+//!
+//! Shares (APK-25): the files LightCraft was sent at this start ([`Shares`]) are ticked in
+//! `logic` once the library is open, and asked for frames until they are received and imported.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -26,6 +29,7 @@ use eframe::egui;
 use lightcraft_android_sys::permissions::Event;
 use lightcraft_ui_egui::ControlRequest;
 
+use crate::incoming::Shares;
 use crate::insets::{Tracker, insets_px_to_points};
 use crate::lifecycle_core::Host;
 use crate::loader::Loader;
@@ -38,6 +42,8 @@ pub type Slot = Rc<RefCell<Option<HostState>>>;
 pub const FLUSH_EVERY: Duration = Duration::from_secs(30);
 /// How long quitting waits for renders in flight (the desktop's `EXIT_WAIT`).
 pub const EXIT_WAIT: Duration = Duration::from_secs(2);
+/// How often a share being received is looked at.
+const SHARES_POLL: Duration = Duration::from_millis(100);
 /// How often the loading frame asks the loader.
 const LOADING_POLL: Duration = Duration::from_millis(100);
 
@@ -58,11 +64,21 @@ pub struct HostApp {
     insets: Tracker,
     /// Focus changes `raw_input_hook` saw, for the photo access in the next `logic`.
     focus: Vec<bool>,
+    /// What other apps sent at this start (kept here, so a reopened library still gets it).
+    shares: Shares,
 }
 
 impl HostApp {
-    pub fn new(slot: Slot, loader: Loader, start: Start, reopen: Reopen, control: Option<Receiver<ControlRequest>>, insets: Tracker) -> HostApp {
-        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets, focus: Vec::new() }
+    pub fn new(
+        slot: Slot,
+        loader: Loader,
+        start: Start,
+        reopen: Reopen,
+        control: Option<Receiver<ControlRequest>>,
+        insets: Tracker,
+        shares: Shares,
+    ) -> HostApp {
+        HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets, focus: Vec::new(), shares }
     }
 
     /// The focus changes since the last frame, then a tick, to the photo access; asks for a frame
@@ -129,6 +145,12 @@ impl eframe::App for HostApp {
             self.last_flush = Instant::now();
         }
         let Some(state) = slot.as_mut() else { return };
+        // (a folder the host lacks makes its files per-file errors: a share is never dropped silently)
+        let dirs = crate::incoming::Dirs { incoming: self.start.storage.incoming.clone(), inbox: self.start.storage.inbox.clone() };
+        self.shares.tick(&mut state.app, &dirs);
+        if self.shares.busy() {
+            ctx.request_repaint_after(SHARES_POLL);
+        }
         state.app.logic(ctx);
         state.prefs.tick(&mut state.app, ctx);
         if self.last_flush.elapsed() >= FLUSH_EVERY {
