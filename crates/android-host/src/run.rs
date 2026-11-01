@@ -107,6 +107,10 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
     if let Err(in_use) = lightcraft_engine::memory::set_default_budget(crate::memory::budget_for(&meminfo)) {
         log::warn!("automatic memory budget already set to {} MiB", in_use >> 20);
     }
+    // a phone's thumbnail cache starts at 512 MB
+    if let Err(in_use) = lightcraft_engine::media::set_default_disk_cache_bytes(crate::services::PHONE_CACHE_BYTES) {
+        log::warn!("thumbnail cache limit already set to {} MiB", in_use >> 20);
+    }
     // messages that name the machine say "this device"
     lightcraft_engine::memory::set_handheld();
     let budget = lightcraft_engine::memory::set_budget(lightcraft_engine::memory::default_budget());
@@ -149,6 +153,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         library: paths.library.clone(),
         reopen: Some(reopen.clone()),
         move_to_back: Some(move_to_back(&app)),
+        storage: crate::services::StorageDirs::from_internal(&files_dir, &paths.inbox),
     };
     let loader = crate::loader::open_library(paths.library.clone());
 

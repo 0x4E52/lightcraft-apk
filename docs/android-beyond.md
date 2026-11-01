@@ -200,7 +200,7 @@ as stated):
   (activity row, `Cancel::Flag`), walk bounded by depth and entries. 2. The total counts the host's private dirs
   (`files/` and `cache/`), so it agrees with App info within the system's own rounding. 3. Clearable parts: caches,
   smart previews, denoise cache, models (with what stops working), Inbox, logs; originals and the library never.
-  4. When free space falls under 1 GB, caches trim to half their limit and a notice says so.
+  4. When free space falls under 1 GB (probe: `storage_report::free_bytes`, `statvfs`), the thumbnail and denoise caches trim to half their limits and a notice says so. Folders to measure or empty come only from the session and what the host registered, never from command parameters; Clear runs on a worker and asks first for models, Inbox and smart previews.
 - **Tests:** `storage_report_counts_every_part` (temp dirs), `clear_cache_part_keeps_library_and_originals`,
   `report_walk_is_bounded`, `low_space_trims_caches` (injected free-space probe); headless
   `storage_section_lists_parts`.

@@ -60,6 +60,12 @@ pub fn scratch_dir() -> PathBuf {
     scratch_dir_in(INJECTED.get().map(PathBuf::as_path))
 }
 
+/// `<settings>/cache` when a host gave a settings folder with [`use_dir`]: LightCraft's own scratch folder.
+/// `None` otherwise, when [`scratch_dir`] is the system's shared temp folder.
+pub fn injected_scratch_dir() -> Option<PathBuf> {
+    INJECTED.get().map(|d| d.join("cache"))
+}
+
 fn scratch_dir_in(injected: Option<&Path>) -> PathBuf {
     injected.map_or_else(std::env::temp_dir, |d| d.join("cache"))
 }

@@ -784,6 +784,18 @@ fn products_in(dir: &Path) -> Vec<(PathBuf, u64, SystemTime)> {
         .collect()
 }
 
+/// Delete the pictures in `dir`; what went (files, bytes).
+pub(crate) fn remove_products(dir: &Path) -> (usize, u64) {
+    let (mut files, mut bytes) = (0usize, 0u64);
+    for (path, size, _) in products_in(dir) {
+        if std::fs::remove_file(&path).is_ok() {
+            files = files.saturating_add(1);
+            bytes = bytes.saturating_add(size);
+        }
+    }
+    (files, bytes)
+}
+
 /// Make sure only one thread writes a product at a time: a second one waits, then finds it made.
 fn making() -> &'static (Mutex<HashSet<PathBuf>>, Condvar) {
     static MAKING: OnceLock<(Mutex<HashSet<PathBuf>>, Condvar)> = OnceLock::new();
@@ -1490,19 +1502,31 @@ impl Session {
 
     /// Delete every product of this library (they are made again when wanted).
     pub(crate) fn denoise_clear(&mut self) -> (usize, u64) {
-        self.denoise_cancel(None, true);
-        let (mut files, mut bytes) = (0, 0);
-        if let Some(dir) = self.denoise_products_dir() {
-            for (path, size, _) in products_in(&dir) {
-                if std::fs::remove_file(&path).is_ok() {
-                    files += 1;
-                    bytes += size;
-                }
-            }
+        match self.denoise_reset() {
+            Some(dir) => remove_products(&dir),
+            None => (0, 0),
         }
+    }
+
+    /// The in-session half of [`Self::denoise_clear`]: stop the work, forget failures and what the index holds. Returns
+    /// the folder whose pictures [`remove_products`] then deletes (on any thread).
+    pub(crate) fn denoise_reset(&mut self) -> Option<PathBuf> {
+        self.denoise_cancel(None, true);
         self.denoise.failed.clear();
         self.denoise.touch();
-        (files, bytes)
+        self.denoise_products_dir()
+    }
+
+    /// Low space: bring the cache down to half its limit. Returns the new limit when anything had to go.
+    pub(crate) fn denoise_trim_half(&mut self) -> Option<u64> {
+        let dir = self.denoise_products_dir()?;
+        let half = self.denoise.models_dir.as_deref().map(read_settings).unwrap_or_default().cache_bytes() / 2;
+        let total: u64 = products_in(&dir).iter().map(|f| f.1).sum();
+        if total <= half {
+            return None;
+        }
+        self.denoise_evict_to(half, None);
+        Some(half)
     }
 
     /// Per frame: take in what finished, look at what the user is looking at, and keep one job going. Cheap when

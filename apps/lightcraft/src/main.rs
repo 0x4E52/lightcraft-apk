@@ -274,6 +274,11 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
             Ok(rx)
         })),
         log_file: log_file.map(|p| p.display().to_string()),
+        // the desktop has no private folders to total and no Inbox: the total is the sum of the parts
+        storage_roots: Vec::new(),
+        storage_inbox: None,
+        // under 1 GB free, the caches are trimmed to half their limits
+        free_space: Some(Box::new(lightcraft_engine::storage_report::free_bytes)),
         pick_lightroom_catalog: Some(Box::new(|| {
             file_dialog()
                 .set_title(lightcraft_ui_egui::i18n::tr("Import Lightroom Catalog"))

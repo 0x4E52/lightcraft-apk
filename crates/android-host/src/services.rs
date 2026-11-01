@@ -20,6 +20,28 @@ use crate::state::Reopen;
 pub const LIBRARY_NOTICE: &str =
     "Your library is stored inside LightCraft. Uninstalling it or Clear data deletes the library; back it up with File ▸ Export…";
 
+/// The thumbnail cache limit a phone starts with (the desktop's is 2 GB); the user can raise it in
+/// Settings ▸ Storage.
+pub const PHONE_CACHE_BYTES: u64 = 512 << 20;
+
+/// What Settings ▸ Storage counts: the app's private folders.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StorageDirs {
+    /// `files/` and `cache/`, which App info adds up.
+    pub roots: Vec<std::path::PathBuf>,
+    /// Shared files waiting to be imported.
+    pub inbox: Option<std::path::PathBuf>,
+}
+
+impl StorageDirs {
+    /// From the internal storage folder (`…/files`): it and its sibling `cache`.
+    pub fn from_internal(files: &Path, inbox: &Path) -> StorageDirs {
+        let mut roots = vec![files.to_path_buf()];
+        roots.extend(files.parent().map(|app| app.join("cache")));
+        StorageDirs { roots, inbox: Some(inbox.to_path_buf()) }
+    }
+}
+
 /// Back's last step: moves the app to the background without waiting for it (Android: JNI
 /// `Activity.moveTaskToBack`); `Err` when it could not even be asked.
 pub type MoveToBack = Rc<dyn Fn() -> Result<(), String>>;
@@ -27,7 +49,7 @@ pub type MoveToBack = Rc<dyn Fn() -> Result<(), String>>;
 /// The services every Android start has; `log_file` is the log being written, if any, `reopen`
 /// where Try Again in the library problem window asks the host to open the library again, and
 /// `move_to_back` what Back does when nothing in the app is left to close.
-pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_back: Option<&MoveToBack>) -> Services {
+pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_back: Option<&MoveToBack>, storage: &StorageDirs) -> Services {
     Services {
         write: Some(Box::new(lightcraft_engine::export::write_file)),
         // with it, exports started from the UI run in the background
@@ -42,6 +64,10 @@ pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_b
         move_to_back: move_to_back
             .cloned()
             .map(|f| Box::new(move |_: &mut lightcraft_engine::Session| f().map(|()| Default::default())) as lightcraft_ui_egui::HostAction),
+        storage_roots: storage.roots.clone(),
+        storage_inbox: storage.inbox.clone(),
+        // under 1 GB free, the caches are trimmed to half their limits
+        free_space: Some(Box::new(lightcraft_engine::storage_report::free_bytes)),
         quit_disabled: true,
         touch: true,
         ..Services::default()
@@ -55,9 +81,10 @@ mod tests {
 
     #[test]
     fn services_have_writer_and_png() {
-        let mut s = base_services(Some(Path::new("/data/user/0/ai.storyteller.lightcraft/files/logs/lightcraft.log")), None, None);
+        let mut s =
+            base_services(Some(Path::new("/data/user/0/ai.storyteller.lightcraft/files/logs/lightcraft.log")), None, None, &StorageDirs::default());
         assert_eq!(s.log_file.as_deref(), Some("/data/user/0/ai.storyteller.lightcraft/files/logs/lightcraft.log"));
-        assert!(base_services(None, None, None).log_file.is_none());
+        assert!(base_services(None, None, None, &StorageDirs::default()).log_file.is_none());
 
         let dir = std::env::temp_dir().join(format!("lc-android-services-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -92,12 +119,26 @@ mod tests {
             seen.set(seen.get() + 1);
             if seen.get() == 1 { Ok(()) } else { Err("no Activity".into()) }
         });
-        let mut s = base_services(None, None, Some(&move_to_back));
+        let mut s = base_services(None, None, Some(&move_to_back), &StorageDirs::default());
         let mut session = lightcraft_engine::Session::new();
         let f = s.move_to_back.as_mut().unwrap();
         assert_eq!(f(&mut session), Ok(serde_json::Value::Null));
         assert_eq!(f(&mut session), Err("no Activity".to_owned()));
         assert_eq!(calls.get(), 2);
         assert!(s.quit_disabled);
+    }
+
+    /// Settings ▸ Storage counts `files/` and the sibling `cache/`, so its total is App info's.
+    #[test]
+    fn storage_counts_files_and_cache() {
+        let dirs = StorageDirs::from_internal(Path::new("/data/user/0/x/files"), Path::new("/data/user/0/x/files/inbox"));
+        assert_eq!(dirs.roots, [Path::new("/data/user/0/x/files"), Path::new("/data/user/0/x/cache")]);
+        let s = base_services(None, None, None, &dirs);
+        assert_eq!(s.storage_roots, dirs.roots);
+        assert_eq!(s.storage_inbox.as_deref(), Some(Path::new("/data/user/0/x/files/inbox")));
+        assert_eq!(PHONE_CACHE_BYTES, 512 << 20);
+        // the low-space rule has a probe, and it answers for a real folder
+        let free = s.free_space.as_ref().unwrap();
+        assert!(free(&std::env::temp_dir()).is_some());
     }
 }

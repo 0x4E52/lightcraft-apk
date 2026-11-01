@@ -428,6 +428,19 @@ fn test(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id, "ok": ok, "result": detail}))
 }
 
+/// All models were deleted (Storage page): forget the model the settings name and let the session look again.
+pub(crate) fn models_cleared(s: &mut Session) {
+    if let Some(dir) = s.denoise.models_dir.clone() {
+        let mut st = read_settings(&dir);
+        if st.model.is_some() {
+            st.model = None;
+            let _ = write_settings(&dir, &st);
+        }
+    }
+    s.denoise.touch();
+    s.denoise_refresh_active(true);
+}
+
 fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "denoise.models.remove";
     let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;

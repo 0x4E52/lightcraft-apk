@@ -45,6 +45,7 @@ pub mod sidebar;
 pub mod slideshow_export;
 pub mod softpaint;
 pub mod state;
+pub mod storage;
 pub mod sync;
 pub mod tasks;
 pub mod text_field;
@@ -170,6 +171,8 @@ mod tests_slideshow;
 #[cfg(test)]
 mod tests_solo_sections;
 #[cfg(test)]
+mod tests_storage;
+#[cfg(test)]
 mod tests_switch_library;
 #[cfg(test)]
 mod tests_sync;
@@ -211,6 +214,8 @@ pub type SaveFile = Box<dyn FnMut(&str) -> Option<String>>;
 pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
 /// A writer other threads can use (background export).
 pub type SharedWrite = std::sync::Arc<dyn Fn(&str, &[u8]) -> Result<(), String> + Send + Sync>;
+/// Free bytes on the volume holding a path.
+pub type FreeSpaceFn = Box<dyn Fn(&std::path::Path) -> Option<u64>>;
 pub type PngEncode = Box<dyn Fn(&lightcraft_raster::Rgba8) -> Vec<u8>>;
 /// A folder chooser (`None` = cancelled).
 pub type PickFolder = Box<dyn FnMut() -> Option<String>>;
@@ -322,6 +327,14 @@ pub struct Services {
     /// Folders for the Library sidebar's Local section, as `(label, path)`. Empty = Pictures, Desktop,
     /// Downloads and Home under `HOME` (those that exist). Not empty = exactly these (those that exist).
     pub local_roots: Vec<(String, std::path::PathBuf)>,
+    /// The host's private folders Settings ▸ Storage counts in its total (Android: `files/` and
+    /// `cache/`, so the total agrees with App info). Empty = the total is the sum of the parts.
+    pub storage_roots: Vec<std::path::PathBuf>,
+    /// Where shared files wait to be imported (a Storage part). `None` = no such folder.
+    pub storage_inbox: Option<std::path::PathBuf>,
+    /// Free bytes on the volume of a path (`None` = unknown). With it, the thumbnail and denoise
+    /// caches are trimmed to half their limits when under 1 GB is free. `None` = never trimmed.
+    pub free_space: Option<FreeSpaceFn>,
     /// Told to the user once, the first time the app runs with a library open (in the notices
     /// panel; `UiState::library_notice_shown` remembers it). Android: where the library lives and
     /// that uninstalling deletes it. `None` = nothing to say (the desktop).
@@ -515,6 +528,8 @@ pub struct LightcraftApp {
     pub export: Option<export_task::ExportTask>,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
+    /// When (egui time) the free space was last looked at (`storage::low_space_tick`).
+    pub storage_checked: Option<f64>,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
     /// The last slideshow export's end has been told (a toast).
@@ -550,6 +565,12 @@ impl LightcraftApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
+        // the folders Settings ▸ Storage may measure and empty: the host's, registered once, never a caller's
+        session.storage_host = lightcraft_engine::storage_report::HostDirs {
+            roots: services.storage_roots.clone(),
+            logs: services.log_file.as_deref().and_then(|f| std::path::Path::new(f).parent()).map(std::path::Path::to_path_buf),
+            inbox: services.storage_inbox.clone(),
+        };
         Self {
             session,
             ui: UiState::default(),
@@ -614,6 +635,7 @@ impl LightcraftApp {
             shown_library: None,
             export: None,
             tasks: Default::default(),
+            storage_checked: None,
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,
@@ -1223,6 +1245,7 @@ impl LightcraftApp {
         lightroom_import::tick(self, ctx);
         recheck::tick(self);
         tasks::poll(self, ctx);
+        storage::tick(self, ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);
         self.slideshow_tick(ctx);

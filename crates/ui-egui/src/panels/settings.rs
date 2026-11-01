@@ -29,6 +29,7 @@ pub const TABS: &[(&str, &str)] = &[
     ("slideshow", "Slideshow"),
     ("faces", "Faces"),
     ("denoise", "AI Denoise"),
+    ("storage", "Storage"),
 ];
 
 /// Thumbnail cache sizes offered (MB).
@@ -58,20 +59,21 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, tab: &mut String) {
         "slideshow" => slideshow_tab(app, ui, &t),
         "faces" => super::faces::settings_tab(app, ui, &t),
         "denoise" => super::denoise::settings_tab(app, ui, &t),
+        "storage" => crate::storage::tab(app, ui, &t),
         _ => general_tab(app, ui, &t),
     }
 }
 
-pub(super) fn heading(ui: &mut egui::Ui, t: &Tokens, text: &str) {
+pub(crate) fn heading(ui: &mut egui::Ui, t: &Tokens, text: &str) {
     ui.add_space(4.0);
     ui.label(RichText::new(crate::i18n::tr(text)).font(t.semibold(12.5)).color(t.text));
 }
 
-pub(super) fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(crate) fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     super::dialogs::labelled_row(ui, LABEL_W, RichText::new(crate::i18n::tr(label)).color(t.text_label), add)
 }
 
-pub(super) fn hint(ui: &mut egui::Ui, t: &Tokens, text: &str) {
+pub(crate) fn hint(ui: &mut egui::Ui, t: &Tokens, text: &str) {
     ui.label(RichText::new(crate::i18n::tr(text)).size(11.0).color(t.text_dim));
 }
 

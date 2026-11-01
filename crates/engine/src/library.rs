@@ -789,7 +789,7 @@ impl Session {
 
     /// The thumbnail disk cache budget in bytes ([`Session::cache_mb`], else the default).
     pub fn cache_bytes(&self) -> u64 {
-        if self.cache_mb == 0 { crate::media::DISK_CACHE_BYTES } else { u64::from(self.cache_mb) << 20 }
+        if self.cache_mb == 0 { crate::media::default_disk_cache_bytes() } else { u64::from(self.cache_mb) << 20 }
     }
 
     /// Change the thumbnail disk cache budget (MB, 0 = default) in place: the cached thumbnails

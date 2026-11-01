@@ -459,6 +459,18 @@ fn test(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id, "ok": ok, "result": detail}))
 }
 
+/// All models were deleted (Storage page): forget the recogniser the settings name, and switch recognition off.
+pub(crate) fn models_cleared(s: &Session) {
+    let Some(dir) = s.face_models_dir.as_deref() else { return };
+    let mut st = read_settings(dir);
+    if st.embedder.is_none() && !st.enabled {
+        return;
+    }
+    st.embedder = None;
+    st.enabled = false;
+    let _ = write_settings(dir, &st);
+}
+
 fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "faces.models.remove";
     let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;

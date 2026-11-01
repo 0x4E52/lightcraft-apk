@@ -5,7 +5,7 @@ use lightcraft_catalog::{Album, AlbumId, ColorLabel, CopyrightStatus, Filter, Fl
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, has_active, has_library_selection, has_selection, ok, str_param};
-use crate::{LibrarySource, Result, Selection, Session};
+use crate::{LibrarySource, Result, Selection, Session, storage_report};
 
 fn select_after_deletion(s: &mut Session, before: &[PhotoId]) {
     let at = before.iter().position(|id| Some(*id) == s.selection.active);
@@ -1608,7 +1608,40 @@ pub fn specs() -> Vec<CommandSpec> {
             s.media.clear_sources();
             ok()
         }),
+        cmd!(query "library.storage", "Storage Report", [], None, "{} → {parts: [{part, label, bytes, files, truncated, clearable, consequence?}], total, countsRoots, cancelled} — what LightCraft keeps, part by part; the total counts the host's registered private folders (else it is the sum of the parts). Runs on the calling thread (the app's Storage page measures on a worker); it takes no folders, only the session's and the host's own are measured", always, |s, _p| {
+            let report = storage_report::measure(&storage_report::Layout::of(s), storage_report::Limits::default(), &std::sync::atomic::AtomicBool::new(false));
+            Ok(storage_json(&report))
+        }),
+        cmd!(
+            "library.clearStorage",
+            "Clear Storage Part",
+            [],
+            None,
+            "{part: thumbnails|smartPreviews|denoiseCache|models|logs|inbox} → {part, files, bytes, consequence?} — empty a cache or download on the calling thread (the app's Storage page does it on a worker, after asking); only folders the session and the host registered are emptied, never one named by the caller; the library, copied originals, place names and temporary files are refused",
+            always,
+            |s, p| {
+                let id = str_param(p, "part").ok_or_else(|| bad("library.clearStorage", "needs `part`"))?;
+                let part = storage_report::Part::from_id(id).ok_or_else(|| bad("library.clearStorage", format!("unknown part `{id}`")))?;
+                let layout = storage_report::Layout::of(s);
+                let cleared =
+                    storage_report::clear(s, &layout, part, storage_report::Limits::default()).map_err(|e| bad("library.clearStorage", e))?;
+                Ok(json!({"part": part.id(), "files": cleared.files, "bytes": cleared.bytes, "consequence": part.consequence()}))
+            }
+        ),
     ]
+}
+
+/// A report as the commands give it.
+pub fn storage_json(report: &storage_report::Report) -> Value {
+    let parts: Vec<Value> = report
+        .parts
+        .iter()
+        .map(|p| {
+            json!({"part": p.part.id(), "label": p.part.label(), "bytes": p.bytes, "files": p.files, "truncated": p.truncated,
+                "clearable": p.part.clearable(), "consequence": p.part.consequence()})
+        })
+        .collect();
+    json!({"parts": parts, "total": report.total, "countsRoots": report.counts_roots, "cancelled": report.cancelled})
 }
 
 /// `base` with a partial Filter (JSON) merged on top.

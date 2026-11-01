@@ -76,6 +76,7 @@ pub mod slide_title;
 pub mod slideshow;
 pub mod slideshow_export;
 pub mod smart;
+pub mod storage_report;
 pub mod sync;
 pub mod text;
 mod view;
@@ -245,6 +246,9 @@ pub struct Session {
     pub(crate) denoise: denoise::State,
     /// Where the host keeps face models (one folder each); `None` where there is no file system (the web).
     pub face_models_dir: Option<std::path::PathBuf>,
+    /// The folders the host registered for Settings ▸ Storage (the only ones it measures or empties besides the
+    /// session's own).
+    pub storage_host: storage_report::HostDirs,
     /// Face model downloads started this session (the staged files wait in `<face_models_dir>/.downloads`).
     pub face_downloads: face_download::Downloads,
     /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
@@ -431,6 +435,7 @@ impl Session {
             unsaved_sidecars: Default::default(),
             denoise: Default::default(),
             face_models_dir: None,
+            storage_host: Default::default(),
             face_downloads: Default::default(),
             place_names: Default::default(),
             face_catalog: Default::default(),

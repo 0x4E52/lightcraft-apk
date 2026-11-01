@@ -247,3 +247,7 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   and `without token: … bad token`.
 - [ ] APK-30b: scroll a 1000-photo grid by finger; long press a photo, tap three more, then share them.
 - [ ] APK-31: on a phone with a cutout, portrait and landscape: nothing sits under the status bar, cutout or gesture bar; open the keyboard over a text field (e.g. the keyword field) and the field stays visible above it, and the layout returns when the keyboard closes.
+- [ ] APK-54: after importing 1,000 photos, Settings ▸ Storage's total agrees with Settings ▸ Apps ▸ LightCraft ▸
+  Storage within the system's rounding; Clear on the thumbnail cache, smart previews and Inbox frees the space App
+  info then shows; a fresh install starts with the 512 MB thumbnail cache limit.
+- [ ] APK-54: with under 1 GB free (fill the phone), the thumbnail and denoise caches shrink to half their limits within a minute and a notice says so (probe: `statvfs` through `storage_report::free_bytes`).

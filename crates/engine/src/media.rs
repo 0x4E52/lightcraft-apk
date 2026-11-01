@@ -88,6 +88,53 @@ const RENDERED_MEM_BYTES: usize = 128 << 20;
 /// Disk budget for the thumbnail cache.
 pub const DISK_CACHE_BYTES: u64 = 2 << 30;
 
+static DEFAULT_DISK_CACHE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+fn set_default_in(cell: &std::sync::OnceLock<u64>, bytes: u64) -> Result<(), u64> {
+    let current = *cell.get_or_init(|| bytes);
+    if current == bytes { Ok(()) } else { Err(current) }
+}
+
+fn default_in(cell: &std::sync::OnceLock<u64>) -> u64 {
+    cell.get().copied().unwrap_or(DISK_CACHE_BYTES)
+}
+
+/// A host's own default for the thumbnail cache limit (Android: 512 MB), used while the library's
+/// preference says "default". Process-wide, set at most once; the same value again is `Ok`, another
+/// is refused with the one in use.
+pub fn set_default_disk_cache_bytes(bytes: u64) -> Result<(), u64> {
+    set_default_in(&DEFAULT_DISK_CACHE, bytes)
+}
+
+/// The thumbnail cache limit when the library names none: the host's, else [`DISK_CACHE_BYTES`].
+pub fn default_disk_cache_bytes() -> u64 {
+    default_in(&DEFAULT_DISK_CACHE)
+}
+
+#[cfg(test)]
+mod default_cache_tests {
+    use super::*;
+
+    #[test]
+    fn host_default_reaches_the_limit() {
+        let cell = std::sync::OnceLock::new();
+        assert_eq!(default_in(&cell), DISK_CACHE_BYTES);
+        assert_eq!(set_default_in(&cell, 512 << 20), Ok(()));
+        assert_eq!(default_in(&cell), 512 << 20);
+        assert_eq!(set_default_in(&cell, 512 << 20), Ok(()));
+        assert_eq!(set_default_in(&cell, 1 << 30), Err(512 << 20));
+    }
+
+    /// `Session::cache_bytes` follows the process default while the preference says "default".
+    #[test]
+    fn session_limit_is_the_default_until_set() {
+        let mut s = crate::Session::new();
+        assert_eq!(s.cache_bytes(), default_disk_cache_bytes());
+        s.cache_mb = 64;
+        assert_eq!(s.cache_bytes(), 64 << 20);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceLevel {

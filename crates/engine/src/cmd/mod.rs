@@ -16,7 +16,7 @@ mod develop;
 mod edit;
 mod export;
 pub(crate) mod face_detect;
-mod face_models;
+pub(crate) mod face_models;
 mod face_recognize;
 pub mod filters;
 mod focus;

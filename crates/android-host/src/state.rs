@@ -72,6 +72,8 @@ pub struct Start {
     pub reopen: Option<Reopen>,
     /// What Back does when nothing in the app is left to close (`None` in tests: nothing).
     pub move_to_back: Option<crate::services::MoveToBack>,
+    /// The private folders Settings ▸ Storage counts.
+    pub storage: crate::services::StorageDirs,
 }
 
 impl Start {
@@ -117,7 +119,7 @@ impl HostState {
         };
         let mut app = LightcraftApp::new(
             session,
-            crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref(), start.move_to_back.as_ref()),
+            crate::services::base_services(start.log_file.as_deref(), start.reopen.as_ref(), start.move_to_back.as_ref(), &start.storage),
         );
         if let Some(ui) = start.prefs {
             app.ui = ui;
