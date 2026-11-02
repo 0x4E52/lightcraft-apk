@@ -527,6 +527,9 @@ Phase 3.
    The first public beta follows APK-43 with every card marked beta blocker done.
 5. **After the beta**, in rank order: APK-58, APK-59, APK-61, APK-62, APK-63, APK-64.
 
+**Maintainer decision 2026-11-02:** no release yet. After APK-35, Phase 4's release cards (APK-36 … 43) wait until
+the maintainer asks for a release; step 5 (APK-58, 59, 61, 62, 63, 64) runs first, in rank order.
+
 ## Revision history
 
 - 2026-10-31: first version: opportunities from `android-competitive.md` checked against the code and the parity
@@ -541,3 +544,4 @@ Phase 3.
 - 2026-11-02 (APK-53): "As built" note on the card.
 - 2026-11-02 (APK-55): "As built" note on the card.
 - 2026-11-02 (APK-56): "As built" note on the card.
+- 2026-11-02: maintainer decision: step 5 before Phase 4's release cards (36 … 43), which wait for a release call.

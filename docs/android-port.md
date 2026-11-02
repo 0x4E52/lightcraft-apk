@@ -297,7 +297,8 @@ input (APK-32a). The order below respects every card's "Depends on":
 
 1. Phase 3: APK-29, APK-30, APK-30b, APK-31, APK-32a, APK-32b, APK-32c, APK-33, APK-33b, APK-34, APK-34b
 2. Phase 2: APK-22 … APK-28
-3. APK-35 (soft keyboard), then Phase 4: APK-36 … APK-43
+3. APK-35 (soft keyboard), then the cards after the beta in `android-beyond.md` → "Order" step 5 (APK-58, 59, 61 … 64);
+   Phase 4 (APK-36 … APK-43) waits until the maintainer asks for a release (decision 2026-11-02)
 
 Each pushed card leaves a debug APK in the Android workflow's artifacts, so the maintainer can follow on a phone.
 
