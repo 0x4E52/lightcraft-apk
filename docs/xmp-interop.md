@@ -82,8 +82,9 @@ acts) reads a handoff folder as Synchronize Folder reads a library folder:
   as are file names that leave the folder and sidecars that can't be read;
 - an original whose content the library has — under any name, in any folder — is matched to that photo (the one with
   the manifest's `id` when several have it). Its sidecar is compared with the photo: one that would change nothing is
-  "up to date"; one whose `edited` is later than the photo's last change here is **newer**; anything else, including
-  an unknown time, is **older** and is never read;
+  "up to date"; one whose `edited` is later than the photo's last edit here, or one for a photo never edited here
+  (whenever it was imported: an import after the sender's edit doesn't hide that edit), is **newer**; anything else,
+  including an unknown time against an edit here, is **older** and is never read;
 - an original the library doesn't have is **new** and is imported with its sidecar's settings (copied into the
   library's folder; added in place in a library without one).
 

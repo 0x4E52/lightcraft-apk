@@ -276,9 +276,12 @@ pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> Result<Value, String> {
     let new = if *import_new { lightcraft_engine::handoff::new_paths(&plan) } else { Vec::new() };
     // each new photo keeps the sending device's time of its last change
     let received = lightcraft_engine::handoff::import_options(&app.session, &plan).received;
-    if !new.is_empty() && app.import.is_some() {
+    // every reason the import could be refused, checked before anything is read
+    if !new.is_empty()
+        && let Err(e) = crate::import::can_start_received(app)
+    {
         app.handoff_plan = Some(plan);
-        return Err(crate::i18n::tr("Wait for the import to finish").to_string());
+        return Err(e);
     }
     let choice = lightcraft_engine::handoff::HandoffChoice {
         import_new: false,

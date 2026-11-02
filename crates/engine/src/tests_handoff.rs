@@ -237,6 +237,29 @@ fn hash_match_finds_moved_photo() {
 }
 
 #[test]
+fn unedited_photo_imported_later_still_takes_the_edit() {
+    // the computer imports the same card at 18:00, after the phone's 10:00 edit, and never edits it
+    let dir = Scratch::new("late-import");
+    let (mut phone, pa, _) = phone(&dir);
+    std::fs::create_dir_all(dir.path("desk")).unwrap();
+    std::fs::copy(dir.path("phone/a.png"), dir.path("desk/a.png")).unwrap();
+    let mut desk = device("2026-10-01T18:00:00");
+    import(&mut desk, &[dir.path("desk")]);
+    let d = id_of(&desk, "a.png");
+    hand_off(&mut phone, &[pa], &dir.path("h"));
+    let plan = desk.execute("library.scanHandoff", &json!({"dir": dir.path("h")})).unwrap();
+    assert_eq!(ids(&plan, "newer"), [d.0], "an import is not an edit to keep: {plan}");
+    assert!(plan["older"].as_array().unwrap().is_empty(), "{plan}");
+    // still never the default, and read when ticked
+    let r = desk.execute("library.receiveHandoff", &json!({"dir": dir.path("h")})).unwrap();
+    assert_eq!(r["read"], 0, "{r}");
+    let r = desk.execute("library.receiveHandoff", &json!({"dir": dir.path("h"), "read": [d.0]})).unwrap();
+    assert_eq!(r["read"], 1, "{r}");
+    assert_eq!(exposure(&desk, d), 1.0);
+    assert_eq!(desk.catalog.photo(d).unwrap().edited.as_deref(), Some("2026-10-01T10:00:00"));
+}
+
+#[test]
 fn changed_original_is_damaged_and_bad_folders_are_refused() {
     let dir = Scratch::new("damaged");
     let (mut phone, pa, pb) = phone(&dir);

@@ -769,6 +769,16 @@ pub fn start_paths_with(app: &mut LightcraftApp, paths: Vec<String>, params: Val
     start_received(app, paths, params, Default::default())
 }
 
+/// Whether [`start_received`] can start now (the reason it can't, otherwise): checked before a
+/// handoff reads anything, so a refused import never leaves the settings read without it.
+pub fn can_start_received(app: &LightcraftApp) -> Result<(), String> {
+    busy_synchronizing(app)?;
+    if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
+        return Err("an import is running".into());
+    }
+    Ok(())
+}
+
 /// [`start_paths_with`] for photos received from another device (a handoff): `received` maps a
 /// content hash to when that photo last changed there, which it keeps as its last edit.
 pub fn start_received(
@@ -777,10 +787,7 @@ pub fn start_received(
     params: Value,
     received: std::collections::HashMap<String, String>,
 ) -> Result<Value, String> {
-    busy_synchronizing(app)?;
-    if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
-        return Err("an import is running".into());
-    }
+    can_start_received(app)?;
     let undo0 = app.session.undo.len();
     let total = paths.len();
     let mut task = ImportTask::new(paths, params, undo0, false);

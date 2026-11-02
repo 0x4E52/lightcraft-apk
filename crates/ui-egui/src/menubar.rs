@@ -969,9 +969,9 @@ pub fn show_in_window(app: &mut LightcraftApp, ui: &mut egui::Ui, max_width: f32
     }
     if let Some((id, params)) = clicked {
         let r = run_item(app, &id, params);
-        // an export that can't start (e.g. no folder) says why instead of doing nothing
+        // an export or handoff that can't start (e.g. no folder) says why instead of doing nothing
         if let Err(e) = r
-            && matches!(id.as_str(), "app.export" | "app.exportPrevious" | "file.share")
+            && matches!(id.as_str(), "app.export" | "app.exportPrevious" | "file.share" | "file.handoff" | "file.receiveHandoff")
         {
             app.toast(ui.ctx(), e);
         }

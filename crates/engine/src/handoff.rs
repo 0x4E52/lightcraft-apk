@@ -16,8 +16,9 @@
 //!   hash is reported as damaged and left alone;
 //! - an original whose content the library already has (by content hash, whatever its name or
 //!   folder here: a photo renamed or moved is still found) is a **match**. Its sidecar is compared
-//!   with the library: one that says nothing new is the same photo; one saved after the photo last
-//!   changed here is **newer**; anything else is **older** and is never read;
+//!   with the library: one that says nothing new is the same photo; one saved after the photo was
+//!   last edited here, or one for a photo never edited here (whenever it was imported), is
+//!   **newer**; anything else is **older** and is never read;
 //! - an original the library doesn't have is **new** and is imported (copied into the library),
 //!   with its sidecar's settings.
 //!
@@ -440,9 +441,16 @@ pub fn scan_with(input: HandoffInput, cancel: &AtomicBool, progress: &mut dyn Fn
             library_edited: here.map(str::to_string),
         };
         let secs = |t: Option<&str>| t.and_then(lightcraft_catalog::stacks::iso_seconds);
-        // newer only when both times are known and the handoff's is later: an unknown time is
-        // never a reason to overwrite
-        let newer = matches!((secs(e.edited.as_deref()), secs(here)), (Some(a), Some(b)) if a > b);
+        // a library photo never edited has no edit to lose: the handoff's settings are newer,
+        // whenever it was imported here (an import after the sender's edit must not hide it).
+        // Otherwise newer only when both times are known and the handoff's is later: an unknown
+        // time is never a reason to overwrite an edit
+        let own_edit = secs(p.edited.as_deref());
+        let newer = match (secs(e.edited.as_deref()), own_edit) {
+            (_, None) => true,
+            (Some(a), Some(b)) => a > b,
+            (None, Some(_)) => false,
+        };
         plan.seen.insert(p.id.0, Arc::clone(p));
         if newer {
             plan.sidecars.insert(p.id.0, sc);
