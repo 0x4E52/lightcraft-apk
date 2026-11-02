@@ -466,6 +466,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         export_dir_for: None,
         media_only_dirs: Vec::new(),
         share: None,
+        previous_crash: None,
         local_roots: Vec::new(),
         library_notice: None,
         min_ram_for_sam: None,
