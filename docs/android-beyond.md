@@ -1,6 +1,6 @@
 # Android: beyond Lightroom (task cards APK-50 …)
 
-*Last updated: 2026-11-01.* Revision history at the end.
+*Last updated: 2026-11-02.* Revision history at the end.
 
 Task cards that answer what people criticise in Lightroom mobile and its rivals
 ([`android-competitive.md`](android-competitive.md)). They follow the port plan's rules and card format
@@ -152,6 +152,25 @@ as stated):
 - **Done when:** tests pass; `docs/android.md` lists what is readable on a card.
 - **Maintainer checks on a device:** a USB-C card reader with JPEG + raw folders and a phone with a microSD in it:
   both appear with their names, import verifies, unplugging mid-import gives errors and no crash.
+- **As built (2026-11-02):** the device watch moved into the session (`Session::devices`, the desktop's shared
+  mount-folder watch by default), so a host's volume list doesn't leak into another session and `library.devices`
+  answers from it too. `Services::volumes` (`VolumesFn` = `engine::devices::MountsFn`, labels and mount points)
+  makes `LightcraftApp::new` install `DeviceWatch::over_mounts`, where `devices_on` keeps the volumes with a `DCIM`
+  folder, each mount point once. The pure mapper is `android-sys` `volumes::volumes` (mounted or read-only,
+  removable, not primary, a plain absolute directory, each UUID or path once, at most 64; no description reads
+  "Removable storage"); `query_volumes` reads each `StorageVolume` in its own local frame and a call that throws
+  counts as no answer for that field. The host's `services::volumes` logs a failed query and lists nothing. The
+  rescan on `Focused(true)` is shared code (`DeviceWatch::expire` on egui's `WindowFocused(true)`), so the desktop
+  gets it too; Local lists the devices (volume roots) only with a host volume list. While Local or an Import from
+  Device menu shows them on such a host, the frame asks to be drawn again after `devices::MAX_AGE`
+  (`left::keep_devices_fresh`): the Android host draws only on demand, so without it the interval scan would wait
+  for the next touch (headless: `device_appears_in_import_and_local` checks the wake, `desktop_devices_stay_out_of_local`
+  that a desktop lists no devices in Local and asks for none). A removed card needs no new
+  code: the import re-reads a file whose size changed or that is gone, and a copy that fails is a per-file error
+  (the headless test pulls the card out after the import's first batch was copied: those photos stay, the rest
+  fail). The watch's background scan runs the JNI query off the UI thread; the explicit queries (`library.devices`,
+  `file.addFromDevice` without a path, the control channel's and MCP's forms; the menu always passes a path) scan
+  on the calling thread, as on the desktop. The JNI calls have not run on a device.
 
 ### APK-52 Raws Android hides: say so, offer a way
 - **Answers:** [C5](android-competitive.md#c5-raw-and-card-import-on-android) (CR3 / 3FR greyed out, files "missing").
@@ -470,3 +489,4 @@ Phase 3.
 - 2026-11-01 (APK-25): the MTP card stages imports in `files/incoming/`, outside the library (the importer adds a
   file inside the library where it is).
 - 2026-11-01 (APK-50): "As built" note on the card.
+- 2026-11-02 (APK-51): "As built" note on the card.

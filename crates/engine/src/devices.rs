@@ -5,8 +5,13 @@
 //! Menus are rebuilt every frame (even with their popups closed), so [`devices`] never touches the
 //! disk: it serves the last scan and, when that is older than [`MAX_AGE`], starts one background
 //! rescan (coalesced; no lock is held while it runs). A changed result calls the [`on_change`]
-//! hook, which the UI uses to repaint, so hot-plugged cards still appear. [`devices_now`] scans
-//! synchronously for explicit requests (`library.devices`, Add from Device without a path).
+//! hook, which the UI uses to repaint, so hot-plugged cards still appear. [`DeviceWatch::scan_now`]
+//! scans synchronously, on the calling thread, for explicit requests (`library.devices`, Add from
+//! Device without a path).
+//!
+//! Each session holds its watch ([`crate::Session::devices`]): the desktop's scans the platform's
+//! mount folders ([`shared`]); a host that names its volumes itself (Android's `StorageManager`,
+//! APK-51) gives the session a watch over [`devices_on`] its [`Mount`] list instead.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,6 +27,17 @@ pub struct Device {
     /// The volume's mount point.
     pub root: String,
 }
+
+/// A mounted volume as the host names it: its label ("SanDisk SD card", "USB drive") and its
+/// mount point. [`devices_on`] keeps those with a `DCIM` folder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mount {
+    pub name: String,
+    pub root: std::path::PathBuf,
+}
+
+/// The host's mounted volumes, asked on the watch's scanning thread (Android: a JNI call).
+pub type MountsFn = Arc<dyn Fn() -> Vec<Mount> + Send + Sync>;
 
 /// How long a scan is served before [`devices`] starts another one.
 pub const MAX_AGE: Duration = Duration::from_secs(2);
@@ -60,6 +76,9 @@ struct WatchState {
     scanned: Option<std::time::Instant>,
     /// A background scan is running.
     refreshing: bool,
+    /// [`DeviceWatch::expire`] asked for a rescan however fresh the list is.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    expired: bool,
 }
 
 /// A cached device list, refreshed off the calling thread.
@@ -89,8 +108,11 @@ impl DeviceWatch {
     pub fn get(self: &Arc<Self>) -> Vec<Device> {
         let mut s = self.state();
         #[cfg(not(target_arch = "wasm32"))]
-        if !s.refreshing && s.scanned.is_none_or(|t| t.elapsed() >= self.max_age) {
+        if !s.refreshing && (s.expired || s.scanned.is_none_or(|t| t.elapsed() >= self.max_age)) {
             s.refreshing = true;
+            // cleared as the scan starts, not as it lands: an expire that arrives mid-scan (that
+            // scan may have read the volumes before the card went in or out) asks for one more
+            let was_expired = std::mem::take(&mut s.expired);
             let me = self.clone();
             // the scan runs without the state lock; `get` only ever waits for a list clone
             let spawned = std::thread::Builder::new().name("lightcraft-devices".into()).spawn(move || {
@@ -99,6 +121,7 @@ impl DeviceWatch {
             });
             if spawned.is_err() {
                 s.refreshing = false;
+                s.expired = was_expired;
             }
         }
         s.list.clone()
@@ -118,6 +141,7 @@ impl DeviceWatch {
 
     /// Scan now on this thread, and serve the result to later [`DeviceWatch::get`] calls.
     pub fn scan_now(&self) -> Vec<Device> {
+        self.state().expired = false;
         let list = (self.scanner)();
         self.store(list.clone());
         list
@@ -147,6 +171,17 @@ impl DeviceWatch {
     pub fn refreshing(&self) -> bool {
         self.state().refreshing
     }
+
+    /// The next [`DeviceWatch::get`] rescans, however fresh the list is (the window got the focus
+    /// back: a card may have gone in or out meanwhile). The list stays served until then.
+    pub fn expire(&self) {
+        self.state().expired = true;
+    }
+
+    /// A watch over the host's volumes ([`devices_on`] `mounts()`), rescanned after `max_age`.
+    pub fn over_mounts(mounts: MountsFn, max_age: Duration) -> Arc<Self> {
+        DeviceWatch::new(move || devices_on(mounts()), max_age)
+    }
 }
 
 fn global() -> &'static Arc<DeviceWatch> {
@@ -154,26 +189,10 @@ fn global() -> &'static Arc<DeviceWatch> {
     WATCH.get_or_init(|| DeviceWatch::new(scan, MAX_AGE))
 }
 
-/// Mounted volumes that look like a camera or a memory card, without blocking: the last scan,
-/// refreshed in the background when older than [`MAX_AGE`] (empty until the first scan lands).
-pub fn devices() -> Vec<Device> {
-    global().get()
-}
-
-/// [`devices`], but `None` until the first scan lands. The import prompt uses it so a card that was
-/// already in when LightCraft started isn't taken for a new one.
-pub fn devices_scanned() -> Option<Vec<Device>> {
-    global().get_scanned()
-}
-
-/// Scan the mounted volumes now (blocking), for explicit requests.
-pub fn devices_now() -> Vec<Device> {
-    global().scan_now()
-}
-
-/// Run `f` whenever a scan changes the device list (the UI requests a repaint).
-pub fn on_change(f: impl Fn() + Send + Sync + 'static) {
-    global().on_change(f);
+/// The watch over the platform's mount folders, shared by every session that keeps the default
+/// ([`crate::Session::devices`]).
+pub fn shared() -> Arc<DeviceWatch> {
+    global().clone()
 }
 
 fn scan() -> Vec<Device> {
@@ -203,6 +222,23 @@ pub fn devices_in(parents: &[std::path::PathBuf], extra: Vec<std::path::PathBuf>
         if !out.iter().any(|d| d.root == root.to_string_lossy()) {
             out.push(Device { name, path: dcim.to_string_lossy().to_string(), root: root.to_string_lossy().to_string() });
         }
+    }
+    out
+}
+
+/// The host's volumes that hold a `DCIM` folder, in the host's order, each mount point once.
+/// A volume that is gone (unplugged since it was listed) or unreadable is left out.
+pub fn devices_on(mounts: Vec<Mount>) -> Vec<Device> {
+    let mut out: Vec<Device> = Vec::new();
+    for m in mounts {
+        let root = m.root.to_string_lossy().to_string();
+        if out.iter().any(|d| d.root == root) {
+            continue;
+        }
+        let Some(dcim) = dcim_in(&m.root) else { continue };
+        let name =
+            if m.name.trim().is_empty() { m.root.file_name().map_or_else(|| root.clone(), |n| n.to_string_lossy().to_string()) } else { m.name };
+        out.push(Device { name, path: dcim.to_string_lossy().to_string(), root });
     }
     out
 }
@@ -241,6 +277,57 @@ mod tests {
             assert!(p.is_dir() && p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("DCIM")), "{x:?}");
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A host's volume list: those with a DCIM folder, under the host's labels, each once;
+    /// a volume without one (a drive of documents) or gone is not a device.
+    #[test]
+    fn devices_on_host_mounts() {
+        let base = std::env::temp_dir().join(format!("lc-devices-mounts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("1234-ABCD/DCIM/100CANON")).unwrap();
+        std::fs::create_dir_all(base.join("5678-EF01/Documents")).unwrap();
+        std::fs::create_dir_all(base.join("9ABC-DEF0/DCIM")).unwrap();
+        let m = |name: &str, dir: &str| Mount { name: name.into(), root: base.join(dir) };
+        let d = devices_on(vec![
+            m("SanDisk SD card", "1234-ABCD"),
+            m("USB drive", "5678-EF01"),
+            m("Gone", "0000-0000"),
+            m("SanDisk SD card", "1234-ABCD"),
+            m("  ", "9ABC-DEF0"),
+        ]);
+        let names: Vec<&str> = d.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["SanDisk SD card", "9ABC-DEF0"], "{d:?}");
+        assert_eq!(d[0].path, base.join("1234-ABCD/DCIM").to_string_lossy());
+        assert_eq!(d[0].root, base.join("1234-ABCD").to_string_lossy());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// `expire` makes the next `get` rescan a list that is still fresh (the window got the focus back).
+    #[test]
+    fn devices_expire_rescans_a_fresh_list() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let r = runs.clone();
+        let watch = DeviceWatch::new(
+            move || {
+                r.fetch_add(1, Ordering::SeqCst);
+                Vec::new()
+            },
+            Duration::from_secs(3600),
+        );
+        assert!(watch.scan_now().is_empty());
+        assert!(watch.get().is_empty());
+        assert!(!watch.refreshing(), "fresh: no rescan");
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        watch.expire();
+        let _ = watch.get();
+        assert!(until(|| !watch.refreshing()));
+        assert_eq!(runs.load(Ordering::SeqCst), 2, "expired: rescanned");
+        let _ = watch.get();
+        assert!(!watch.refreshing() && runs.load(Ordering::SeqCst) == 2, "fresh again");
+        // the host's volumes go through `devices_on`
+        let w = DeviceWatch::over_mounts(Arc::new(|| vec![Mount { name: "USB drive".into(), root: "/nonexistent-lc-volume".into() }]), MAX_AGE);
+        assert!(w.scan_now().is_empty(), "no DCIM folder: not a device");
     }
 
     fn card(name: &str) -> Device {
@@ -302,6 +389,34 @@ mod tests {
         mounted.lock().unwrap().clear();
         assert!(watch.scan_now().is_empty());
         assert_eq!(changes.load(Ordering::SeqCst), 2);
+    }
+
+    /// An expire that arrives while a scan runs gets a scan of its own after that one lands.
+    #[test]
+    fn expire_mid_scan_rescans_once_more() {
+        let gate = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (g, r) = (gate.clone(), runs.clone());
+        let watch = DeviceWatch::new(
+            move || {
+                r.fetch_add(1, Ordering::SeqCst);
+                while !g.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Vec::new()
+            },
+            Duration::from_secs(3600),
+        );
+        let _ = watch.get();
+        assert!(until(|| runs.load(Ordering::SeqCst) == 1) && watch.refreshing());
+        watch.expire();
+        gate.store(true, Ordering::SeqCst);
+        assert!(until(|| !watch.refreshing()));
+        let _ = watch.get();
+        assert!(until(|| !watch.refreshing()));
+        assert_eq!(runs.load(Ordering::SeqCst), 2, "the expire during the first scan rescanned");
+        let _ = watch.get();
+        assert!(!watch.refreshing() && runs.load(Ordering::SeqCst) == 2, "fresh again");
     }
 
     #[test]

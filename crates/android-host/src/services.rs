@@ -22,6 +22,10 @@
 //! to date: readable → the query; denied → where to allow it; not asked yet → the request is
 //! made on the UI thread's next frame and the command says to try again once allowed. Imports
 //! default to Copy (`prefer_copy_import`): LightCraft can't write next to other apps' photos.
+//!
+//! SD cards and USB drives (APK-51, [`volumes`]): `Services::volumes` asks `StorageManager` for the
+//! mounted removable volumes on the device watch's worker; those with a `DCIM` folder are listed
+//! under File ▸ Import from Device and in the Local section.
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -142,6 +146,23 @@ pub fn share_fn(lookup: LookupFiles, chooser: StartChooser) -> lightcraft_ui_egu
         }
         let spec = ShareSpec::new(&shared).ok_or_else(|| "Nothing to share".to_owned())?;
         chooser(&spec)
+    })
+}
+
+/// The mounted removable volumes (Android: `volumes::query_volumes`, JNI on the calling worker).
+/// `Err` is the message, for the log.
+pub type VolumeQuery = Arc<dyn Fn() -> Result<Vec<lightcraft_android_sys::volumes::Volume>, String> + Send + Sync>;
+
+/// `Services::volumes` over the device's volume query: each volume as a mount the device scan looks
+/// for a `DCIM` folder in. A query that fails is logged and lists no volume (the cards come back at
+/// the next scan that works), never an error dialog every two seconds.
+pub fn volumes(query: VolumeQuery) -> lightcraft_ui_egui::VolumesFn {
+    Arc::new(move || match query() {
+        Ok(found) => found.into_iter().map(|v| lightcraft_engine::devices::Mount { name: v.name, root: v.root }).collect(),
+        Err(e) => {
+            log::warn!("can't list the SD cards and USB drives: {e}");
+            Vec::new()
+        }
     })
 }
 
@@ -434,6 +455,20 @@ mod tests {
         // Quit is never offered; without a way to the background, Back at the root does nothing
         assert!(s.quit_disabled && s.move_to_back.is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The device's volumes become the device scan's mounts under their labels; a failed query
+    /// lists none.
+    #[test]
+    fn volumes_become_mounts() {
+        use lightcraft_android_sys::volumes::Volume;
+        let answer: Arc<Mutex<Result<Vec<Volume>, String>>> =
+            Arc::new(Mutex::new(Ok(vec![Volume { name: "SanDisk SD card".into(), root: "/storage/1234-ABCD".into() }])));
+        let a = answer.clone();
+        let f = volumes(Arc::new(move || a.lock().unwrap().clone()));
+        assert_eq!(f(), [lightcraft_engine::devices::Mount { name: "SanDisk SD card".into(), root: "/storage/1234-ABCD".into() }]);
+        *answer.lock().unwrap() = Err("no storage service".into());
+        assert!(f().is_empty());
     }
 
     /// Links go to the host only when they are https; its refusal comes back as the message.

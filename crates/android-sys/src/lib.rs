@@ -20,5 +20,6 @@ pub mod media_store;
 pub mod permissions;
 pub mod props;
 pub mod storage;
+pub mod volumes;
 
 pub use jni_env::{Error, user_message};

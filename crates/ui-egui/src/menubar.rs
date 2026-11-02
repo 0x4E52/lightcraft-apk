@@ -643,7 +643,7 @@ pub(crate) fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>>
             v
         }
         "Import from Device" => {
-            let devices = lightcraft_engine::devices::devices();
+            let devices = app.session.devices.get();
             if devices.is_empty() {
                 vec![item("file.addFromDevice", Value::Null, "No Camera or Card Found", None, false, None)]
             } else {
@@ -1045,6 +1045,10 @@ fn nodes_ui(
             }
             MenuNode::Submenu { label, children } => {
                 submenu(ui, label, format!("      {}", crate::i18n::tr(label)), depth, bar_bottom, |ui| {
+                    if label == "Import from Device" {
+                        // (open: its cards are rescanned on the watch's interval)
+                        crate::panels::left::keep_devices_fresh(ui.ctx(), services);
+                    }
                     nodes_ui(ui, children, services, mac, clicked, depth + 1, bar_bottom)
                 });
             }

@@ -160,6 +160,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         shared: Some(shared_folders(&app)),
         share: Some(share(&app)),
         clipboard: Some(clipboard(&app)),
+        volumes: Some(volumes(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone());
     // what another app sent: `getIntent()` never changes while the Activity lives, so once
@@ -364,6 +365,14 @@ fn clipboard(app: &android_activity::AndroidApp) -> crate::services::Clip {
         set: std::rc::Rc::new(move |text: &str| lightcraft_android_sys::clipboard::set_text(&set_app, text).map_err(|e| e.user_message("copy"))),
         get: std::rc::Rc::new(move || lightcraft_android_sys::clipboard::get_text(&get_app).map_err(|e| e.user_message("paste"))),
     }
+}
+
+/// SD cards and USB drives: `StorageManager.getStorageVolumes()` on the device watch's worker
+/// (attached by `with_activity` for each scan).
+#[cfg(target_os = "android")]
+fn volumes(app: &android_activity::AndroidApp) -> crate::services::VolumeQuery {
+    let app = app.clone();
+    std::sync::Arc::new(move || lightcraft_android_sys::volumes::query_volumes(&app).map_err(|e| e.user_message("list the SD cards and USB drives")))
 }
 
 /// The content URIs of the intent that started the Activity ("Open with", a share), read on

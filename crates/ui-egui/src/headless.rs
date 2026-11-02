@@ -83,6 +83,9 @@ pub struct HeadlessView {
     pub clipboard: String,
     /// Events the host owes the next frame (a paste request's paste, as a desktop host sends it).
     owed: Vec<egui::Event>,
+    /// How soon the last frame asked to be drawn again (`Duration::MAX`: not until input), as a
+    /// host that draws on demand would wait.
+    pub repaint_delay: std::time::Duration,
 }
 
 impl Default for HeadlessView {
@@ -105,6 +108,7 @@ impl HeadlessView {
             frames: 0,
             clipboard: String::new(),
             owed: vec![],
+            repaint_delay: std::time::Duration::MAX,
         }
     }
 
@@ -156,7 +160,9 @@ impl HeadlessView {
                 self.clipboard.clone_from(text);
             }
         }
-        let commands = out.viewport_output.remove(&ViewportId::ROOT).map(|v| v.commands).unwrap_or_default();
+        let (commands, delay) =
+            out.viewport_output.remove(&ViewportId::ROOT).map(|v| (v.commands, v.repaint_delay)).unwrap_or((vec![], std::time::Duration::MAX));
+        self.repaint_delay = delay;
         // what a desktop host does with a cut, copy or paste request (egui-winit): the event, next frame
         for c in &commands {
             match c {
@@ -2938,6 +2944,195 @@ mod tests {
         if !home.is_empty() {
             assert!(!ids.contains(&format!("source:local:{home}")), "the HOME-based list is replaced, not extended: {ids:?}");
         }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A host that lists its volumes (`Services::volumes`, Android's SD cards and USB drives,
+    /// APK-51): one with a DCIM folder appears under File ▸ Import from Device and in Local (to
+    /// browse in place) with the host's label; one without (a drive of documents) doesn't; taken
+    /// out, it leaves both at the next scan.
+    #[test]
+    fn device_appears_in_import_and_local() {
+        use lightcraft_engine::devices::Mount;
+        let base = std::env::temp_dir().join(format!("lc-ui-volumes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (card, drive) = (base.join("1234-ABCD"), base.join("5678-EF01"));
+        std::fs::create_dir_all(card.join("DCIM/100CANON")).unwrap();
+        std::fs::create_dir_all(drive.join("Documents")).unwrap();
+        let s = |p: &std::path::Path| p.to_string_lossy().to_string();
+        let mounted = std::sync::Arc::new(std::sync::Mutex::new(vec![
+            Mount { name: "SanDisk SD card".into(), root: card.clone() },
+            Mount { name: "USB drive".into(), root: drive.clone() },
+        ]));
+        let m = mounted.clone();
+        let volumes: lightcraft_engine::devices::MountsFn = std::sync::Arc::new(move || m.lock().unwrap().clone());
+        let services = crate::Services { png: None, volumes: Some(volumes.clone()), ..Default::default() };
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo().with_fs(), services);
+        // the same volumes, rescanned only when asked: what makes the card leave below is the
+        // window getting the focus back, not the watch's interval
+        app.session.devices = lightcraft_engine::devices::DeviceWatch::over_mounts(volumes, Duration::from_secs(3600));
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+        let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"leftPanel": true}), t);
+        let (card_row, drive_row) = (format!("source:local:{}", s(&card)), format!("source:local:{}", s(&drive)));
+        let has = |h: &Headless, id: &str| h.app.widgets.iter().any(|(w, _)| w.as_str() == id);
+        assert!(h.step_until(t, |h| has(h, &card_row)), "the card is listed in Local");
+        assert!(!has(&h, &drive_row), "a volume without a DCIM folder is not a device");
+        // a host that draws on demand is woken for the next scan while Local shows the devices
+        h.settle(t);
+        h.step();
+        assert!(h.view.repaint_delay <= lightcraft_engine::devices::MAX_AGE, "{:?}", h.view.repaint_delay);
+        // File ▸ Import from Device: the card, by the host's label, importing its DCIM folder
+        let items = crate::menubar::expanded(&h.app, "Import from Device").unwrap();
+        let found: Vec<(String, String)> = items
+            .iter()
+            .filter_map(|n| match n {
+                crate::menubar::MenuNode::Item { id, params, label, enabled: true, .. } if id == "file.addFromDevice" => {
+                    Some((label.clone(), params["path"].as_str().unwrap_or("").to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(found, [("SanDisk SD card…".to_string(), s(&card.join("DCIM")))], "{items:?}");
+        // the command answers the same list
+        let r = h.request("engine.execute", json!({"command": "library.devices", "params": {}}), t);
+        assert_eq!(r["result"][0]["name"], "SanDisk SD card", "{r}");
+        assert_eq!(r["result"].as_array().map(Vec::len), Some(1), "{r}");
+        // Browse: the Local row browses the card in place
+        let r = h.request("ui.clickWidget", json!({"id": card_row}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(
+            h.step_until(t, |h| h.app.session.source == lightcraft_engine::LibrarySource::Folder
+                && h.app.session.browse.as_ref().is_some_and(|b| crate::panels::left::same_folder(&b.path, &s(&card)))),
+            "browsing the card"
+        );
+        assert!(!card.join(".lightcraft").exists() && std::fs::read_dir(&card).unwrap().count() == 1, "nothing written to the card");
+        // taken out: still listed while the list is fresh, gone from both once the window gets the
+        // focus back (that asks for a rescan)
+        mounted.lock().unwrap().clear();
+        h.app.ui.local_browse_root = None;
+        let _ = h.request("engine.execute", json!({"command": "library.source", "params": {"kind": "all"}}), t);
+        for _ in 0..10 {
+            h.step();
+        }
+        assert!(!h.app.session.devices.refreshing() && has(&h, &card_row), "a fresh list is served as it is");
+        h.events.push(egui::Event::WindowFocused(true));
+        assert!(h.step_until(t, |h| !has(h, &card_row)), "the card left Local");
+        let items = crate::menubar::expanded(&h.app, "Import from Device").unwrap();
+        assert!(
+            matches!(items.as_slice(), [crate::menubar::MenuNode::Item { label, enabled: false, .. }] if label == "No Camera or Card Found"),
+            "{items:?}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Without [`crate::Services::volumes`] (the desktop) the devices stay out of Local, and Local
+    /// asks for no wake-ups of its own: only a phone's cards and drives are listed there.
+    #[test]
+    fn desktop_devices_stay_out_of_local() {
+        use lightcraft_engine::devices::Mount;
+        let base = std::env::temp_dir().join(format!("lc-ui-volumes-desktop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let card = base.join("EOS_DIGITAL");
+        std::fs::create_dir_all(card.join("DCIM/100CANON")).unwrap();
+        let root = card.clone();
+        let volumes: lightcraft_engine::devices::MountsFn =
+            std::sync::Arc::new(move || vec![Mount { name: "EOS_DIGITAL".into(), root: root.clone() }]);
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo().with_fs(), crate::Services { png: None, ..Default::default() });
+        app.session.devices = lightcraft_engine::devices::DeviceWatch::over_mounts(volumes, Duration::from_secs(3600));
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+        let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"leftPanel": true}), t);
+        // the watch sees the card (File ▸ Import from Device lists it) ...
+        let r = h.request("engine.execute", json!({"command": "library.devices", "params": {}}), t);
+        assert_eq!(r["result"][0]["name"], "EOS_DIGITAL", "{r}");
+        h.settle(t);
+        h.step();
+        // ... but Local doesn't
+        let card_row = format!("source:local:{}", card.to_string_lossy());
+        assert!(h.app.widgets.iter().all(|(w, _)| w.as_str() != card_row), "a desktop mount is not a Local place");
+        assert!(h.view.repaint_delay > lightcraft_engine::devices::MAX_AGE, "{:?}", h.view.repaint_delay);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A card taken out during its import (APK-51): the files that can't be read any more fail one
+    /// by one, with the reason; nothing is added, nothing panics, and the window keeps working.
+    #[test]
+    fn volume_removed_mid_import_gives_file_errors() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let base = std::env::temp_dir().join(format!("lc-ui-volume-gone-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (card, out) = (base.join("9ABC-DEF0"), base.join("out"));
+        let dcim = card.join("DCIM/100NIKON");
+        std::fs::create_dir_all(&dcim).unwrap();
+        // one batch of the import's worker, then two files more
+        let batch = lightcraft_engine::import::batch_size();
+        let files = batch + 2;
+        for i in 0..files {
+            let img = lightcraft_raster::Rgba8 { width: 8, height: 8, data: vec![[(i * 13 % 256) as u8, 3, 9, 255]; 64] };
+            let png = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&img), &lightcraft_codecs::EncodeMeta::default()).unwrap();
+            std::fs::write(dcim.join(format!("DSC_{i:04}.png")), png).unwrap();
+        }
+        let root = card.clone();
+        let services = crate::Services {
+            png: None,
+            volumes: Some(std::sync::Arc::new(move || vec![lightcraft_engine::devices::Mount { name: "SD card".into(), root: root.clone() }])),
+            ..Default::default()
+        };
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo().with_fs(), services);
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+        // a reader of the card that disappears: the import reads each file again (the review's
+        // reads gave no size), a batch at a time, and copies a batch before reading the next; the
+        // card is pulled out at the first read of the second batch, after the first was copied
+        let (importing, reads) = (std::sync::Arc::new(AtomicBool::new(false)), std::sync::Arc::new(AtomicUsize::new(0)));
+        let (i, n, gone) = (importing.clone(), reads.clone(), card.clone());
+        app.session.media.file_probe = Some(std::sync::Arc::new(move |p: &str| {
+            if i.load(Ordering::SeqCst) && n.fetch_add(1, Ordering::SeqCst) == batch {
+                let _ = std::fs::remove_dir_all(&gone);
+            }
+            if !std::path::Path::new(p).is_file() {
+                return Err(format!("{p}: the card was removed"));
+            }
+            Ok(lightcraft_engine::media::ProbeInfo { format: "PNG".into(), ..Default::default() })
+        }));
+        let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+        let t = Duration::from_secs(10);
+        let photos = h.app.session.catalog.len();
+        let r = h.request("engine.execute", json!({"command": "file.addFromDevice", "params": {}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(h.step_until(SETTLE, |h| matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. }))), "the review opens");
+        if let Some(crate::state::Dialog::Import { opts }) = &mut h.app.ui.dialog {
+            assert!(opts.copy, "a card is copied");
+            assert_eq!(opts.candidates.len(), files);
+            opts.destination = out.to_string_lossy().to_string();
+        }
+        importing.store(true, Ordering::SeqCst);
+        let r = h.request("ui.dialog.confirm", json!({}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(h.step_until(SETTLE, |h| h.app.import.is_none()), "the import ended");
+        assert!(!card.exists(), "the card was pulled out");
+        assert_eq!(h.app.session.catalog.len(), photos + batch, "the photos copied before the card went stay");
+        let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+        assert!(toast.contains("· 2 not readable"), "each file left failed: {toast:?}");
+        fn files_in(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+            let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+            rd.flatten().map(|e| e.path()).flat_map(|p| if p.is_dir() { files_in(&p) } else { vec![p] }).collect()
+        }
+        let copied = files_in(&out);
+        assert_eq!(copied.len(), batch, "only the finished copies are left: {copied:?}");
+        for f in &copied {
+            assert!(
+                lightcraft_codecs::decode(&std::fs::read(f).unwrap(), lightcraft_codecs::DecodeOptions::default()).is_ok(),
+                "a whole copy: {}",
+                f.display()
+            );
+        }
+        // the window keeps working
+        h.step();
+        let r = h.request("ui.inspect", json!({}), t);
+        assert_eq!(r["ok"], true, "{r}");
         let _ = std::fs::remove_dir_all(&base);
     }
 

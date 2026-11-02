@@ -252,6 +252,10 @@ pub struct Session {
     /// The folders the host registered for Settings ▸ Storage (the only ones it measures or empties besides the
     /// session's own).
     pub storage_host: storage_report::HostDirs,
+    /// Cameras and cards (mounted volumes with a `DCIM` folder), scanned in the background: the
+    /// platform's mount folders by default ([`devices::shared`]); a host that lists its volumes
+    /// itself replaces it with [`devices::DeviceWatch::over_mounts`] (Android, APK-51).
+    pub devices: std::sync::Arc<devices::DeviceWatch>,
     /// Face model downloads started this session (the staged files wait in `<face_models_dir>/.downloads`).
     pub face_downloads: face_download::Downloads,
     /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
@@ -441,6 +445,7 @@ impl Session {
             denoise: Default::default(),
             face_models_dir: None,
             storage_host: Default::default(),
+            devices: devices::shared(),
             face_downloads: Default::default(),
             place_names: Default::default(),
             face_catalog: Default::default(),

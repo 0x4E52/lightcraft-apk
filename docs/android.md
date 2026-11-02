@@ -214,11 +214,34 @@ Limitations:
 - **Copy is the default, and Add in place is read-only.** Android lets LightCraft read other apps' photos but not
   change them: for photos added in place, writing XMP sidecars next to them, renaming, moving and deleting fail
   (the error says to import with Copy). Copy puts the photos in the library's own folder, where all of that works.
-- Only the phone's main storage is read: photos on an SD card are not listed yet.
+- The photo library is the phone's main storage: an SD card or USB drive is imported from File ▸ Import from
+  Device (next section).
 - Raws that the system does not list as images (many `.CR3`, `.ARW`, `.NEF` files) don't appear: share them to
   LightCraft instead (APK-25).
 - Denied for good: the import says "allow it in Settings ▸ Apps ▸ LightCraft ▸ Permissions"; after allowing it
   there, choose Import from Photo Library again.
+
+## SD cards and USB drives
+
+A microSD card in the phone, or a card reader or USB drive on the USB-C port (OTG), appears under File ▸ Import from
+Device and at the end of the Library sidebar's Local section, under the name Android gives it ("SanDisk SD card",
+"USB drive"), as soon as it is mounted: LightCraft asks Android's `StorageManager` for the mounted removable volumes
+every two seconds while a menu or the Local section shows them, and again when it comes back to the front. Only a
+volume with a `DCIM` folder (what every camera writes) is listed; the phone's own storage is in Local already (DCIM,
+Pictures, Download).
+
+- **Import from Device** reviews the card's DCIM folder and copies the photos into the library, verified (each copy
+  is read back and checked before it counts), as on the desktop. Card files the library already has are skipped.
+- **Browse** (tap the card in Local) shows its photos where they are, without copying; edits are kept in the
+  library, never written to the card.
+- Taking the card out during an import ends it with an error for each photo that couldn't be read ("2 not
+  readable"); the photos copied before stay, nothing is half-copied, and LightCraft keeps running.
+
+What is readable on a card: with the photo permission (asked by the first import), Android shows LightCraft the
+card's photos and videos by path, JPEG, HEIC, PNG, DNG and the raws its media database knows. Files it doesn't
+classify as media (on many phones `.CR3`, `.ARW`, `.NEF`, and every non-media file) are hidden from the listing, so
+they don't appear in the review at all; APK-52 says so in the app. A card that Android has *adopted* as internal
+storage is part of the phone's own storage and not listed as a device.
 
 ## Open with LightCraft and sharing
 
@@ -447,6 +470,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   Storage within the system's rounding; Clear on the thumbnail cache, smart previews and Inbox frees the space App
   info then shows; a fresh install starts with the 512 MB thumbnail cache limit.
 - [ ] APK-54: with under 1 GB free (fill the phone), the thumbnail and denoise caches shrink to half their limits within a minute and a notice says so (probe: `statvfs` through `storage_report::free_bytes`).
+- [ ] APK-51: a USB-C card reader with JPEG + raw folders and a phone with a microSD in it: both appear under File ▸
+  Import from Device and in Local with their names within two seconds of mounting; Import verifies and copies; Browse
+  shows the photos in place; unplugging mid-import gives "not readable" errors and no crash (logcat: no `panicked`).
 - [ ] Import from Photo Library (APK-23): import a JPEG folder and a DNG folder from the library; previews and edits
   work and GPS shows on the map; with Add in place, Save Metadata to File fails with the "Import the photo with Copy"
   error; a 20k-photo library lists its folders without a local-reference abort, the activity row showing while it

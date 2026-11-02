@@ -298,6 +298,9 @@ impl ExportKind {
     }
 }
 
+/// The host's mounted volumes ([`Services::volumes`]), asked on the device watch's thread.
+pub type VolumesFn = lightcraft_engine::devices::MountsFn;
+
 /// The host's export folder for each [`ExportKind`] ([`Services::export_dir_for`]).
 pub type ExportDirFn = Box<dyn Fn(ExportKind) -> String>;
 
@@ -443,6 +446,13 @@ pub struct Services {
     /// copy goes to it and every paste reads it, never blocking the UI thread ([`clipboard`]).
     /// `None` = egui's host clipboard (the desktop, the web).
     pub clipboard: Option<clipboard::ClipboardFns>,
+    /// The mounted volumes, as the host names them (Android: `StorageManager`'s removable
+    /// volumes, an SD card or a USB drive, APK-51): those with a `DCIM` folder are the cameras and
+    /// cards of File ▸ Import from Device, and are listed in the Library sidebar's Local section to
+    /// browse in place. Asked on the device watch's thread, again after [`lightcraft_engine::devices::MAX_AGE`]
+    /// and when the window gets the focus back. `None` = the platform's mount folders (the
+    /// desktop: `/Volumes`, `/media`, drive letters), not listed in Local.
+    pub volumes: Option<VolumesFn>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -665,6 +675,10 @@ impl LightcraftApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
+        // cameras and cards: the host's own volume list, when it has one
+        if let Some(volumes) = &services.volumes {
+            session.devices = lightcraft_engine::devices::DeviceWatch::over_mounts(volumes.clone(), lightcraft_engine::devices::MAX_AGE);
+        }
         // the folders Settings ▸ Storage may measure and empty: the host's, registered once, never a caller's
         session.storage_host = lightcraft_engine::storage_report::HostDirs {
             roots: services.storage_roots.clone(),
@@ -1354,12 +1368,16 @@ impl LightcraftApp {
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
         clipboard::mark_service(ctx, self.services.clipboard.is_some());
+        // back in the window: a card may have gone in or out meanwhile (the next look rescans)
+        if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(true)))) {
+            self.session.devices.expire();
+        }
         if !self.styled {
             theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
             theme::apply(ctx);
             // File → Add from Device lists cards scanned in the background: show hot-plugs
             let repaint = ctx.clone();
-            lightcraft_engine::devices::on_change(move || repaint.request_repaint());
+            self.session.devices.on_change(move || repaint.request_repaint());
             // "is the original there?" (grid, Info panel, Missing Photos) answers from a cache a
             // worker fills: a sleeping NAS or a dropped share never stalls a frame
             let repaint = ctx.clone();
@@ -1493,7 +1511,7 @@ impl LightcraftApp {
         // Settings → Import: open the import review when a camera or card is connected
         #[cfg(not(target_arch = "wasm32"))]
         if self.session.import_defaults.show_on_card {
-            if let Some(now) = lightcraft_engine::devices::devices_scanned() {
+            if let Some(now) = self.session.devices.get_scanned() {
                 import::cards_seen(self, now);
             }
             ctx.request_repaint_after(lightcraft_engine::devices::MAX_AGE);

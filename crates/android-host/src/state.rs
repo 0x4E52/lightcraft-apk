@@ -88,6 +88,8 @@ pub struct Start {
     pub share: Option<lightcraft_ui_egui::share::ShareFn>,
     /// The system clipboard (`None` in tests: egui's own, in-process).
     pub clipboard: Option<crate::services::Clip>,
+    /// The SD cards and USB drives (`None` in tests: the desktop's mount folders, none on a phone).
+    pub volumes: Option<crate::services::VolumeQuery>,
 }
 
 impl Start {
@@ -144,6 +146,7 @@ impl HostState {
         }
         services.share = start.share.clone();
         services.clipboard = start.clipboard.clone().map(crate::services::clipboard);
+        services.volumes = start.volumes.clone().map(crate::services::volumes);
         let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {
             app.ui = ui;
@@ -396,5 +399,23 @@ mod tests {
         (services.set)("Lisbon").unwrap();
         assert_eq!(*seen.borrow(), ["Lisbon"]);
         assert!(HostState::new(Err("in memory".into()), Start::default()).app.services.clipboard.is_none());
+    }
+
+    /// The device's SD cards and USB drives are the session's cameras and cards (APK-51).
+    #[test]
+    fn volumes_reach_the_device_scan() {
+        let base = std::env::temp_dir().join(format!("lc-android-volumes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("1234-ABCD/DCIM")).unwrap();
+        let root = base.join("1234-ABCD");
+        let query: crate::services::VolumeQuery =
+            std::sync::Arc::new(move || Ok(vec![lightcraft_android_sys::volumes::Volume { name: "SanDisk SD card".into(), root: root.clone() }]));
+        let state = HostState::new(Err("in memory".into()), Start { volumes: Some(query), ..Start::default() });
+        assert!(state.app.services.volumes.is_some());
+        let found = state.app.session.devices.scan_now();
+        assert_eq!(found.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["SanDisk SD card"]);
+        assert_eq!(found[0].path, base.join("1234-ABCD/DCIM").to_string_lossy());
+        assert!(HostState::new(Err("in memory".into()), Start::default()).app.services.volumes.is_none());
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -805,7 +805,13 @@ fn local_now(app: &mut LightcraftApp, ui: &egui::Ui) -> Option<LocalNow> {
     }
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     // (checked off the UI thread: a home folder can be on a network share)
-    let builtin = builtin_places(&home, &app.services.local_roots, |p| fs_cached(ui, "is-dir", p, 5.0, |p| std::path::Path::new(p).is_dir()));
+    let mut builtin = builtin_places(&home, &app.services.local_roots, |p| fs_cached(ui, "is-dir", p, 5.0, |p| std::path::Path::new(p).is_dir()));
+    if app.services.volumes.is_some() {
+        // the host's cards and drives (Android: an SD card, a USB drive), to browse in place;
+        // from the device scan, so one that is taken out leaves at the next scan
+        device_places(&mut builtin, app.session.devices.get());
+        keep_devices_fresh(ui.ctx(), &app.services);
+    }
     let browsing = app.session.browse.clone().filter(|_| app.session.source == LibrarySource::Folder);
     let current = browsing.as_ref().map(|b| b.path.clone());
     let places = local_places(builtin, &app.ui.local_roots, current.as_deref(), app.ui.local_browse_root.as_deref(), &app.ui.hidden_locations);
@@ -835,6 +841,26 @@ fn builtin_places(home: &str, roots: &[(String, std::path::PathBuf)], is_dir: im
         roots.iter().map(|(label, path)| (label.clone(), path.to_string_lossy().to_string())).collect()
     };
     places.into_iter().filter(|(_, p)| is_dir(p) == Some(true)).collect()
+}
+
+/// While a list of the host's cards and drives is shown (Local, an Import from Device menu), wake
+/// for the device watch's interval scan: a host that draws only on demand (Android) would
+/// otherwise not show a card mounted while the screen isn't touched until the next input. Nothing
+/// on a host without [`crate::Services::volumes`] (the desktop's mounts are not in Local).
+pub(crate) fn keep_devices_fresh(ctx: &egui::Context, services: &crate::Services) {
+    if services.volumes.is_some() {
+        ctx.request_repaint_after(lightcraft_engine::devices::MAX_AGE);
+    }
+}
+
+/// The cameras and cards after the built-in places, as `(name, volume root)`; a volume already
+/// listed is not listed again.
+fn device_places(places: &mut Vec<(String, String)>, devices: Vec<lightcraft_engine::devices::Device>) {
+    for d in devices {
+        if !places.iter().any(|(_, p)| same_folder(p, &d.root)) {
+            places.push((d.name, d.root));
+        }
+    }
 }
 
 /// Local's rows: each place as a folder tree, Browse Folder…, and the way back for hidden places.
@@ -1589,6 +1615,8 @@ fn folder_menu(app: &mut LightcraftApp, resp: &egui::Response, a: &Album) {
                 }
             }
             // File ▸ Import's ways in; the import review opens with this album chosen
+            let watch = app.session.devices.clone();
+            let host_volumes = app.services.volumes.is_some();
             let menu = crate::widgets::menu_button(ui, crate::i18n::tr("Import"), |ui| {
                 let mut entry = |ui: &mut egui::Ui, label: String, widget: String, command: &str, params: serde_json::Value| {
                     let r = ui.button(label);
@@ -1608,7 +1636,11 @@ fn folder_menu(app: &mut LightcraftApp, resp: &egui::Response, a: &Album) {
                 }
                 // like File ▸ Import from Device: one entry per camera or card found
                 let device = crate::widgets::menu_button(ui, crate::i18n::tr("Import from Device"), |ui| {
-                    let devices = lightcraft_engine::devices::devices();
+                    let devices = watch.get();
+                    if host_volumes {
+                        // (open: its cards are rescanned on the watch's interval)
+                        ui.ctx().request_repaint_after(lightcraft_engine::devices::MAX_AGE);
+                    }
                     if devices.is_empty() {
                         ui.add_enabled(false, egui::Button::new(crate::i18n::tr("No Camera or Card Found")));
                     }
