@@ -73,7 +73,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
         let more = icon_button(&mut hdr, "presetMore", Icon::More, vec2(28.0, 28.0), false, true, crate::i18n::tr("More preset options"));
         egui::Popup::menu(&more).show(|ui| {
-            let r = ui.checkbox(&mut app.ui.preset_thumbs, crate::i18n::tr("Show Thumbnails"));
+            let flag = if app.ui.touch_mode { &mut app.ui.preset_thumbs_touch } else { &mut app.ui.preset_thumbs };
+            let r = ui.checkbox(flag, crate::i18n::tr("Show Thumbnails"));
             register(ui.ctx(), "presetMenu:thumbnails", r.rect);
             ui.separator();
             if ui.button(crate::i18n::tr("Import Presets…")).clicked() {
@@ -85,22 +86,49 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
         });
         divider(ui);
+        let touch = app.ui.touch_mode;
+        let amount_spec = ControlSpec {
+            id: "presetAmount",
+            label: "Amount",
+            section: Section::Profile,
+            min: 0.0,
+            max: 200.0,
+            default: 100.0,
+            step: 1.0,
+            decimals: 0,
+            track: Track::Plain,
+        };
+        // a tapped preset (touch layouts) is previewed until Apply, another tap, Cancel or Back
+        if let Some(pid) = app.ui.preset_previewing.clone() {
+            if touch && app.session.active().map(|a| a.0) == app.ui.preset_preview_photo && app.session.presets.iter().any(|p| p.id == pid) {
+                let out = slider(ui, &amount_spec, app.ui.preset_preview_amount, true, None);
+                if let Some(v) = out.value {
+                    app.ui.preset_preview_amount = v;
+                }
+                ui.horizontal(|ui| {
+                    let apply = ui.button(crate::i18n::tr("Apply"));
+                    register(ui.ctx(), "presetApply", apply.rect);
+                    if apply.clicked() {
+                        apply_previewed(app, ui.ctx());
+                    }
+                    let cancel = ui.button(crate::i18n::tr("Cancel"));
+                    register(ui.ctx(), "presetCancel", cancel.rect);
+                    if cancel.clicked() {
+                        app.ui.preset_previewing = None;
+                    }
+                });
+                divider(ui);
+            } else {
+                app.ui.preset_previewing = None;
+            }
+        }
         // amount slider (applies to the last applied preset)
         let amt_id = egui::Id::new("preset-amount");
         let last: Option<AppliedPreset> = ui.data(|d| d.get_temp(amt_id));
-        if let Some(last) = last.clone().filter(|last| last.is_current(&app.session)) {
-            let spec = ControlSpec {
-                id: "presetAmount",
-                label: "Amount",
-                section: Section::Profile,
-                min: 0.0,
-                max: 200.0,
-                default: 100.0,
-                step: 1.0,
-                decimals: 0,
-                track: Track::Plain,
-            };
-            let out = slider(ui, &spec, last.amount, true, None);
+        if app.ui.preset_previewing.is_some() {
+            // the previewed preset's amount slider is shown above
+        } else if let Some(last) = last.clone().filter(|last| last.is_current(&app.session)) {
+            let out = slider(ui, &amount_spec, last.amount, true, None);
             if let Some(v) = out.value
                 && app.run("edit.undo", json!({})).is_ok()
             {
@@ -118,7 +146,16 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
         let active = app.session.active();
         let current = active.and_then(|id| app.session.develop_of(id)).map(|d| (*d).clone());
-        let thumbs = app.ui.preset_thumbs && active.is_some();
+        let thumbs = (if touch { app.ui.preset_thumbs_touch } else { app.ui.preset_thumbs }) && active.is_some();
+        // the previewed preset's look on the photo (touch layouts), shown until the preview ends
+        if let (Some(pid), Some(cur)) = (app.ui.preset_previewing.as_deref(), current.as_ref())
+            && let Some(pr) = app.session.presets.iter().find(|p| p.id == pid)
+        {
+            let name = crate::i18n::builtin_label(&pr.name, pr.builtin).to_string();
+            let settings = pr.apply(cur, (app.ui.preset_preview_amount / 100.0).clamp(0.0, 2.0));
+            app.hover_preview = Some(HoverPreview { label: crate::i18n::tr_format!("Preset: {name}", name = name), settings });
+        }
+        let previewing = app.ui.preset_previewing.clone();
         let row_h = if thumbs { 54.0 } else { 26.0 };
         let groups = grouped(ui.ctx(), &app.session.presets);
         let scroll = egui::ScrollArea::vertical().id_salt("presets-scroll").auto_shrink([false, false]).show(ui, |ui| {
@@ -170,10 +207,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     let is_last = last.as_ref().is_some_and(|l| l.id == pid);
                     if is_last {
                         ui.painter().rect_filled(r, 0.0, t.tool_active);
-                    } else if resp.hovered() {
+                    } else if previewing.as_deref() == Some(pid.as_str()) {
+                        ui.painter().rect_filled(r, 0.0, t.tool_active.gamma_multiply(0.6));
+                    } else if resp.hovered() && !touch {
                         ui.painter().rect_filled(r, 0.0, t.hover.gamma_multiply(0.7));
                     }
-                    let look = if thumbs || resp.hovered() { current.as_ref().map(|d| pr.apply(d, 1.0)) } else { None };
+                    let look = if thumbs || (resp.hovered() && !touch) { current.as_ref().map(|d| pr.apply(d, 1.0)) } else { None };
                     let mut text_x = r.left() + 40.0;
                     if thumbs && let (Some(id), Some(s)) = (active, look.as_ref()) {
                         let tr = Rect::from_min_size(pos2(r.left() + 36.0, r.top() + 5.0), vec2(66.0, row_h - 10.0));
@@ -191,6 +230,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     }
                     // resting on a preset previews it in the loupe (no history entry)
                     if resp.hovered()
+                        && !touch
                         && let Some(s) = look
                     {
                         let label = crate::i18n::tr_format!("Preset: {name}", name = name);
@@ -199,7 +239,16 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             ui.data_mut(|d| d.insert_temp(egui::Id::new("last-preset-hover"), (id, pr.clone(), label)));
                         }
                     }
-                    if resp.clicked() && app.run("preset.apply", json!({"id": pid, "amount": 100})).is_ok() {
+                    if touch && resp.clicked() {
+                        // a finger has no hover: the first tap previews on the photo, a second one on the same row applies
+                        if previewing.as_deref() == Some(pid.as_str()) {
+                            apply_previewed(app, ui.ctx());
+                        } else {
+                            app.ui.preset_previewing = Some(pid.clone());
+                            app.ui.preset_preview_amount = 100.0;
+                            app.ui.preset_preview_photo = app.session.active().map(|a| a.0);
+                        }
+                    } else if resp.clicked() && app.run("preset.apply", json!({"id": pid, "amount": 100})).is_ok() {
                         ui.data_mut(|d| d.insert_temp(amt_id, AppliedPreset::new(&app.session, pid.clone(), 100.0)));
                         ui.data_mut(|d| d.remove::<(lightcraft_catalog::PhotoId, Preset, String)>(egui::Id::new("last-preset-hover")));
                         app.toast(ui.ctx(), crate::i18n::tr_format!("Preset: {name}", name = name));
@@ -257,7 +306,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         });
         let last_hover_id = egui::Id::new("last-preset-hover");
         let pointer_in_scroll = ui.ctx().input(|i| i.pointer.hover_pos()).is_some_and(|pos| scroll.inner_rect.contains(pos));
-        if pointer_in_scroll {
+        if pointer_in_scroll && !touch {
             if app.hover_preview.is_none()
                 && let (Some(id), Some(curr)) = (active, current.as_ref())
                 && let Some((saved_id, saved_preset, saved_label)) =
@@ -270,6 +319,22 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             ui.data_mut(|d| d.remove::<(lightcraft_catalog::PhotoId, Preset, String)>(last_hover_id));
         }
     });
+}
+
+/// Commit the previewed preset at the preview's amount (one undo step, like a click on the desktop).
+fn apply_previewed(app: &mut LightcraftApp, ctx: &egui::Context) {
+    let Some(pid) = app.ui.preset_previewing.take() else { return };
+    let amount = app.ui.preset_preview_amount;
+    if app.run("preset.apply", json!({"id": pid, "amount": amount})).is_ok() {
+        ctx.data_mut(|d| {
+            d.insert_temp(egui::Id::new("preset-amount"), AppliedPreset::new(&app.session, pid.clone(), amount));
+            d.remove::<(lightcraft_catalog::PhotoId, Preset, String)>(egui::Id::new("last-preset-hover"));
+        });
+        let name = app.session.presets.iter().find(|p| p.id == pid).map(|p| crate::i18n::builtin_label(&p.name, p.builtin).to_string());
+        if let Some(name) = name {
+            app.toast(ctx, crate::i18n::tr_format!("Preset: {name}", name = name));
+        }
+    }
 }
 
 /// A preset group as the panel lists it: indices into the session's presets.

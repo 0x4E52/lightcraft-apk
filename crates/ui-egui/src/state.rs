@@ -662,6 +662,14 @@ pub struct UiState {
     pub presets: bool,
     /// Presets column: show a live thumbnail of the photo with each preset.
     pub preset_thumbs: bool,
+    /// Touch layouts: thumbnails are on unless switched off (a finger has no hover to preview with).
+    pub preset_thumbs_touch: bool,
+    /// Touch layouts (APK-58): the preset a tap is previewing on the photo (nothing is committed
+    /// until Apply or a second tap), with the amount (0..=200) the preview is shown at.
+    pub preset_previewing: Option<String>,
+    pub preset_preview_amount: f64,
+    /// The photo the preview was started on: a preview never carries over to another photo.
+    pub preset_preview_photo: Option<u64>,
     /// Filmstrip shown, for the window class in `filmstrip_short`.
     pub filmstrip: bool,
     /// The window is short ([`SHORT_WINDOW_HEIGHT`]) and `filmstrip` is its choice; the other
@@ -1325,6 +1333,10 @@ impl Default for UiState {
             right: RightPanel::Edit,
             presets: false,
             preset_thumbs: false,
+            preset_thumbs_touch: true,
+            preset_previewing: None,
+            preset_preview_amount: 100.0,
+            preset_preview_photo: None,
             filmstrip: true,
             filmstrip_short: false,
             filmstrip_other: false,

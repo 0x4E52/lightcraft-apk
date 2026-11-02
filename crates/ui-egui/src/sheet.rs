@@ -171,6 +171,10 @@ pub fn follow(app: &mut LightcraftApp) {
     if app.ui.sheet.open && !is_on(app, app.ui.sheet.content) {
         app.ui.sheet.open = false;
     }
+    // a tapped preset's preview (APK-58) lives only while the Presets sheet is up
+    if !(app.ui.sheet.open && app.ui.sheet.content == Content::Presets) {
+        app.ui.preset_previewing = None;
+    }
 }
 
 /// Back's first step on a phone: close the sheet. Says whether there was one to close.

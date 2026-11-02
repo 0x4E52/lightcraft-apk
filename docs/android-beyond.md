@@ -382,6 +382,13 @@ as stated):
 - **Depends on:** APK-33  **Needs:** none  **Model:** sonnet — one panel.
 - **Done when:** tests pass.  **Maintainer checks on a device:** try ten presets on one photo without the sheet
   closing.
+- **As built (2026-11-02):** `UiState::preset_previewing` (+ `preset_preview_amount`) holds the tapped preset; the
+  panel feeds the same `HoverPreview` from it every frame and hides the pointer-hover path under `touch_mode`. The
+  amount slider with Apply / Cancel sits above the list while previewing; `view.back` drops the preview before it
+  closes the sheet, but only while the Presets sheet is up and nothing is drawn over it. `sheet::follow` clears the
+  preview whenever the sheet is not showing Presets, and the panel drops it when the active photo changes. Thumbnails default on under touch (`preset_thumbs_touch`, the menu's checkbox edits it there).
+  User groups and favourites are the desktop's long-press menu, unchanged. Tests in `tests_presets_touch.rs`; the
+  device check is still the maintainer's.
 
 ### APK-59 Camera import over USB (MTP)
 - **Answers:** [C5](android-competitive.md#c5-raw-and-card-import-on-android) (PTP mode, hidden raws). A camera
@@ -544,4 +551,5 @@ the maintainer asks for a release; step 5 (APK-58, 59, 61, 62, 63, 64) runs firs
 - 2026-11-02 (APK-53): "As built" note on the card.
 - 2026-11-02 (APK-55): "As built" note on the card.
 - 2026-11-02 (APK-56): "As built" note on the card.
+- 2026-11-02 (APK-58): "As built" note on the card.
 - 2026-11-02: maintainer decision: step 5 before Phase 4's release cards (36 … 43), which wait for a release call.

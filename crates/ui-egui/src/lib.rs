@@ -170,6 +170,8 @@ mod tests_pick_browser;
 #[cfg(test)]
 mod tests_preset_import;
 #[cfg(test)]
+mod tests_presets_touch;
+#[cfg(test)]
 mod tests_preview_limit;
 #[cfg(test)]
 mod tests_print;
