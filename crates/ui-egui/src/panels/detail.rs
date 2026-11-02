@@ -2145,7 +2145,7 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
             && (resp.drag_started() || resp.dragged() || resp.clicked())
         {
             let n = map.norm(q);
-            let force = if app.ui.brush_pressure { ui.input(pen_force) } else { None };
+            let force = ui.input(|i| stroke_force(app.ui.brush_pressure, i));
             match &mut app.gesture {
                 // a held, unmoving pointer records nothing: coverage builds by passes, not time (#518)
                 Some(Gesture::Brush { points, .. }) if points.last() == Some(&n) => {}
@@ -3024,6 +3024,12 @@ pub(crate) fn pen_force(i: &egui::InputState) -> Option<f32> {
         egui::Event::Touch { force: Some(f), .. } if f.is_finite() => Some(f.clamp(0.0, 1.0)),
         _ => None,
     })
+}
+
+/// The pressure a brush stroke records this frame: the pen's force when Pen Pressure is on, else `None` (full
+/// pressure, which is what a finger paints at).
+pub(crate) fn stroke_force(pen_pressure: bool, i: &egui::InputState) -> Option<f32> {
+    if pen_pressure { pen_force(i) } else { None }
 }
 
 /// Record the pressure of the stroke's point `index`: `force` when the pen reported one this frame, else the last

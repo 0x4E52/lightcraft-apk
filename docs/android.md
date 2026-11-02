@@ -404,6 +404,15 @@ LightCraft's own thread without waiting for Android's main thread; a paste arriv
 later show the clipboard only to the app in front, so a paste works while LightCraft has the focus. Pastes are cut at
 1 MiB.
 
+## Stylus and finger strokes
+
+Brush ▸ Pen Pressure reads the `force` of touch events. On Android winit 0.30 reports a contact pressure for fingers
+too and drops android-activity's `ToolType::Stylus`, so neither egui nor the host can tell a stylus from a finger.
+The path taken (APK-56): on a touch-first host Pen Pressure starts off, so finger strokes paint at full pressure; the
+brush sheet shows "For a stylus; fingers paint at full pressure while off" under the switch (a touch screen shows no tooltip), and turning it on makes the S Pen's pressure scale each
+dab's size and flow (fingers then vary too). The desktop keeps it on. A per-pointer split needs winit 0.31's pointer
+kind. The choice is not kept: each launch of a touch-first host starts with Pen Pressure off. Not yet checked on a device.
+
 ## Privacy
 
 LightCraft collects nothing and sends nothing about you or your photos: no telemetry, no analytics, no crash

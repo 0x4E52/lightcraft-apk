@@ -162,6 +162,8 @@ mod tests_open_lightroom;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
+mod tests_pen_pressure;
+#[cfg(test)]
 mod tests_phone_limits;
 #[cfg(test)]
 mod tests_pick_browser;
@@ -1710,6 +1712,11 @@ impl LightcraftApp {
         self.release_touch(raw);
         self.take_paste(raw);
         if self.services.touch || raw.events.iter().any(|e| matches!(e, egui::Event::Touch { .. })) {
+            // APK-56: Android reports a contact pressure for fingers too and the host cannot tell a stylus
+            // from a finger (winit drops the tool type), so touch-first hosts start with Pen Pressure off
+            if !self.ui.touch_mode && self.services.touch {
+                self.ui.brush_pressure = false;
+            }
             self.ui.touch_mode = true;
         }
         if self.synthetic.is_empty() {

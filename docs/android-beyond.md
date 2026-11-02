@@ -330,6 +330,15 @@ as stated):
 - **Depends on:** APK-30b, APK-33  **Needs:** rust-target  **Model:** sonnet — small, test-driven; step 1 is a
   source read of winit and android-activity.
 - **Done when:** tests pass; `docs/android.md` says which path was taken and why.
+- **As built (2026-11-02):** step 1 found that winit 0.30.13's Android backend (`platform_impl/android/mod.rs`)
+  passes only `pointer.pressure()` as `Force::Normalized` and no tool type, so the host cannot tell a stylus from a
+  finger; step 2 was taken. `LightcraftApp::raw_input_hook` (`lib.rs`, not `state.rs`) turns `brush_pressure` off on
+  the first frame of a touch-first host (`services.touch`); `pen_force` gained a `stroke_force(enabled, input)` gate
+  instead of a pointer-kind argument; `crates/android-host/src/input.rs` is unchanged. The brush sheet shows the
+  visible caption "For a stylus; fingers paint at full pressure while off" under touch mode (a touch screen shows no
+  tooltip), translated in 7 catalogs. The choice is not persisted across launches. Tests: `finger_touch_paints_full_pressure`,
+  `stylus_force_scales_dab`, `desktop_pen_pressure_unchanged`, `touch_brush_sheet_explains_pen_pressure`. The device
+  check is still open.
 - **Maintainer checks on a device:** a brush mask by finger (even width) and by S Pen (width follows pressure) on a
   Galaxy Tab.
 
@@ -531,3 +540,4 @@ Phase 3.
 - 2026-11-02 (APK-52): "As built" note on the card.
 - 2026-11-02 (APK-53): "As built" note on the card.
 - 2026-11-02 (APK-55): "As built" note on the card.
+- 2026-11-02 (APK-56): "As built" note on the card.

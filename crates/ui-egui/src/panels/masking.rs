@@ -873,6 +873,9 @@ fn component_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, op: &str) {
     }
 }
 
+/// Caption under the Pen Pressure box on touch-first hosts.
+const PEN_PRESSURE_TOUCH_NOTE: &str = "For a stylus; fingers paint at full pressure while off";
+
 fn brush_settings(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 0 }).show(ui, |ui| {
@@ -900,6 +903,10 @@ fn brush_settings(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             .changed()
         {
             app.ui.brush_pressure = pressure;
+        }
+        if app.ui.touch_mode {
+            // visible text: a touch screen shows no tooltip (APK-56)
+            ui.small(crate::i18n::tr(PEN_PRESSURE_TOUCH_NOTE));
         }
     });
     for (id, label, min, max, get) in [
