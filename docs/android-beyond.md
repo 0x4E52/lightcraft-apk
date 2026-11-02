@@ -199,6 +199,17 @@ as stated):
 - **Done when:** tests pass; `docs/android.md` has the per-version facts that were observed, marked as such.
 - **Maintainer checks on a device:** on an Android 13 and an Android 15 phone, a folder with CR2, CR3, NEF, ARW, RAF
   and 3FR: record which types the note names and which appear; share a hidden CR3 and it imports.
+- **As built (2026-11-02):** decision 12 was decided (never requested), so step 3 adds nothing and the manifest is
+  unchanged. The raw extensions are `lightcraft_engine::import::RAW_EXTENSIONS` (the camera raws of `EXTENSIONS`,
+  DNG included). `android-sys` `mime::hidden_types` is the pure rule (an answer that isn't `image/*` hides the type;
+  upper case, each once, at most 64) and `query_hidden_types` asks `MimeTypeMap.getSingleton()` once, then each
+  extension in its own local frame (a call that throws counts as no answer). The host's `services::HiddenTypes` asks
+  it once per process on the loader's worker, before the session is handed over (a reopen asks nothing again; a
+  failed query is logged and names nothing), and `HostState::new` copies the answer into `Services::hidden_types`.
+  The note (`import::hidden_types_note`, widgets `label:importHiddenTypes` and `label:localHiddenTypes`) says "Share
+  them to LightCraft from the Files app, or open them with LightCraft"; "connect the camera by USB" waits for APK-59
+  (MTP), since a camera in mass-storage mode is a USB drive whose raws are hidden the same way. `docs/android.md`
+  "Raws this phone hides" marks the per-version facts as not observed yet; the JNI call has not run on a device.
 
 ### APK-53 Crash evidence: edit smoke script and last-crash report
 - **Answers:** [C2](android-competitive.md#c2-crashes-and-lost-edits) (crashes on crop and masking, edits lost). The
@@ -490,3 +501,4 @@ Phase 3.
   file inside the library where it is).
 - 2026-11-01 (APK-50): "As built" note on the card.
 - 2026-11-02 (APK-51): "As built" note on the card.
+- 2026-11-02 (APK-52): "As built" note on the card.

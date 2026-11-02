@@ -303,5 +303,6 @@
   "skipped {name} and {more} more: {reason}": "{name} ほか {more} 枚をスキップ：{reason}",
   "{n} kept their AI selections ({reason})": "{n} 枚は AI 選択範囲をそのまま保持（{reason}）",
   "{n} live masks need no update": "{n} 個のライブマスクは更新不要",
-  "Pasted. {label} did not start: {reason}": "貼り付けました。{label} を開始できませんでした: {reason}"
+  "Pasted. {label} did not start: {reason}": "貼り付けました。{label} を開始できませんでした: {reason}",
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "このスマートフォンは {types} ファイルをアプリから隠すため、ここのフォルダーには表示されません。ファイルアプリから LightCraft に共有するか、LightCraft で開いてください。"
 }

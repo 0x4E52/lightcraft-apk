@@ -303,5 +303,6 @@
   "skipped {name} and {more} more: {reason}": "已略過 {name} 及另外 {more} 張：{reason}",
   "{n} kept their AI selections ({reason})": "{n} 張保留了 AI 選取範圍（{reason}）",
   "{n} live masks need no update": "{n} 個即時遮色片無須更新",
-  "Pasted. {label} did not start: {reason}": "已貼上。{label} 未能開始：{reason}"
+  "Pasted. {label} did not start: {reason}": "已貼上。{label} 未能開始：{reason}",
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "這支手機對 App 隱藏 {types} 檔案，因此這裡的資料夾不會列出它們。請從「檔案」App 將它們分享到 LightCraft，或用 LightCraft 開啟。"
 }

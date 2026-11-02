@@ -303,5 +303,6 @@
   "skipped {name} and {more} more: {reason}": "пропущено {name} і ще {more}: {reason}",
   "{n} kept their AI selections ({reason})": "Фото зі збереженим виділенням ШІ: {n} ({reason})",
   "{n} live masks need no update": "Динамічні маски без оновлення: {n}",
-  "Pasted. {label} did not start: {reason}": "Вставлено. Не вдалося запустити «{label}»: {reason}"
+  "Pasted. {label} did not start: {reason}": "Вставлено. Не вдалося запустити «{label}»: {reason}",
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Цей телефон приховує від застосунків файли {types}, тому папки тут їх не показують. Поділіться ними з LightCraft із застосунку «Файли» або відкрийте їх у LightCraft."
 }

@@ -216,8 +216,8 @@ Limitations:
   (the error says to import with Copy). Copy puts the photos in the library's own folder, where all of that works.
 - The photo library is the phone's main storage: an SD card or USB drive is imported from File ▸ Import from
   Device (next section).
-- Raws that the system does not list as images (many `.CR3`, `.ARW`, `.NEF` files) don't appear: share them to
-  LightCraft instead (APK-25).
+- Raws that the system does not list as images don't appear: share them to LightCraft instead (APK-25). The import
+  review and Local name the types this phone hides ("Raws this phone hides" below).
 - Denied for good: the import says "allow it in Settings ▸ Apps ▸ LightCraft ▸ Permissions"; after allowing it
   there, choose Import from Photo Library again.
 
@@ -240,8 +240,31 @@ Pictures, Download).
 What is readable on a card: with the photo permission (asked by the first import), Android shows LightCraft the
 card's photos and videos by path, JPEG, HEIC, PNG, DNG and the raws its media database knows. Files it doesn't
 classify as media (on many phones `.CR3`, `.ARW`, `.NEF`, and every non-media file) are hidden from the listing, so
-they don't appear in the review at all; APK-52 says so in the app. A card that Android has *adopted* as internal
+they don't appear in the review at all; the app says which types (below). A card that Android has *adopted* as internal
 storage is part of the phone's own storage and not listed as a device.
+
+## Raws this phone hides
+
+Since Android 11 (scoped storage) the photo permission shows an app only the files of shared storage, and of an SD
+card or USB drive, that Android's media database counts as images or videos, and it counts a file by the MIME type
+of its extension. A phone whose type table has no image type for `.cr3` (or `.3fr`, `.iiq`, …) leaves those files out
+of every folder listing: no import code can see them, and the folder just looks incomplete. So once per start, on the
+worker that opens the library, LightCraft asks `MimeTypeMap.getMimeTypeFromExtension` about each raw extension it
+imports (`lightcraft_engine::import::RAW_EXTENSIONS`); each one without an `image/*` answer is hidden on this phone
+(`crates/android-sys/src/mime.rs`). The import review and the Library sidebar's Local section then say, for example,
+"This phone hides CR3, 3FR files from apps, so folders here don't list them. Share them to LightCraft from the Files
+app, or open them with LightCraft." Both ways work for every raw: the Files app reads them through its document
+provider, which lists every file, and LightCraft accepts them as `application/octet-stream` (next section). A
+phone that knows every type shows no note; the desktop never does. A camera connected by USB (MTP, APK-59) is a third
+way once it lands; until then the note doesn't offer it.
+
+"All files access" (`MANAGE_EXTERNAL_STORAGE`, which would make the hidden files visible by path) is never requested
+(decision 12, `docs/android-port.md`).
+
+Per-version facts: **none observed on a device yet.** Which types each Android version's table knows, and whether
+the media database follows `MimeTypeMap` exactly, are what the device check below records (an Android 13 and an
+Android 15 phone, a folder with CR2, CR3, NEF, ARW, RAF and 3FR). Until then the rule above is an assumption from
+the platform documentation, not a measurement; the JNI call has not run on a device.
 
 ## Open with LightCraft and sharing
 
@@ -473,6 +496,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] APK-51: a USB-C card reader with JPEG + raw folders and a phone with a microSD in it: both appear under File ▸
   Import from Device and in Local with their names within two seconds of mounting; Import verifies and copies; Browse
   shows the photos in place; unplugging mid-import gives "not readable" errors and no crash (logcat: no `panicked`).
+- [ ] APK-52: on an Android 13 and an Android 15 phone, a folder with CR2, CR3, NEF, ARW, RAF and 3FR: record which
+  types the note in Import from Photo Library's review and in Local names, and which files appear (write the facts in
+  "Raws this phone hides", marked observed); share a hidden CR3 from Files and it imports.
 - [ ] Import from Photo Library (APK-23): import a JPEG folder and a DNG folder from the library; previews and edits
   work and GPS shows on the map; with Add in place, Save Metadata to File fails with the "Import the photo with Copy"
   error; a 20k-photo library lists its folders without a local-reference abort, the activity row showing while it

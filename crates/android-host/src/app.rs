@@ -111,7 +111,7 @@ impl HostApp {
             self.control = Some(rx);
         }
         self.start.reopening(slot.take(), library.clone());
-        self.loader = crate::loader::open_library(library);
+        self.loader = crate::loader::open_library(library, self.start.hidden_types.clone());
         ctx.request_repaint();
         true
     }

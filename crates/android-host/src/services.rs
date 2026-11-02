@@ -26,12 +26,17 @@
 //! SD cards and USB drives (APK-51, [`volumes`]): `Services::volumes` asks `StorageManager` for the
 //! mounted removable volumes on the device watch's worker; those with a `DCIM` folder are listed
 //! under File ▸ Import from Device and in the Local section.
+//!
+//! Raw types this phone hides (APK-52, [`HiddenTypes`]): once per process, on the worker opening
+//! the library, `MimeTypeMap` is asked about each raw extension; the ones it has no `image/*`
+//! type for are left out of folder listings by the photo permission, so `Services::hidden_types`
+//! names them in the import review and in Local, with the way in (a share, "Open with").
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use lightcraft_android_sys::intents::ShareSpec;
@@ -164,6 +169,49 @@ pub fn volumes(query: VolumeQuery) -> lightcraft_ui_egui::VolumesFn {
             Vec::new()
         }
     })
+}
+
+/// The raw types this phone hides from apps, upper case (Android: `mime::query_hidden_types`
+/// over `import::RAW_EXTENSIONS`, JNI on the calling worker). `Err` is the message, for the log.
+pub type HiddenTypesQuery = Arc<dyn Fn() -> Result<Vec<String>, String> + Send + Sync>;
+
+/// The raw types this phone hides, asked once per process on the worker that opens the library
+/// ([`HiddenTypes::ask`], before the session is handed over), read by the UI thread when it
+/// builds the app ([`HiddenTypes::known`]). A phone's type table doesn't change while the app runs,
+/// so a reopen (Try Again) asks nothing again. Without a query (tests) nothing is hidden.
+#[derive(Clone, Default)]
+pub struct HiddenTypes {
+    query: Option<HiddenTypesQuery>,
+    known: Arc<OnceLock<Vec<String>>>,
+}
+
+impl HiddenTypes {
+    pub fn new(query: HiddenTypesQuery) -> HiddenTypes {
+        HiddenTypes { query: Some(query), known: Arc::default() }
+    }
+
+    /// Ask the query, unless it was asked already; a query that fails is logged and names no
+    /// type (a missing note, never an error dialog).
+    pub fn ask(&self) {
+        let Some(query) = &self.query else { return };
+        self.known.get_or_init(|| match query() {
+            Ok(hidden) => {
+                if !hidden.is_empty() {
+                    log::info!("this phone hides these raw types from apps: {}", hidden.join(", "));
+                }
+                hidden
+            }
+            Err(e) => {
+                log::warn!("can't tell which raw types this phone hides: {e}");
+                Vec::new()
+            }
+        });
+    }
+
+    /// The types [`HiddenTypes::ask`] found (empty before it answered or without a query).
+    pub fn known(&self) -> Vec<String> {
+        self.known.get().cloned().unwrap_or_default()
+    }
 }
 
 /// Back's last step: moves the app to the background without waiting for it (Android: JNI
@@ -469,6 +517,30 @@ mod tests {
         assert_eq!(f(), [lightcraft_engine::devices::Mount { name: "SanDisk SD card".into(), root: "/storage/1234-ABCD".into() }]);
         *answer.lock().unwrap() = Err("no storage service".into());
         assert!(f().is_empty());
+    }
+
+    /// The hidden raw types are asked once per process, whoever asks again (a reopen); a query
+    /// that fails names none; without a query nothing is hidden.
+    #[test]
+    fn hidden_types_asked_once() {
+        use std::sync::atomic::AtomicUsize;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let hidden = HiddenTypes::new(Arc::new(move || {
+            c.fetch_add(1, Ordering::SeqCst);
+            Ok(vec!["CR3".into(), "3FR".into()])
+        }));
+        assert!(hidden.known().is_empty(), "nothing before it was asked");
+        hidden.ask();
+        hidden.clone().ask();
+        assert_eq!(hidden.known(), ["CR3", "3FR"]);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let failed = HiddenTypes::new(Arc::new(|| Err("no MIME type map".into())));
+        failed.ask();
+        assert!(failed.known().is_empty());
+        let none = HiddenTypes::default();
+        none.ask();
+        assert!(none.known().is_empty());
     }
 
     /// Links go to the host only when they are https; its refusal comes back as the message.

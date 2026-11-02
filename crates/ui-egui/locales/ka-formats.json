@@ -303,5 +303,6 @@
   "skipped {name} and {more} more: {reason}": "გამოტოვებულია {name} და კიდევ {more}: {reason}",
   "{n} kept their AI selections ({reason})": "AI მონიშვნა შენარჩუნდა {n} ფოტოზე ({reason})",
   "{n} live masks need no update": "განახლება არ სჭირდება {n} ცოცხალ მასკას",
-  "Pasted. {label} did not start: {reason}": "ჩასმულია. {label} ვერ დაიწყო: {reason}"
+  "Pasted. {label} did not start: {reason}": "ჩასმულია. {label} ვერ დაიწყო: {reason}",
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "ეს ტელეფონი აპებს უმალავს {types} ფაილებს, ამიტომ აქაური საქაღალდეები მათ არ აჩვენებს. გააზიარეთ ისინი LightCraft-ში აპიდან „ფაილები“, ან გახსენით LightCraft-ით."
 }

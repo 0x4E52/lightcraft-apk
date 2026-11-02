@@ -114,6 +114,8 @@ mod tests_grading;
 #[cfg(test)]
 mod tests_grid;
 #[cfg(test)]
+mod tests_hidden_types;
+#[cfg(test)]
 mod tests_info_dialogs;
 #[cfg(test)]
 mod tests_keymap;
@@ -453,6 +455,12 @@ pub struct Services {
     /// and when the window gets the focus back. `None` = the platform's mount folders (the
     /// desktop: `/Volumes`, `/media`, drive letters), not listed in Local.
     pub volumes: Option<VolumesFn>,
+    /// The raw types this device hides from apps, upper case ("CR3", "3FR"; Android: extensions
+    /// its media database doesn't count as images, which the photo permission leaves out of every
+    /// folder listing, APK-52). The import review and the Library sidebar's Local section name
+    /// them and say how to bring them in anyway (share, "Open with"). Empty = nothing hidden (the
+    /// desktop, the web).
+    pub hidden_types: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

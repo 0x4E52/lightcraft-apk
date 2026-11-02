@@ -303,5 +303,6 @@
   "skipped {name} and {more} more: {reason}": "přeskočeno {name} a další ({more}): {reason}",
   "{n} kept their AI selections ({reason})": "Fotografie s ponechaným AI výběrem: {n} ({reason})",
   "{n} live masks need no update": "Živé masky bez nutnosti aktualizace: {n}",
-  "Pasted. {label} did not start: {reason}": "Vloženo. {label} se nespustilo: {reason}"
+  "Pasted. {label} did not start: {reason}": "Vloženo. {label} se nespustilo: {reason}",
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Tento telefon před aplikacemi skrývá soubory {types}, takže je zdejší složky nezobrazují. Sdílejte je do LightCraftu z aplikace Soubory nebo je otevřete v LightCraftu."
 }

@@ -42,6 +42,20 @@ pub(crate) fn grid_height(available: f32, below: f32, row: f32) -> f32 {
     if h.is_finite() { h.max(row) } else { (DIALOG_SIZE[1] - DEFAULT_BELOW_GRID).max(row) }
 }
 
+/// The note the import review and Local show when the device hides raw types from apps
+/// ([`crate::Services::hidden_types`], APK-52): which types, and how to bring them in anyway.
+/// `None` when nothing is hidden (the desktop always).
+pub(crate) fn hidden_types_note(hidden: &[String]) -> Option<String> {
+    if hidden.is_empty() {
+        return None;
+    }
+    let types = hidden.join(", ");
+    Some(crate::i18n::tr_format!(
+        "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.",
+        types = types
+    ))
+}
+
 /// Remember where the review dialog's content ends this frame (after its buttons), for
 /// [`grid_height`] on the next.
 pub(crate) fn note_dialog_bottom(ui: &egui::Ui) {
@@ -1102,6 +1116,10 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
         if d.sources.is_empty() {
             ui.label(egui::RichText::new(crate::i18n::tr("Choose a folder of the photo library to see its photos.")).color(t.text_dim).small());
         }
+    }
+    if let Some(note) = hidden_types_note(&app.services.hidden_types) {
+        let r = ui.label(egui::RichText::new(note).color(t.caution).small());
+        register(ui.ctx(), "label:importHiddenTypes", r.rect);
     }
     if !d.sources.is_empty() {
         field(ui, "Source", |ui| {

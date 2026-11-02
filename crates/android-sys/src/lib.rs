@@ -17,6 +17,7 @@ pub mod insets;
 pub mod intents;
 pub mod jni_env;
 pub mod media_store;
+pub mod mime;
 pub mod permissions;
 pub mod props;
 pub mod storage;

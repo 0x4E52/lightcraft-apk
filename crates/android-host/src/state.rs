@@ -90,6 +90,9 @@ pub struct Start {
     pub clipboard: Option<crate::services::Clip>,
     /// The SD cards and USB drives (`None` in tests: the desktop's mount folders, none on a phone).
     pub volumes: Option<crate::services::VolumeQuery>,
+    /// The raw types this phone hides from apps, asked on the loader's worker (default in tests:
+    /// no query, nothing hidden).
+    pub hidden_types: crate::services::HiddenTypes,
 }
 
 impl Start {
@@ -147,6 +150,7 @@ impl HostState {
         services.share = start.share.clone();
         services.clipboard = start.clipboard.clone().map(crate::services::clipboard);
         services.volumes = start.volumes.clone().map(crate::services::volumes);
+        services.hidden_types = start.hidden_types.known();
         let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {
             app.ui = ui;
@@ -417,5 +421,30 @@ mod tests {
         assert_eq!(found[0].path, base.join("1234-ABCD/DCIM").to_string_lossy());
         assert!(HostState::new(Err("in memory".into()), Start::default()).app.services.volumes.is_none());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The raw types the loader's worker found hidden reach the import review's and Local's note
+    /// (APK-52); a start without the query names none.
+    #[test]
+    fn hidden_types_reach_the_services() {
+        let hidden = crate::services::HiddenTypes::new(std::sync::Arc::new(|| Ok(vec!["CR3".into()])));
+        let mut loader = crate::loader::Loader::start({
+            let hidden = hidden.clone();
+            move || {
+                hidden.ask();
+                (lightcraft_engine::Session::new(), None)
+            }
+        });
+        let t0 = std::time::Instant::now();
+        let opened = loop {
+            if let Some(opened) = loader.poll() {
+                break opened;
+            }
+            assert!(t0.elapsed() < Duration::from_secs(10), "the loader answers");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let state = HostState::new(opened, Start { hidden_types: hidden, ..Start::default() });
+        assert_eq!(state.app.services.hidden_types, ["CR3"]);
+        assert!(HostState::new(Err("in memory".into()), Start::default()).app.services.hidden_types.is_empty());
     }
 }

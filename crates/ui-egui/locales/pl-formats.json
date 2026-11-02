@@ -303,5 +303,6 @@
   "skipped {name} and {more} more: {reason}": "pominięto {name} i {more} innych: {reason}",
   "{n} kept their AI selections ({reason})": "Zdjęcia z zachowanym zaznaczeniem AI: {n} ({reason})",
   "{n} live masks need no update": "Maski dynamiczne bez potrzeby aktualizacji: {n}",
-  "Pasted. {label} did not start: {reason}": "Wklejono. Nie uruchomiono: {label} ({reason})"
+  "Pasted. {label} did not start: {reason}": "Wklejono. Nie uruchomiono: {label} ({reason})",
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Ten telefon ukrywa przed aplikacjami pliki {types}, więc foldery tutaj ich nie pokazują. Udostępnij je do LightCraft z aplikacji Pliki albo otwórz je w LightCraft."
 }

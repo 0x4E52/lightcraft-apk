@@ -161,8 +161,9 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         share: Some(share(&app)),
         clipboard: Some(clipboard(&app)),
         volumes: Some(volumes(&app)),
+        hidden_types: crate::services::HiddenTypes::new(hidden_types(&app)),
     };
-    let loader = crate::loader::open_library(paths.library.clone());
+    let loader = crate::loader::open_library(paths.library.clone(), start.hidden_types.clone());
     // what another app sent: `getIntent()` never changes while the Activity lives, so once
     let shares = received_shares(&app);
 
@@ -373,6 +374,17 @@ fn clipboard(app: &android_activity::AndroidApp) -> crate::services::Clip {
 fn volumes(app: &android_activity::AndroidApp) -> crate::services::VolumeQuery {
     let app = app.clone();
     std::sync::Arc::new(move || lightcraft_android_sys::volumes::query_volumes(&app).map_err(|e| e.user_message("list the SD cards and USB drives")))
+}
+
+/// The raw types this phone hides: `MimeTypeMap` asked about each raw extension, on the worker
+/// that opens the library (attached by `with_activity`).
+#[cfg(target_os = "android")]
+fn hidden_types(app: &android_activity::AndroidApp) -> crate::services::HiddenTypesQuery {
+    let app = app.clone();
+    std::sync::Arc::new(move || {
+        lightcraft_android_sys::mime::query_hidden_types(&app, lightcraft_engine::import::RAW_EXTENSIONS)
+            .map_err(|e| e.user_message("tell which raw types this phone hides"))
+    })
 }
 
 /// The content URIs of the intent that started the Activity ("Open with", a share), read on

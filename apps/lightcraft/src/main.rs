@@ -277,6 +277,10 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         // the desktop has no private folders to total and no Inbox: the total is the sum of the parts
         storage_roots: Vec::new(),
         storage_inbox: None,
+        // the platform's mount folders; nothing to list in the Local section
+        volumes: None,
+        // the desktop and the browser hide no raw types from the app
+        hidden_types: Vec::new(),
         // under 1 GB free, the caches are trimmed to half their limits
         free_space: Some(Box::new(lightcraft_engine::storage_report::free_bytes)),
         pick_lightroom_catalog: Some(Box::new(|| {

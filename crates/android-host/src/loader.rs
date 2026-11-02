@@ -24,9 +24,12 @@ const _: fn() = || {
 };
 
 /// Start opening the library at `library` (a new one starts with the procedural demo photos) on a
-/// worker, with the folders and the SAM model of the desktop's `open_session`.
-pub fn open_library(library: std::path::PathBuf) -> Loader {
+/// worker, with the folders and the SAM model of the desktop's `open_session`. First, on the same
+/// worker, the raw types the phone hides are asked once ([`crate::services::HiddenTypes::ask`]),
+/// so they are known when the session arrives.
+pub fn open_library(library: std::path::PathBuf, hidden_types: crate::services::HiddenTypes) -> Loader {
     Loader::start(move || {
+        hidden_types.ask();
         let (session, problem) = lightcraft_ui_egui::host::session_open::open_session(false, Some(library), true);
         (session.with_default_sam3_model(), problem)
     })

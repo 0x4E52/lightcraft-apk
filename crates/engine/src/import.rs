@@ -42,6 +42,13 @@ pub const EXTENSIONS: &[&str] = &[
     "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf", "3fr", "fff", "mef",
 ];
 
+/// The camera raw extensions among [`EXTENSIONS`] (lower case): the files a phone's media database
+/// may not know as images, so the photo permission doesn't list them (APK-52).
+pub const RAW_EXTENSIONS: &[&str] = &[
+    "dng", "cr2", "cr3", "nef", "nrw", "arw", "raf", "orf", "rw2", "rwl", "raw", "pef", "srw", "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf",
+    "3fr", "fff", "mef",
+];
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ImportMode {
     /// Reference the files where they are.
@@ -1588,6 +1595,22 @@ mod tests_known;
 #[cfg(test)]
 mod prepared_tests {
     use super::*;
+
+    /// Every raw extension is one the import takes, and the ordinary image formats are not raws.
+    #[test]
+    fn raw_extensions_are_imported_extensions() {
+        for ext in RAW_EXTENSIONS {
+            assert!(EXTENSIONS.contains(ext), "{ext}");
+        }
+        // every other extension is a raw: a raw added to EXTENSIONS alone would never be named as hidden
+        let not_raw = ["jpg", "jpeg", "png", "tif", "tiff", "webp", "psd", "jxl", "gif", "bmp", "heic", "heif", "avif"];
+        for ext in not_raw {
+            assert!(!RAW_EXTENSIONS.contains(&ext), "{ext}");
+        }
+        for ext in EXTENSIONS {
+            assert!(not_raw.contains(ext) || RAW_EXTENSIONS.contains(ext), "{ext} is neither in RAW_EXTENSIONS nor listed as not raw");
+        }
+    }
 
     #[test]
     fn revalidate_add_only_converts_matching_ready_item() {

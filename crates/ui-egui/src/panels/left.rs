@@ -866,6 +866,12 @@ fn device_places(places: &mut Vec<(String, String)>, devices: Vec<lightcraft_eng
 /// Local's rows: each place as a folder tree, Browse Folder…, and the way back for hidden places.
 fn local_rows(app: &mut LightcraftApp, ui: &mut egui::Ui, now: &LocalNow) {
     let (local, current) = (&now.places, now.current.as_deref());
+    // the raw types the phone leaves out of every folder listed here (APK-52)
+    if let Some(note) = crate::import::hidden_types_note(&app.services.hidden_types) {
+        let t = Tokens::get(ui.ctx());
+        let r = ui.add(egui::Label::new(egui::RichText::new(note).color(t.caution).small()).wrap());
+        register(ui.ctx(), "label:localHiddenTypes", r.rect);
+    }
     for (i, (name, path)) in local.places.iter().enumerate() {
         let transient = local.browse_root.as_deref() == Some(path.as_str());
         let reveal = local.owner == Some(i);
