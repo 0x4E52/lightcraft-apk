@@ -148,7 +148,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let current = active.and_then(|id| app.session.develop_of(id)).map(|d| (*d).clone());
         let thumbs = (if touch { app.ui.preset_thumbs_touch } else { app.ui.preset_thumbs }) && active.is_some();
         // the previewed preset's look on the photo (touch layouts), shown until the preview ends
-        if let (Some(pid), Some(cur)) = (app.ui.preset_previewing.as_deref(), current.as_ref())
+        if let (true, Some(pid), Some(cur)) = (touch, app.ui.preset_previewing.as_deref(), current.as_ref())
             && let Some(pr) = app.session.presets.iter().find(|p| p.id == pid)
         {
             let name = crate::i18n::builtin_label(&pr.name, pr.builtin).to_string();

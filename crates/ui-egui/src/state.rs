@@ -666,9 +666,12 @@ pub struct UiState {
     pub preset_thumbs_touch: bool,
     /// Touch layouts (APK-58): the preset a tap is previewing on the photo (nothing is committed
     /// until Apply or a second tap), with the amount (0..=200) the preview is shown at.
+    #[serde(skip)]
     pub preset_previewing: Option<String>,
+    #[serde(skip)]
     pub preset_preview_amount: f64,
     /// The photo the preview was started on: a preview never carries over to another photo.
+    #[serde(skip)]
     pub preset_preview_photo: Option<u64>,
     /// Filmstrip shown, for the window class in `filmstrip_short`.
     pub filmstrip: bool,

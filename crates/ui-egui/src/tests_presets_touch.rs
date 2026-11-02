@@ -214,3 +214,83 @@ fn back_closes_dialog_before_preview() {
     assert_eq!(h.app.ui.preset_previewing, None);
     assert!(h.app.ui.sheet.open);
 }
+
+fn tablet() -> Headless {
+    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    app.ui.settings.gpu = false;
+    let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+    h.app.ui.touch_mode = true;
+    h.request("ui.set", json!({"view": "detail"}), T);
+    frames(&mut h);
+    h.app.ui.presets = true;
+    frames(&mut h);
+    assert!(!h.app.ui.sheet.phone, "a wide layout has no sheet");
+    h
+}
+
+#[test]
+fn tablet_back_cancels_preview_and_closing_column_drops_it() {
+    let mut h = tablet();
+    let (w1, _, _) = rows_wide(&h).swap_remove(0);
+    tap(&mut h, &w1);
+    assert!(h.app.ui.preset_previewing.is_some());
+    assert_eq!(h.app.run("view.back", json!({})), Ok(Value::Null));
+    frames(&mut h);
+    assert_eq!(h.app.ui.preset_previewing, None);
+    assert_eq!(h.app.ui.view, crate::state::ViewMode::Detail, "Back only dropped the preview");
+    let (w1, _, _) = rows_wide(&h).swap_remove(0);
+    tap(&mut h, &w1);
+    assert!(h.app.ui.preset_previewing.is_some());
+    h.app.ui.presets = false;
+    frames(&mut h);
+    assert_eq!(h.app.ui.preset_previewing, None, "closing the column drops the preview");
+}
+
+fn rows_wide(h: &Headless) -> Vec<(String, String, String)> {
+    let mut found: Vec<_> = h
+        .app
+        .widgets
+        .iter()
+        .filter_map(|(w, r)| {
+            let id = w.strip_prefix("preset:")?;
+            let p = h.app.session.presets.iter().find(|p| p.id == id)?;
+            Some((r.top(), w.clone(), id.to_owned(), p.name.clone()))
+        })
+        .collect();
+    found.sort_by(|a, b| a.0.total_cmp(&b.0));
+    found.into_iter().map(|(_, w, i, n)| (w, i, n)).collect()
+}
+
+#[test]
+fn preview_is_not_persisted() {
+    let ui = crate::state::UiState {
+        preset_previewing: Some("lc.warm-glow".into()),
+        preset_preview_amount: 40.0,
+        preset_preview_photo: Some(3),
+        ..Default::default()
+    };
+    let back: crate::state::UiState = serde_json::from_str(&serde_json::to_string(&ui).expect("ser")).expect("de");
+    assert_eq!(back.preset_previewing, None);
+    assert_eq!(back.preset_preview_photo, None);
+    assert_eq!(back.preset_preview_amount, 100.0);
+}
+
+#[test]
+fn touch_thumbnails_default_on() {
+    let h = phone();
+    assert!(h.app.ui.preset_thumbs_touch && !h.app.ui.preset_thumbs);
+    let (w, _, _) = rows(&h).swap_remove(0);
+    assert!(rect(&h, &w).height() >= 54.0 - 0.5, "rows are thumbnail rows without anything set");
+}
+
+#[test]
+fn touch_thumbnails_menu_toggle_flips_the_touch_flag_only() {
+    let mut h = phone();
+    for id in ["icon:presetMore", "presetMenu:thumbnails"] {
+        let r = h.request("ui.clickWidget", json!({"id": id}), T);
+        assert_eq!(r["ok"], true, "{id}: {r}");
+        frames(&mut h);
+    }
+    assert!(!h.app.ui.preset_thumbs_touch, "the menu toggle turned the touch thumbnails off");
+    assert!(!h.app.ui.preset_thumbs, "the desktop flag is untouched");
+}

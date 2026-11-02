@@ -631,8 +631,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                 // the in-app file chooser is over everything: it closes first, choosing nothing
                 crate::pick_browser::cancel(app);
             } else if !over_sheet
-                && app.ui.sheet.open
-                && app.ui.sheet.content == crate::sheet::Content::Presets
+                && (if app.ui.sheet.phone { app.ui.sheet.open && app.ui.sheet.content == crate::sheet::Content::Presets } else { app.ui.presets })
                 && app.ui.preset_previewing.take().is_some()
             {
                 // a preset tapped to preview on a touch layout: Back drops the preview, the sheet stays up

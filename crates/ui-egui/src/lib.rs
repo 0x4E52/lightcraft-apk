@@ -1934,6 +1934,10 @@ impl LightcraftApp {
         // right panels and left panel run to the bottom; the bottom bar sits between them).
         // filled: the gaps the dock leaves between its panes show chrome, not the dark clear colour
         let chrome = theme::Tokens::get(&ctx).chrome;
+        if !self.ui.presets {
+            // a tapped preset's preview (APK-58) lives only while the Presets panel is up, on any layout
+            self.ui.preset_previewing = None;
+        }
         if self.ui.cull_mode && matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare) {
             // Cull Mode: the loupe (or the two-up Compare) and the filmstrip full screen under the cull bar; no top
             // bar, panels or toolbar
