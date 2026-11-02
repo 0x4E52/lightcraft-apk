@@ -890,6 +890,13 @@ pub struct UiState {
     /// Lights Out (Shift+L): not saved, every launch starts with the lights on.
     #[serde(skip)]
     pub lights_out: LightsOut,
+    /// Cull Mode (`view.cullMode`, `panels::cull_touch`): the loupe full screen with the filmstrip and the cull
+    /// bar. Not saved.
+    #[serde(skip)]
+    pub cull_mode: bool,
+    /// The HUD a rating or flag swipe shows over the photo, and until when (app time).
+    #[serde(skip)]
+    pub cull_hud: Option<(String, f64)>,
     /// Window ▸ Second Window.
     pub second_window: bool,
     /// The keyword painter: clicking a photo in the grid toggles this keyword on it.
@@ -1125,10 +1132,12 @@ pub enum Dialog {
     /// Help ▸ What's New.
     WhatsNew,
     /// Photo ▸ Assisted Culling: reject photos below this focus score (0 = none), pick the best
-    /// of each burst.
+    /// of each burst. `visible`: score the photos in view whatever is selected (Cull Mode's bar), so
+    /// the user's selection is kept.
     Cull {
         reject_below: f32,
         pick_best: bool,
+        visible: bool,
     },
     /// Help ▸ System Info: (label, value) rows.
     DenoiseModel {
@@ -1410,6 +1419,8 @@ impl Default for UiState {
             auto_advance: false,
             fullscreen: false,
             lights_out: LightsOut::On,
+            cull_mode: false,
+            cull_hud: None,
             slideshow: None,
             second_window: false,
             keyword_painter: None,

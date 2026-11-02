@@ -1,6 +1,6 @@
 # Android touch UI: target behaviour
 
-*Last updated: 2026-11-01.* Revision history at the end.
+*Last updated: 2026-11-02.* Revision history at the end.
 
 What the Android build should feel like: someone who knows Lightroom on a phone finds every tool where they expect
 it and every gesture does what they expect. Phase 3 of [`android-port.md`](android-port.md) (APK-29 … APK-35)
@@ -60,25 +60,36 @@ edit, import or delete in the personal library). Screenshots of Adobe apps never
 ## 2. Gestures
 
 From Adobe's gesture reference for Lightroom on mobile; Android differences are to be verified. The "LightCraft"
-column names the existing command or control where there is one; APK-30 maps the rest.
+column names the command or control each gesture runs. The loupe's finger gestures live in
+`crates/ui-egui/src/panels/cull_touch.rs` (APK-55): they read the raw touch events, so a mouse and the keys behave as
+before, and they act only where no tool owns the photo (Crop, Masking, Remove, Red Eye, a picker).
 
 | Where | Gesture | Does | LightCraft |
 |---|---|---|---|
-| Photo | press and hold | show the original while held | `cmd:view.showOriginal` |
-| Photo | single tap | hide / show all controls | lights-out style toggle (APK-30) |
-| Photo | double tap | zoom to detail, again to fit | `cmd:view.zoomToggle` |
-| Photo | pinch | zoom | already in `panels/detail.rs` |
-| Photo (fit) | swipe sideways | next / previous photo | `cmd:view.navigate` |
-| Photo, left half | swipe up / down | raise / lower the star rating | `cmd:photo.increaseRating` / `decreaseRating` |
-| Photo, right half | swipe up / down | set / clear the flag | flag commands (APK-30) |
-| Photo | two-finger tap | cycle info overlays (file, rating/flags, EXIF) | info overlay (APK-30) |
-| Slider | double tap the thumb | reset to default | control reset |
-| Slider | tap left / right of the thumb | nudge in small steps | control step |
-| Slider | drag with two fingers | show clipping while adjusting | clipping overlay |
-| Slider + photo | one finger held on the photo while dragging a slider | the desktop Alt/Option view (clipping/mask) | clipping overlay |
-| Crop frame | double tap | reset the crop | crop reset |
-| Grid | pinch or two-finger swipe | thumbnail size | grid size |
-| Grid | tap / long press | open / start multi-select | APK-30b |
+| Photo | press and hold | show the original while held | `cmd:view.showOriginal` (by key; a held finger opens the photo's menu for now) |
+| Photo | single tap | hide / show all controls | `cmd:view.lightsOut` off / on (APK-55); acts once no second tap followed (0.3 s) |
+| Photo | double tap | zoom to detail, again to fit | the click-zoom ratio at the point, as `cmd:view.zoomToggle` (APK-30, APK-55) |
+| Photo | pinch | zoom | `cmd:view.navigate` (`navigate_gesture` in `panels/detail.rs`) |
+| Photo (fit) | swipe sideways | next / previous photo | `cmd:library.next` (to the left) / `cmd:library.previous` (APK-55) |
+| Photo (fit), left half | swipe up / down | raise / lower the star rating | `cmd:photo.increaseRating` / `cmd:photo.decreaseRating`, with a HUD (APK-55) |
+| Photo (fit), right half | swipe up / down | set / clear the flag | `cmd:photo.increaseFlag` / `cmd:photo.decreaseFlag`: reject, unflagged, pick (APK-55) |
+| Photo (zoomed in) | one-finger drag | pan | `cmd:view.navigate` (APK-30); never a swipe |
+| Photo | two-finger tap | cycle info overlays (file, rating/flags, EXIF) | `cmd:view.infoOverlay` (APK-55) |
+| Cull Mode filmstrip | press and hold a photo | compare it with the active one | `cmd:view.cullMode`; the two-up Compare of `cmd:view.compare` with the active photo as select and the held one as candidate; Back returns to the select (APK-55) |
+| Slider | double tap the thumb | reset to default | `cmd:develop.resetControl` (a double click on any slider) |
+| Slider | tap left / right of the thumb | nudge in small steps | `cmd:develop.adjust` (by key and sideways scroll; taps: APK-61) |
+| Slider | drag with two fingers | show clipping while adjusting | `cmd:view.clipping` (by key; the gesture: APK-61) |
+| Slider + photo | one finger held on the photo while dragging a slider | the desktop Alt/Option view (clipping/mask) | `cmd:view.clipping` (by key; the gesture: APK-61) |
+| Crop frame | double tap | reset the crop | `cmd:crop.reset` in the panel; a double tap inside the frame applies it (`cmd:tool.done`), as a double click does |
+| Grid | pinch or two-finger swipe | thumbnail size | `cmd:view.thumbSizeUp` / `cmd:view.thumbSizeDown` (the bottom bar's slider; pinch not yet mapped) |
+| Grid | tap / long press | open / start multi-select | `cmd:library.select` (APK-30b) |
+
+**Cull Mode** (View ▸ Cull Mode, `cmd:view.cullMode`, APK-55): the loupe full screen with the filmstrip and a bar
+(Done, Next Unflagged `cmd:view.nextUnflagged`, Assisted Culling… on the photos in view `cmd:dialog.cull`); the
+gestures above work there, holding a filmstrip photo opens the two-up Compare (a mouse's right click still opens
+the photo menu), and Back goes from Compare to the loupe on the photo being culled, then out of Cull Mode. A gesture
+counts only when it starts on the photo itself: the widgets over it (the Navigator, a face region's label and x, the
+filter pill) keep their taps.
 
 ## 3. Premium features and where LightCraft stands
 
@@ -145,3 +156,4 @@ toolbar and sheets of §1, APK-34 the top bar and overflow menu. A card that has
 - 2026-11-01: the phone layout as built (APK-33): edit toolbar and bottom sheet below 600 pt width.
 - 2026-11-01: dialogs fit a phone (APK-33b).
 - 2026-11-01: the menu bar collapses to one overflow button on a phone (APK-34); the top bar's search collapses to a magnifier (APK-34b).
+- 2026-11-02: §2 as built (APK-55): the loupe's swipes, taps and two-finger tap, Cull Mode; every row names its command.

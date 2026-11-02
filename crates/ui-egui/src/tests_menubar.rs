@@ -207,7 +207,9 @@ fn overflow_lists_every_menu_command() {
     );
     narrow.settle(SETTLE);
     assert!(narrow.app.ui.sheet.phone && widget(&narrow, "menu:all").is_some());
-    let mut h = Headless::new(LightcraftApp::new(lightcraft_engine::Session::with_demo(), svc), [590.0, 900.0], 1.0);
+    // 1000 pt tall: the hover below reaches a submenu row only while it is inside the View menu's popup, and
+    // Before/After Settings sits low in that long menu
+    let mut h = Headless::new(LightcraftApp::new(lightcraft_engine::Session::with_demo(), svc), [590.0, 1000.0], 1.0);
     h.settle(SETTLE);
     assert!(h.app.ui.sheet.phone);
     assert!(widget(&h, "menu:all").is_some(), "one overflow button");

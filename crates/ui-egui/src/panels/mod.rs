@@ -5,6 +5,7 @@ pub mod bottombar;
 pub mod chips;
 pub mod compare;
 pub mod crop_overlay;
+pub mod cull_touch;
 pub mod denoise;
 pub mod detail;
 pub mod dialogs;

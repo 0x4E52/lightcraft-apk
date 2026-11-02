@@ -437,7 +437,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let full = ui.max_rect();
     let fullscreen = app.ui.fullscreen;
-    let show_film = app.ui.filmstrip && !fullscreen;
+    // Cull Mode (`cull_touch`) always has the filmstrip: a long press there compares
+    let show_film = !fullscreen && (app.ui.filmstrip || app.ui.cull_mode);
     let film_h = if show_film { t.film_h } else { 0.0 };
     let canvas = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - film_h));
     app.canvas_rect = Some(canvas);
@@ -455,7 +456,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let Some(photo) = app.session.catalog.photo(id).cloned() else { return };
     let d = (*photo.develop).clone();
     // the full-screen preview shows the photo only: no tool overlays
-    let right = if fullscreen { RightPanel::None } else { app.ui.right };
+    let right = if fullscreen || app.ui.cull_mode { RightPanel::None } else { app.ui.right };
     let crop_tool = right == RightPanel::Crop;
     let frame = Frame::with_lens(photo.width.max(1) as usize, photo.height.max(1) as usize, &d, !crop_tool, photo.embedded_lens.as_ref());
     let aspect = frame.aspect() as f32;
@@ -788,6 +789,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     register(ui.ctx(), "canvas:image", img_rect);
     let map = CanvasMap::new(&frame, img_rect);
     info_overlay(app, &p, canvas, &photo);
+    super::cull_touch::hud(app, ui, canvas);
     if !fullscreen {
         filter_pill(app, ui, canvas);
     }
@@ -839,6 +841,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if !matches!(right, RightPanel::Crop | RightPanel::Masking | RightPanel::Remove | RightPanel::RedEye) {
         general_cursor(app, ui, &resp, img_rect, main_area);
     }
+    // the finger gestures (swipes to rate, flag and move on; taps): only where no tool owns the photo, but fed
+    // every frame so a gesture that began under a tool doesn't act later
+    let general = !matches!(right, RightPanel::Crop | RightPanel::Masking | RightPanel::Remove | RightPanel::RedEye);
+    super::cull_touch::loupe(app, ui, &resp, main_area, img_rect, general && !navigating && app.ui.tool.is_empty());
     if !navigating {
         match right {
             RightPanel::Crop => crop_overlay(app, ui, &resp, &map, &frame, &d, id),
@@ -1460,7 +1466,9 @@ fn general_interaction(
     let zoomed = img.width() > canvas.width() + 1.0 || img.height() > canvas.height() + 1.0;
     // The second click of a double click / double tap is not a toggle of its own: the first one already was, and
     // toggling twice left a double tap (the touch way to zoom, APK-30) where it started.
-    let toggle = resp.clicked() && !resp.double_clicked();
+    // A finger's tap is not a click here: a single tap shows / hides the controls and a double tap zooms
+    // (`cull_touch`).
+    let toggle = resp.clicked() && !resp.double_clicked() && !app.loupe_gestures.touched();
     if toggle && !zoomed {
         if let Some(q) = resp.interact_pointer_pos() {
             let u = ((q.x - img.left()) / img.width()).clamp(0.0, 1.0);
@@ -2676,8 +2684,16 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
                     app.toast(ui.ctx(), e);
                 }
             }
-            // the same photo actions as the grid and loupe (Restore / Delete Permanently in Recently Deleted)
-            resp.context_menu(|ui| super::grid::context_menu(app, ui, *id));
+            if app.ui.cull_mode && resp.long_touched() {
+                // Cull Mode: holding a photo compares it with the active one (two-up) instead of the menu; a mouse's
+                // right click still opens the menu
+                if let Err(e) = super::cull_touch::compare_with(app, *id) {
+                    app.toast(ui.ctx(), e);
+                }
+            } else {
+                // the same photo actions as the grid and loupe (Restore / Delete Permanently in Recently Deleted)
+                resp.context_menu(|ui| super::grid::context_menu(app, ui, *id));
+            }
         }
     });
 }

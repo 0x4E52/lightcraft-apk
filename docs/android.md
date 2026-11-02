@@ -515,6 +515,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] APK-53: run `packaging/android/control-check.sh` (or the edit smoke script through `run.py --strict`) on a Pixel
   and on a Samsung phone through the debug control server; force a panic (a debug build with a deliberate one) and
   start again: the window appears, Copy Report pastes the text, Share Report offers the log, Dismiss ends it.
+- [ ] APK-55: cull 200 photos one-handed in flight mode (swipes rate / flag / move on, Cull Mode, hold a filmstrip
+  photo to compare); no accidental rating or flag while panning a zoomed photo; a single tap hides and shows the
+  controls.
 - [ ] APK-52: on an Android 13 and an Android 15 phone, a folder with CR2, CR3, NEF, ARW, RAF and 3FR: record which
   types the note in Import from Photo Library's review and in Local names, and which files appear (write the facts in
   "Raws this phone hides", marked observed); share a hidden CR3 from Files and it imports.

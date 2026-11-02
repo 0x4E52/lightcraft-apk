@@ -88,6 +88,8 @@ mod tests_crop_rotate;
 #[cfg(test)]
 mod tests_crop_tool;
 #[cfg(test)]
+mod tests_cull_touch;
+#[cfg(test)]
 mod tests_curve;
 #[cfg(test)]
 mod tests_date_picker;
@@ -555,6 +557,8 @@ pub struct LightcraftApp {
     pub touch_queue: std::collections::VecDeque<TouchStep>,
     /// Fingers currently down (the first is the primary one that drives the pointer).
     pub(crate) touch_fingers: Vec<u64>,
+    /// The loupe's touch gestures (swipes, taps; `panels::cull_touch`).
+    pub(crate) loupe_gestures: panels::cull_touch::Gestures,
     /// Synthetic clock: `RawInput.time` when the current `ui.touch` request started releasing.
     touch_origin: Option<f64>,
     /// Seconds the synthetic clock is ahead of the host's, so egui sees the gaps between events.
@@ -724,6 +728,7 @@ impl LightcraftApp {
             synthetic: vec![],
             touch_queue: Default::default(),
             touch_fingers: vec![],
+            loupe_gestures: Default::default(),
             touch_origin: None,
             touch_shift: 0.0,
             copied: None,
@@ -1891,6 +1896,11 @@ impl LightcraftApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         self.library_changed(&ctx);
+        // Cull Mode belongs to the loupe and Compare: a view change any other way (a grid shortcut, a module
+        // switch) ends it, so the next loupe opens normally
+        if self.ui.cull_mode && !matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare) {
+            self.ui.cull_mode = false;
+        }
         // panels set it again this frame while the pointer rests on a preset or profile
         self.hover_preview = None;
         self.ai_mask_detail(&ctx);
@@ -1913,13 +1923,17 @@ impl LightcraftApp {
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        panels::topbar::show(self, ui);
-        panels::library_problem::banner(self, ui);
         // filled: the gaps the dock leaves between its panes show chrome, not the dark clear colour
         let chrome = theme::Tokens::get(&ctx).chrome;
-        if self.ui.sheet.phone {
+        if self.ui.cull_mode && matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare) {
+            // Cull Mode: the loupe (or the two-up Compare) and the filmstrip full screen under the cull bar; no top
+            // bar, panels or toolbar
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::BLACK)).show(ui, |ui| panels::cull_touch::show(self, ui));
+        } else if self.ui.sheet.phone {
             // a phone: the edit toolbar at the bottom, a tool's panel as the sheet above it, the
             // photo in the rest (no dock beside it)
+            panels::topbar::show(self, ui);
+            panels::library_problem::banner(self, ui);
             sheet::follow(self);
             sheet::toolbar(self, ui);
             sheet::show(self, ui);
@@ -1928,6 +1942,8 @@ impl LightcraftApp {
                 docking::photo_view(self, &mut photo);
             });
         } else {
+            panels::topbar::show(self, ui);
+            panels::library_problem::banner(self, ui);
             panels::strip::show(self, ui);
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
         }

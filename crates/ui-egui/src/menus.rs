@@ -127,6 +127,10 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("local.restoreHidden", "Show Hidden Local Locations", None, ""),
     ("view.fullScreenPreview", "Full Screen Preview", Some("F"), "View"),
     ("view.lightsOut", "Lights Out", Some("Shift+L"), "View"),
+    // {on?}; no params toggles: the loupe full screen with the filmstrip and the cull bar (`panels::cull_touch`)
+    ("view.cullMode", "Cull Mode", None, "View"),
+    // {}: the next photo in view after the active one that has no flag
+    ("view.nextUnflagged", "Next Unflagged Photo", None, "Photo"),
     ("view.enterFullScreen", "Enter Full Screen", Some("Cmd+Shift+F"), "View"),
     ("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View"),
     ("view.chooseLayoutImage", "Choose Layout Image…", None, "View"),
@@ -622,7 +626,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "view.back" => {
             // what is drawn over the sheet (a dialog, lights-out, the full-screen preview or a
             // slideshow, which hide it) closes before it
-            let over_sheet = app.ui.dialog.is_some() || app.ui.lights_out != crate::state::LightsOut::On || app.ui.fullscreen;
+            let over_sheet = app.ui.dialog.is_some() || app.ui.lights_out != crate::state::LightsOut::On || app.ui.fullscreen || app.ui.cull_mode;
             if app.pick_browser.is_some() {
                 // the in-app file chooser is over everything: it closes first, choosing nothing
                 crate::pick_browser::cancel(app);
@@ -647,8 +651,14 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                 panel(app, &ctx, RightPanel::Crop, "Crop, Rotate, Geometry");
             } else if app.ui.view == ViewMode::People && app.ui.person_page.is_some() {
                 app.ui.person_page = None;
+            } else if app.ui.cull_mode && app.ui.view == ViewMode::Compare {
+                // Cull Mode's two-up: its loupe, on the photo being culled
+                return Some(crate::panels::cull_touch::leave_compare(app));
             } else if matches!(app.ui.view, ViewMode::Compare | ViewMode::Survey) {
                 app.ui.view = ViewMode::Detail;
+            } else if app.ui.cull_mode {
+                // Cull Mode's two-up goes back to its loupe (above), then Back leaves Cull Mode for the loupe
+                app.ui.cull_mode = false;
             } else if app.ui.view == ViewMode::Detail {
                 // a photo opened from a person's page (or the unnamed faces) goes back there, any other to the grid
                 match app.ui.person_from.take() {
@@ -693,6 +703,8 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             }
             Ok(json!({"fullscreen": app.ui.fullscreen}))
         }
+        "view.cullMode" => crate::panels::cull_touch::set_mode(app, p),
+        "view.nextUnflagged" => crate::panels::cull_touch::next_unflagged(app),
         "view.lightsOut" => {
             // {mode?: on | dim | off} (cycles when omitted)
             match p.get("mode").and_then(Value::as_str) {
@@ -1488,7 +1500,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "photo.editInExternal" => edit_in(app, &ctx, p, false),
         "photo.openOriginalInExternal" => open_original_in(app, &ctx, p),
         "dialog.cull" => {
-            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true });
+            // {scope?: "visible"}: the photos in view whatever is selected (else the selection, or the view)
+            let visible = p.get("scope").and_then(Value::as_str) == Some("visible");
+            app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true, visible });
             Ok(Value::Null)
         }
         "app.whatsNew" => {
@@ -2226,6 +2240,8 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         "file.exportCurvePresets" => !app.session.curve_presets.is_empty(),
         "view.compare" => app.session.catalog.len() > 1,
         "view.fullScreenPreview" | "view.infoOverlay" | "view.navigator" => app.session.active().is_some() || app.ui.fullscreen,
+        "view.cullMode" => app.session.active().is_some() || app.ui.cull_mode,
+        "view.nextUnflagged" => app.session.active().is_some(),
         // (on Android only from the library problem window: `pick_browser::refusal`)
         "app.openLibrary" | "app.newLibrary" => {
             (app.services.pick_folder.is_some() || in_app) && crate::panels::settings::can_switch_library(app).is_ok()

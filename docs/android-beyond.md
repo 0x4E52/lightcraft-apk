@@ -292,6 +292,23 @@ as stated):
 - **Depends on:** APK-30, APK-30b, APK-33  **Needs:** none  **Model:** opus — gesture conflicts in the busiest view.
 - **Done when:** tests pass; the touch spec's §2 names a command or control on every row.
 - **Maintainer checks on a device:** cull 200 photos one-handed in flight mode; no accidental rating while panning.
+- **As built (2026-11-02):** `crates/ui-egui/src/panels/cull_touch.rs` recognises the gestures from the frame's raw
+  touch events (a mouse never sends one, so mouse and keys are unchanged) and runs commands: a sideways swipe is
+  `library.next` / `library.previous` (the card's `view.navigate` sets zoom and pan; it is the pinch's command), the
+  flag swipes `photo.increaseFlag` / `decreaseFlag` (pick, unflagged, reject), on the active photo only (`ids`). A
+  single tap is `view.lightsOut` off / on, held back 0.3 s so the first tap of a double tap (zoom, now the touch
+  recogniser's, not egui's click) doesn't toggle it; a finger's tap no longer click-zooms. A gesture that starts on
+  another layer (a dialog, a menu), outside the loupe or on a widget over the photo (egui gives the press or the
+  click to the Navigator, a face region's label or x, the filter pill), a cancelled one and a slow drag (over 0.8 s)
+  do nothing.
+  Cull Mode (`view.cullMode`, `UiState::cull_mode`, not saved) replaces the top bar, panels and toolbar with a bar
+  (Done, Next Unflagged = `view.nextUnflagged`, Assisted Culling… as `dialog.cull {scope: "visible"}`, scoring
+  the photos in view and keeping the selection) over the loupe and filmstrip; holding a filmstrip photo there opens
+  Compare with the active photo instead of the photo menu (a right click still opens the menu); Back: Compare →
+  loupe on the photo being culled, alone → out of Cull Mode; leaving the loupe and Compare any other way (a grid
+  shortcut) ends Cull Mode. Tests: `tests_cull_touch.rs` (the card's seven plus `cull_mode_needs_a_photo…`,
+  `a_mouse_click_still_zooms…`, `leaving_the_loupe_another_way…`, `assisted_culling_from_the_cull_bar…` and
+  `a_tap_on_a_widget_over_the_photo…`) and the recogniser's unit tests in `cull_touch.rs`.
 
 ### APK-56 Finger strokes at full pressure, pen pressure from a stylus
 - **Answers:** [C13](android-competitive.md#c13-stylus-and-tablets). Brush ▸ Pen Pressure reads `force` from every
@@ -513,3 +530,4 @@ Phase 3.
 - 2026-11-02 (APK-51): "As built" note on the card.
 - 2026-11-02 (APK-52): "As built" note on the card.
 - 2026-11-02 (APK-53): "As built" note on the card.
+- 2026-11-02 (APK-55): "As built" note on the card.

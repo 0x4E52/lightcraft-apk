@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-02 · **Change:** minor (LR-IMP-PHOTOLIB, LR-IMP-DEVICE-ANDROID: the note on raw types Android hides, APK-52; LR-IMP-DEVICE-ANDROID: new row, SD cards and USB drives on Android, APK-51; LR-BEHAV-ANDROID-BACKUP: new row, library backup and restore on Android, APK-50; LR-EXP-SHARE-ANDROID: new row, exports to Pictures/Documents and File ▸ Share on Android, APK-27; LR-IMP-SHARE-ANDROID: new row, "Open with" and shares on Android, APK-25; LR-IMP-PICKER-ANDROID: new row, the in-app file chooser and the commands disabled on Android, APK-24; LR-IMP-PHOTOLIB: new row, Android's Import from Photo Library, APK-23; LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-02 · **Change:** minor (LR-LIB-CULL-TOUCH: new row, culling by finger and Cull Mode, APK-55; LR-IMP-PHOTOLIB, LR-IMP-DEVICE-ANDROID: the note on raw types Android hides, APK-52; LR-IMP-DEVICE-ANDROID: new row, SD cards and USB drives on Android, APK-51; LR-BEHAV-ANDROID-BACKUP: new row, library backup and restore on Android, APK-50; LR-EXP-SHARE-ANDROID: new row, exports to Pictures/Documents and File ▸ Share on Android, APK-27; LR-IMP-SHARE-ANDROID: new row, "Open with" and shares on Android, APK-25; LR-IMP-PICKER-ANDROID: new row, the in-app file chooser and the commands disabled on Android, APK-24; LR-IMP-PHOTOLIB: new row, Android's Import from Photo Library, APK-23; LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -27,7 +27,7 @@ cited here still exists. Formerly docs/parity.md.
 | Section | ✅ | 🟡 | ⬜ | 🚫 | P0 done | P1 done |
 |---|---:|---:|---:|---:|---:|---:|
 | A. Import (IMP) | 12 | 7 | 1 | 1 | 4/6 (67%) | 5/9 (56%) |
-| B. Library management (LIB) | 22 | 2 | 1 | 2 | 9/9 (100%) | 9/9 (100%) |
+| B. Library management (LIB) | 22 | 3 | 1 | 2 | 9/9 (100%) | 9/9 (100%) |
 | C. Views & navigation (VIEW) | 16 | 1 | 1 | 0 | 9/9 (100%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
 | E. Metadata (META) | 5 | 1 | 0 | 0 | 2/2 (100%) | 2/2 (100%) |
@@ -53,9 +53,9 @@ cited here still exists. Formerly docs/parity.md.
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 78 | 4 | 2 | 1 | 49/52 (94%) | 24/26 (92%) |
 | Lightroom Classic extras | 40 | 23 | 23 | 8 | — | 24/26 (92%) |
-| **Total** | 420 | 68 | 58 | 35 | 194/201 (97%) | 148/167 (89%) |
+| **Total** | 420 | 69 | 58 | 35 | 194/201 (97%) | 148/167 (89%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.2%** of 546 in-scope rows — P0 98.3% of 201 · P1 93.4% of 167 · P2 56.2% of 177.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.1%** of 547 in-scope rows — P0 98.3% of 201 · P1 93.4% of 167 · P2 56.2% of 178.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -121,6 +121,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-LIB-SHOWFINDER | Reveal original in file manager | P0 | ✅ | `cmd:app.showInFinder` | ⌘R (see MENU-FILE-SHOWFINDER) |
 | LR-LIB-COVER | Album cover | P2 | ✅ | `cmd:album.setCover` | |
 | LR-LIB-CULL | Assisted culling | P2 | 🟡 | `cmd:photo.analyze`, `cmd:dialog.cull`, `crates/pipeline/src/cull.rs` | Photo ▸ Assisted Culling…: focus score (0–100), clipping, burst grouping (look-alike shots within 10 s) with the sharpest marked; reject below a focus score, pick each burst's best; classical measures — no eyes-closed / expression detection |
+| LR-LIB-CULL-TOUCH | Cull by touch: loupe swipes and taps, Cull Mode (beyond Lightroom desktop) | P2 | 🟡 | `cmd:view.cullMode`, `cmd:view.nextUnflagged`, `cmd:library.next`, `cmd:library.previous`, `cmd:photo.increaseRating`, `cmd:photo.decreaseRating`, `cmd:photo.increaseFlag`, `cmd:photo.decreaseFlag`, `cmd:view.lightsOut`, `cmd:view.infoOverlay`, `crates/ui-egui/src/panels/cull_touch.rs`, `crates/ui-egui/src/tests_cull_touch.rs`, `docs/android-touch-ui.md` | Lightroom mobile's loupe gestures: at fit a finger swipe sideways moves to the next / previous photo, up / down on the left half raises / lowers the rating and on the right half picks / unflags / rejects (each one undo step, with a short HUD); a single tap hides and shows the controls (Lights Out), a double tap zooms, a two-finger tap cycles the info overlay; zoomed in a drag still pans. View ▸ Cull Mode: the loupe full screen with the filmstrip and a bar (Next Unflagged, Assisted Culling… on the photos in view); holding a filmstrip photo opens the two-up Compare. Mouse and keys unchanged. Partial: checked through synthetic touches only, not yet on a device |
 | LR-LIB-ACTIVITY | Comments & likes | OOS | 🚫 | | |
 | LR-LIB-QUICKCOLL | Quick collection [Classic] | P2 | ✅ | `cmd:album.toggleTarget`, `cmd:album.clearQuick` | B in the grids |
 | LR-LIB-VIRTUALCOPY | Virtual copies [Classic] | P1 | ✅ | `cmd:photo.virtualCopy`, `cmd:photo.delete`, `crates/engine/src/cmd/organize.rs` | “Copy N” badge, stacked with the original, same albums, no XMP writes; deleting a copy dissolves or renumbers the stack (#1493); no “Set Copy as Master” |
@@ -903,3 +904,4 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 | 2026-11-01 | minor | LR-MASK-UPDATE ⬜ → 🟡: Photo ▸ Update AI Masks (`mask.updateAi`) and Paste Selected Settings' "Recompute subject and sky on each photo" compute SAM 3 selections again per photo (kept and reported where the model can't run); LR-EDIT-AUTO: Auto Settings on a selection, each photo its own analysis, one undo step (APK-60) |
 | 2026-11-02 | minor | LR-IMP-DEVICE-ANDROID: new row (🟡), SD cards and USB drives under Import from Device and in Local on Android (APK-51) |
 | 2026-11-02 | minor | LR-IMP-PHOTOLIB, LR-IMP-DEVICE-ANDROID: the import review and Local name the raw types the phone hides from apps (APK-52) |
+| 2026-11-02 | minor | LR-LIB-CULL-TOUCH: new row (🟡), culling by finger in the loupe and Cull Mode (APK-55) |
