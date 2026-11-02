@@ -1,6 +1,8 @@
 //! A message dialog over the Activity (`android.app.AlertDialog`), for what the user must read
-//! even when LightCraft's own window can't draw: a renderer that failed to start (APK-19). A
-//! text-input variant follows for APK-35.
+//! even when LightCraft's own window can't draw: a renderer that failed to start (APK-19), and a
+//! text-input variant, [`show_text_input`] (APK-35): the fallback for text a NativeActivity
+//! window can't take from the soft keyboard (composition for Chinese and Japanese, autocorrect,
+//! swipe typing), because Android's own `EditText` talks to the keyboard in full.
 //!
 //! [`show_alert`] posts the dialog to the Java main thread with
 //! `AndroidApp::run_on_java_main_thread` and returns at once: android_main never waits for the Java
@@ -9,6 +11,13 @@
 //! [`Alert::status`] as often as it likes: `Dialog.isShowing()` only reads a field, so it is called
 //! directly on the calling thread. The mapping from what is known to a [`Status`] is pure
 //! ([`status_from`]) and tested on every target.
+//!
+//! The text-input dialog works the same way: one button with a `null` listener, not cancelable
+//! (Back and a tap outside leave it open), so a closed dialog always means "Done" without a Java
+//! listener class (decision 2: no Java). [`TextInput::status`] reads `isShowing()` and the
+//! `EditText`'s `getText()` on the calling thread each time it is asked, so the caller can mirror
+//! the text while it is typed and take it whole once the dialog is closed ([`input_status_from`],
+//! pure). The text is the user's own, still capped at [`MAX_INPUT_BYTES`].
 
 use crate::Error;
 
@@ -135,6 +144,167 @@ impl Alert {
     }
 }
 
+/// The most text the text-input dialog hands back (bytes); more is cut on a char boundary.
+pub const MAX_INPUT_BYTES: usize = 64 * 1024;
+
+/// What a posted text-input dialog is doing, as android_main sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputStatus {
+    /// Posted; the Java main thread has not built it yet.
+    Pending,
+    /// On screen, holding this text.
+    Editing(String),
+    /// Closed by its button, with this text.
+    Done(String),
+    /// It could not be shown, or asking about it failed.
+    Failed(Error),
+}
+
+/// `text` cut to [`MAX_INPUT_BYTES`] on a char boundary.
+pub fn capped_input(mut text: String) -> String {
+    if text.len() > MAX_INPUT_BYTES {
+        let mut end = MAX_INPUT_BYTES;
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    text
+}
+
+/// The text-input status from what the Java main thread reported (as [`status_from`]),
+/// `is_showing` (`Dialog.isShowing()`) and `text` (the `EditText`'s `getText()`), both asked only
+/// once the dialog exists; the text is read after `isShowing()`, so a closed dialog's text is final.
+pub fn input_status_from(
+    posted: Option<Result<(), Error>>,
+    is_showing: impl FnOnce() -> Result<bool, Error>,
+    text: impl FnOnce() -> Result<String, Error>,
+) -> InputStatus {
+    match status_from(posted, is_showing) {
+        Status::Pending => InputStatus::Pending,
+        Status::Failed(e) => InputStatus::Failed(e),
+        Status::Showing => text().map_or_else(InputStatus::Failed, |t| InputStatus::Editing(capped_input(t))),
+        Status::Dismissed => text().map_or_else(InputStatus::Failed, |t| InputStatus::Done(capped_input(t))),
+    }
+}
+
+/// What the Java main thread hands back for a text-input dialog: the dialog and its `EditText`
+/// (behind an `Arc`, so `TextInput::status` can take them out of the lock before calling Java).
+#[cfg(target_os = "android")]
+type PostedInput = Option<Result<std::sync::Arc<InputRefs>, Error>>;
+
+/// A shown text-input dialog and its `EditText`, as global references.
+#[cfg(target_os = "android")]
+type InputRefs = (jni::refs::Global<jni::objects::JObject<'static>>, jni::refs::Global<jni::objects::JObject<'static>>);
+
+/// A text-input dialog posted by [`show_text_input`].
+#[cfg(target_os = "android")]
+pub struct TextInput {
+    posted: std::sync::Arc<std::sync::Mutex<PostedInput>>,
+}
+
+/// Posts an `AlertDialog` with `title`, a one-line `EditText` holding `text` and one `button` (a
+/// `null` listener: it only closes the dialog) to the Java main thread, and returns at once. The
+/// dialog's window asks for the soft keyboard (`SOFT_INPUT_STATE_ALWAYS_VISIBLE`).
+#[cfg(target_os = "android")]
+pub fn show_text_input(app: &android_activity::AndroidApp, title: &str, text: &str, button: &str) -> TextInput {
+    use std::sync::{Arc, Mutex, PoisonError};
+    let posted: Arc<Mutex<PostedInput>> = Arc::new(Mutex::new(None));
+    let (slot, on_main, title, text, button) = (posted.clone(), app.clone(), title.to_owned(), text.to_owned(), button.to_owned());
+    app.run_on_java_main_thread(Box::new(move || {
+        let shown = crate::jni_env::with_activity(&on_main, |env, activity| build_input(env, activity, &title, &text, &button));
+        // (an error reaches android_main through `TextInput::status`)
+        *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(shown.map(Arc::new));
+    }));
+    TextInput { posted }
+}
+
+/// `android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE`.
+#[cfg(target_os = "android")]
+const SOFT_INPUT_STATE_ALWAYS_VISIBLE: i32 = 5;
+
+/// `new EditText(activity)` (one line, `text`) in `new AlertDialog.Builder(activity)
+/// .setTitle(…).setView(edit).setPositiveButton(…, null).setCancelable(false).create()`, its
+/// window asked for the keyboard, shown, and the field focused; both as global references.
+#[cfg(target_os = "android")]
+fn build_input(
+    env: &mut jni::Env<'_>,
+    activity: &jni::objects::JObject<'_>,
+    title: &str,
+    text: &str,
+    button: &str,
+) -> Result<(jni::refs::Global<jni::objects::JObject<'static>>, jni::refs::Global<jni::objects::JObject<'static>>), Error> {
+    use jni::objects::JObject;
+    use jni::{JValue, jni_sig, jni_str};
+    let title = env.new_string(title)?;
+    let text = env.new_string(text)?;
+    let button = env.new_string(button)?;
+    let edit = env.new_object(jni_str!("android/widget/EditText"), jni_sig!("(Landroid/content/Context;)V"), &[JValue::Object(activity)]);
+    let edit = caught(env, edit)?;
+    call(env, &edit, jni_str!("setSingleLine"), &jni_sig!("(Z)V"), &[JValue::Bool(true)])?;
+    call(env, &edit, jni_str!("setText"), &jni_sig!("(Ljava/lang/CharSequence;)V"), &[JValue::Object(&text)])?;
+    let builder = env.new_object(jni_str!("android/app/AlertDialog$Builder"), jni_sig!("(Landroid/content/Context;)V"), &[JValue::Object(activity)]);
+    let builder = caught(env, builder)?;
+    call(env, &builder, jni_str!("setTitle"), &jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;"), &[JValue::Object(&title)])?;
+    call(env, &builder, jni_str!("setView"), &jni_sig!("(Landroid/view/View;)Landroid/app/AlertDialog$Builder;"), &[JValue::Object(&edit)])?;
+    let null = JObject::null();
+    let sets_button = jni_sig!("(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;");
+    call(env, &builder, jni_str!("setPositiveButton"), &sets_button, &[JValue::Object(&button), JValue::Object(&null)])?;
+    call(env, &builder, jni_str!("setCancelable"), &jni_sig!("(Z)Landroid/app/AlertDialog$Builder;"), &[JValue::Bool(false)])?;
+    let dialog = env.call_method(&builder, jni_str!("create"), jni_sig!("()Landroid/app/AlertDialog;"), &[]);
+    let dialog = caught(env, dialog)?.l()?;
+    let window = env.call_method(&dialog, jni_str!("getWindow"), jni_sig!("()Landroid/view/Window;"), &[]);
+    let window = caught(env, window)?.l()?;
+    if !window.is_null() {
+        call(env, &window, jni_str!("setSoftInputMode"), &jni_sig!("(I)V"), &[JValue::Int(SOFT_INPUT_STATE_ALWAYS_VISIBLE)])?;
+    }
+    call(env, &dialog, jni_str!("show"), &jni_sig!("()V"), &[])?;
+    call(env, &edit, jni_str!("requestFocus"), &jni_sig!("()Z"), &[])?;
+    Ok((env.new_global_ref(&dialog)?, env.new_global_ref(&edit)?))
+}
+
+#[cfg(target_os = "android")]
+impl TextInput {
+    /// What the dialog is doing now, with the text it holds. Asks `isShowing()` and
+    /// `getText().toString()` on the calling thread (attached through
+    /// [`crate::jni_env::with_activity`], so never from inside a `with_activity` closure).
+    pub fn status(&self, app: &android_activity::AndroidApp) -> InputStatus {
+        use std::sync::PoisonError;
+        // (copied out so the lock is not held across the JNI calls below, which the Java main
+        // thread's closure would otherwise wait on to store its result)
+        let posted: PostedInput = self.posted.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let known = posted.as_ref().map(|shown| shown.as_ref().map(|_| ()).map_err(Clone::clone));
+        let shown = match posted.as_ref() {
+            Some(Ok(shown)) => Some(shown.as_ref()),
+            _ => None,
+        };
+        let is_showing = || match shown {
+            Some((dialog, _)) => crate::jni_env::with_activity(app, |env, _activity| {
+                let showing = env.call_method(dialog, jni::jni_str!("isShowing"), jni::jni_sig!("()Z"), &[]);
+                crate::activity::answer_bool(env, showing)
+            }),
+            // (input_status_from asks only once the dialog is shown)
+            None => Ok(false),
+        };
+        let text = || match shown {
+            Some((_, edit)) => crate::jni_env::with_activity(app, |env, _activity| {
+                env.with_local_frame(8, |env| -> Result<String, Error> {
+                    let editable = env.call_method(edit, jni::jni_str!("getText"), jni::jni_sig!("()Landroid/text/Editable;"), &[]);
+                    let editable = caught(env, editable)?.l()?;
+                    if editable.is_null() {
+                        return Ok(String::new());
+                    }
+                    let string = env.call_method(&editable, jni::jni_str!("toString"), jni::jni_sig!("()Ljava/lang/String;"), &[]);
+                    let string = caught(env, string)?.l()?;
+                    Ok(crate::content::string_of(env, string)?.unwrap_or_default())
+                })
+            }),
+            None => Ok(String::new()),
+        };
+        input_status_from(known, is_showing, text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +330,46 @@ mod tests {
         assert_eq!(status_from(Some(Ok(())), ask(Ok(false))), Status::Dismissed);
         assert_eq!(status_from(Some(Ok(())), ask(Err(Error::Reentrant))), Status::Failed(Error::Reentrant));
         assert_eq!(asked.get(), 3);
+    }
+
+    /// The text-input dialog: pending until built, the live text while it shows, the final text
+    /// once closed; a failed build or query is an error, nothing is asked of a dialog that doesn't
+    /// exist, and the text comes back capped on a char boundary.
+    #[test]
+    fn text_input_status_follows_the_dialog_and_its_text() {
+        let asked = std::cell::Cell::new(0);
+        let text = |answer: Result<String, Error>| {
+            let asked = &asked;
+            move || {
+                asked.set(asked.get() + 1);
+                answer
+            }
+        };
+        assert_eq!(input_status_from(None, || Ok(true), text(Ok("a".into()))), InputStatus::Pending);
+        let failed = Error::Java { class: "android.view.WindowManager$BadTokenException".into(), message: "is your activity running?".into() };
+        assert_eq!(input_status_from(Some(Err(failed.clone())), || Ok(true), text(Ok("a".into()))), InputStatus::Failed(failed));
+        assert_eq!(asked.get(), 0, "getText() is asked only once the dialog exists");
+        assert_eq!(input_status_from(Some(Ok(())), || Ok(true), text(Ok("Grüße 你好".into()))), InputStatus::Editing("Grüße 你好".into()));
+        assert_eq!(input_status_from(Some(Ok(())), || Ok(false), text(Ok("Zürich".into()))), InputStatus::Done("Zürich".into()));
+        assert_eq!(input_status_from(Some(Ok(())), || Err(Error::Reentrant), text(Ok("a".into()))), InputStatus::Failed(Error::Reentrant));
+        assert_eq!(input_status_from(Some(Ok(())), || Ok(false), text(Err(Error::Reentrant))), InputStatus::Failed(Error::Reentrant));
+        assert_eq!(asked.get(), 3);
+
+        let long = "ü".repeat(MAX_INPUT_BYTES); // two bytes each
+        let InputStatus::Done(cut) = input_status_from(Some(Ok(())), || Ok(false), || Ok(long)) else { panic!("not done") };
+        assert!(cut.len() <= MAX_INPUT_BYTES && cut.len() > MAX_INPUT_BYTES - 2 && cut.chars().all(|c| c == 'ü'));
+        // the cap falls inside a char: a two-byte 'ü' straddles it, and three-byte '你' too
+        // (65536 % 3 == 1), so the cut steps back to the char's start
+        let straddles = "a".to_owned() + &"ü".repeat(MAX_INPUT_BYTES);
+        assert!(!straddles.is_char_boundary(MAX_INPUT_BYTES));
+        let cut = capped_input(straddles);
+        assert_eq!(cut.len(), MAX_INPUT_BYTES - 1);
+        assert!(cut.starts_with('a') && cut.chars().skip(1).all(|c| c == 'ü'));
+        let cjk = "你".repeat(MAX_INPUT_BYTES);
+        assert!(!cjk.is_char_boundary(MAX_INPUT_BYTES));
+        let cut = capped_input(cjk);
+        assert_eq!(cut.len(), MAX_INPUT_BYTES / 3 * 3);
+        assert!(cut.chars().all(|c| c == '你'));
+        assert_eq!(capped_input("short".into()), "short");
     }
 }

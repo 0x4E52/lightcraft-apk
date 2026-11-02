@@ -510,6 +510,29 @@ mod tests {
         }
     }
 
+    /// The field asks for the IME (egui's `PlatformOutput::ime`, which egui-winit turns into
+    /// `Window::set_ime_allowed`, the soft keyboard on Android) exactly while it has the focus:
+    /// from the tap into it until Esc or a tap elsewhere ends the edit (APK-35).
+    #[test]
+    fn focus_requests_ime() {
+        let mut rig = Rig::new("Lisbon");
+        assert!(rig.view.ime.is_none(), "no keyboard before the field is touched");
+        rig.click(FIELD, PointerButton::Primary);
+        assert!(rig.focused());
+        let ime = rig.view.ime.expect("the focused field asks for the keyboard");
+        let field = rig.rect(FIELD).unwrap_or_else(|| panic!("no field: {:?}", rig.widgets));
+        assert!(field.expand(1.0).contains_rect(ime.rect), "the IME area is the field: {:?} in {field:?}", ime.rect);
+        rig.type_text("ä");
+        assert!(rig.view.ime.is_some(), "typing keeps the keyboard");
+        assert!(rig.text.contains('ä'), "{}", rig.text);
+        rig.key(Key::Escape, Modifiers::NONE);
+        assert!(rig.view.ime.is_none(), "Esc ends the edit and lets the keyboard go");
+        rig.click(FIELD, PointerButton::Primary);
+        assert!(rig.view.ime.is_some());
+        rig.click_at(egui::pos2(300.0, 250.0), PointerButton::Primary);
+        assert!(rig.view.ime.is_none(), "a tap elsewhere lets the keyboard go");
+    }
+
     /// Right-click offers Cut, Copy, Paste and Select All.
     #[test]
     fn right_click_offers_cut_copy_paste_and_select_all() {

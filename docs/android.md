@@ -448,6 +448,33 @@ Answers, from the list above (APK-43 copies them):
 - Network use to disclose in the store text: optional downloads of AI models and place names, started by the user
   and switchable off in Settings ▸ Network.
 
+## Typing: the soft keyboard
+
+LightCraft runs as a NativeActivity (no Java), and that limits what the soft keyboard can send (APK-35). What the code
+does: a text field that takes the focus asks egui for the IME (`PlatformOutput::ime`, tested headless by
+`focus_requests_ime`), egui-winit turns that into `Window::set_ime_allowed(true)`, and winit 0.30.13 on Android maps
+it to android-activity's `show_soft_input` (`hide_soft_input` when the field lets go): winit
+`platform_impl/android/mod.rs:916-926`, egui-winit 0.36.2 `lib.rs:1138-1155`. Text then arrives only as key events:
+winit turns each key down into a character through the device's key character map, dead keys included
+(`android/mod.rs:425-470`), and drops anything else.
+
+Expected limits, from the sources (not yet seen on a device):
+- **No composition.** `set_ime_cursor_area` and `set_ime_purpose` are empty in winit (`android/mod.rs:916`, `:926`)
+  and android-activity's `text_input_state`, `set_text_input_state` and `set_ime_editor_info` are no-ops in
+  native-activity mode (`native_activity/mod.rs:435-456`), so no `Ime::Preedit`/`Commit` events reach egui: Chinese
+  and Japanese input methods, autocorrect, suggestions and swipe typing, which all compose through an
+  `InputConnection`, are expected not to work. A keyboard may fall back to plain key events for Latin letters.
+- **Multi-character key events are dropped:** winit maps an `ACTION_MULTIPLE` key event to a release with no text
+  (`android/mod.rs:437-454`), so text a keyboard sends that way (an emoji, a committed word) is lost.
+- `show_soft_input(true)` asks with `SHOW_IMPLICIT`, which some keyboards ignore when no view has an editor; whether
+  the keyboard shows at all is a device check.
+
+The fallback without Java: `lightcraft_android_sys::dialog::show_text_input` posts an `AlertDialog` with an
+`EditText` (a real Android text field, so the keyboard works in full: composition, autocorrect, swipe) and one Done
+button; LightCraft reads `isShowing()` and the text each frame on its own thread, never waiting for Android's main
+thread. Back and a tap outside leave it open, so closing it always means Done. Nothing in the UI opens it yet:
+decision 8 in `android-port.md` chooses between this fallback, GameActivity and a Java `InputConnection`.
+
 ## Device checklist
 
 What only a device (or a CI run an agent cannot start) can show. Whoever saw it ticks the line.
@@ -538,3 +565,6 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   photos on 34+ (`photo access: Pending → Partial` in logcat), deny (`→ Denied`), deny twice then import again (no
   dialog appears; within a second the import's error says to allow it in Settings ▸ Apps ▸ LightCraft ▸
   Permissions); allow it there and return: logcat shows `→ Granted`. On an API 30–32 device, allow and deny.
+- [ ] APK-35: with Gboard, tap the keyword field: the keyboard shows, and hides after Return or a tap elsewhere; type
+  ASCII (`Lisbon`), an umlaut (`ä`, long press on `a`) and Chinese (pinyin `nihao` → 你好) and record what arrives in
+  the field for each; try autocorrect and swipe typing. Record the result in `android-port.md` → APK-35 result.

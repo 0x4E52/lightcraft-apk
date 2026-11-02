@@ -86,6 +86,9 @@ pub struct HeadlessView {
     /// How soon the last frame asked to be drawn again (`Duration::MAX`: not until input), as a
     /// host that draws on demand would wait.
     pub repaint_delay: std::time::Duration,
+    /// The last frame's IME request (`PlatformOutput::ime`): set while a text field has the focus,
+    /// which a winit host turns into `Window::set_ime_allowed` (the soft keyboard on Android).
+    pub ime: Option<egui::output::IMEOutput>,
 }
 
 impl Default for HeadlessView {
@@ -109,6 +112,7 @@ impl HeadlessView {
             clipboard: String::new(),
             owed: vec![],
             repaint_delay: std::time::Duration::MAX,
+            ime: None,
         }
     }
 
@@ -155,6 +159,7 @@ impl HeadlessView {
         self.textures.apply(std::mem::take(&mut out.textures_delta));
         self.shapes = std::mem::take(&mut out.shapes);
         self.pixels_per_point = out.pixels_per_point;
+        self.ime = out.platform_output.ime;
         for c in &out.platform_output.commands {
             if let egui::OutputCommand::CopyText(text) = c {
                 self.clipboard.clone_from(text);

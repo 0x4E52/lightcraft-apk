@@ -1,6 +1,6 @@
 # Android port (APK)
 
-*Last updated: 2026-10-17 (after APK-21).* Revision history at the end.
+*Last updated: 2026-11-02 (after APK-35).* Revision history at the end.
 
 How LightCraft becomes an Android app (APK for sideloading, AAB for app stores) without giving up what the
 desktop build stands for: pure Rust, never crash, everything is a command, clean-room, permissive licences.
@@ -37,6 +37,7 @@ the maintainer.
 | Renderer failure: the window starts on Vulkan, then GL (`renderer::order` over `window_renderer_order`), its marker (`gpu_markers::Files`) armed before eframe and cleared by the app creator, which also installs the logging error handler and logs the adapter; a renderer that fails (an error eframe only logs, found as "app creator never ran" plus `log_file::last_error`, or a caught panic) gets an `AlertDialog` (`android-sys` `dialog.rs`) that android_main waits on (`renderer::wait_until`, polling the Activity's commands) before `run` returns `Err`, so the next start tries the other renderer; the desktop's GPU crash and GPU-lost sentinels turn GPU compute off with a notice | ✅ APK-19, pure parts tested here; the dialog and the JNI calls have not run (Device checklist: the adapter line in the CI logcat) |
 | Diagnostics switches without environment variables: `debug.lightcraft.{profile,log,gpu_backend,control}` system properties (`android-sys` `props::settings_from`, pure; `props::read` on Android) applied first thing in `run` (log filter, `lightcraft_profile::set_enabled`, `backend::set_choice`, the forced window renderer); `.control` starts the server (next row) | ✅ APK-20, pure parts tested here; the property reads have not run on a device (Device checklist) |
 | Debug control server: `host::control_server` (moved from `apps/lightcraft`, shared with the desktop) takes `token: Option<String>`; the Android host starts it only when `debug.lightcraft.control=<port>` is set, after writing a random 128-bit token (`getrandom`) to `files/control-token`, and a request without the token gets `bad token` and a closed connection; the manifest requests `INTERNET`; `control-check.sh` in the `emulator` job reads the token and sends `ui.inspect` over the forwarded port | ✅ APK-21, server and token file tested here; the property read, `getrandom` and the CI step have not run (Device checklist) |
+| Text input spike: a focused `TextField` asks for the IME (`focus_requests_ime`), egui-winit → winit `set_ime_allowed` → android-activity `show_soft_input`/`hide_soft_input`; text arrives as key events only (no composition, autocorrect or swipe: winit's IME setters and android-activity's native-activity text-input calls are no-ops); fallback `android-sys` `dialog::show_text_input` (AlertDialog with an `EditText`, `null` listener, not cancelable, `isShowing()`/`getText()` polled on the calling thread) | 🟡 APK-35: code and expected limits here; go/no-go **pending maintainer** (device check in `docs/android.md`); the dialog's JNI has not run |
 | Host UI, packaging, CI, touch UI, release | ⏳ APK-22 … APK-43 below |
 | First start on a real phone (debug APK from the Android workflow) | ✅ maintainer, 2026-10-17: starts and renders; desktop layout, so hard to use (Phase 3) |
 
@@ -1345,6 +1346,28 @@ The target behaviour (layout, gestures, tools) follows Lightroom on a phone and 
   `android/mod.rs:916-926`, android-activity's native-activity no-ops) and unticked Device checklist lines; its
   go/no-go field reads "pending maintainer" until the device check. An agent never writes a result it didn't observe.
 - **Maintainer checks on a device:** type ASCII, an umlaut and Chinese with Gboard into the keyword field.
+- **Result (2026-11-02, agent; nothing here observed on a device):**
+  - *What the code supports.* `TextField` focus sets egui's `PlatformOutput::ime` (headless test
+    `focus_requests_ime`: set from the tap into the field until Esc or a tap elsewhere, its rect the field's);
+    egui-winit 0.36.2 calls `Window::set_ime_allowed` when it toggles (`lib.rs:1138-1155`), and winit 0.30.13 maps
+    that to android-activity's `show_soft_input(true)` / `hide_soft_input(true)` (`platform_impl/android/mod.rs:918-924`).
+    Key events become text through the device's key character map with dead-key combining (`mod.rs:425-470`), so
+    Latin letters typed as key events, and accented ones from dead keys, reach egui as `Event::Text`.
+  - *Expected limits, with sources.* winit's `set_ime_cursor_area` and `set_ime_purpose` are empty
+    (`mod.rs:916`, `:926`); android-activity 0.6.1's `text_input_state`, `set_text_input_state` and
+    `set_ime_editor_info` are no-ops in native-activity mode (`native_activity/mod.rs:435-456`), so no
+    `Ime::Preedit`/`Commit` reaches egui: no CJK composition, autocorrect, suggestions or swipe typing; an
+    `ACTION_MULTIPLE` key event (a committed string) becomes a release with no text (`mod.rs:437-454`) and is lost.
+    `SHOW_IMPLICIT` may be ignored by keyboards when no view has an editor: whether the keyboard shows is open.
+  - *Fallback without Java.* `lightcraft_android_sys::dialog::show_text_input(app, title, text, button)` posts an
+    `AlertDialog` with a one-line `EditText`, one button with a `null` listener, `setCancelable(false)` (so a closed
+    dialog means Done without a Java listener) and `SOFT_INPUT_STATE_ALWAYS_VISIBLE`; `TextInput::status` asks
+    `isShowing()` and `getText().toString()` through `with_activity` on the calling thread each frame (pure
+    `input_status_from`: Pending, Editing(text), Done(text), Failed; text capped at 64 KiB), never waiting on the
+    Java main thread. Not wired into the UI: that follows decision 8. Test:
+    `text_input_status_follows_the_dialog_and_its_text`. `crates/ui-egui/src/text_field.rs` needed no production
+    change (its test `focus_requests_ime` lives there; `HeadlessView` gains `ime`).
+  - *Go/no-go:* **pending maintainer** (the device check in `docs/android.md` → Device checklist, unticked).
 
 ## Phase 4: quality and release
 
@@ -1477,7 +1500,7 @@ Agents use the default until the maintainer decides (execution-plan §7).
 | 5 | **ABIs.** arm64-v8a for release; x86_64 only for the CI emulator. | as stated | APK-12, 16, 40 |
 | 6 | **Packaging route.** (a) SDK build-tools driven by xtask (aapt2 → zip → zipalign → apksigner; bundletool + jarsigner for AAB): no Gradle, no wrapper jar. (b) A declarative Gradle/AGP project: familiar to F-Droid but heavier, needs the `gradle-wrapper.jar` blob and pinned AGP/Gradle/JDK 17+. | (a) | APK-15, 39, 40 |
 | 7 | **System destroy and re-entry.** When the Activity is destroyed while the process lives ("Don't keep activities", a missed configChange, removal from recents), the host detects it (APK-18), leaves the event loop and exits the process, so the next launch is fresh. Option "restart": before exit, `startActivity(Intent.makeRestartActivityTask(launchComponent))` via JNI (no Java class) so one tap reopens when the destroy came from a relaunch. | exit when the destroy is detected; start guard exits as backstop | APK-18 |
-| 8 | **Text input.** After APK-35: NativeActivity's limits, GameActivity (full IME, but C++ via `cc`), or a small Java InputConnection (decision 2). | NativeActivity + dialog fallback | phase 3 follow-ups |
+| 8 | **Text input.** After APK-35: NativeActivity's limits (key events only: no CJK composition, autocorrect or swipe, by the sources; the APK-35 result), GameActivity (full IME, but C++ via `cc`), or a small Java InputConnection (decision 2). The dialog fallback (`dialog::show_text_input`) exists but is not wired to any field; wiring it (e.g. a long press or a keyboard button on a focused field) is a follow-up card once the device check is in. | NativeActivity + dialog fallback | phase 3 follow-ups |
 | 9 | **Library location.** Internal storage (private, `allowBackup="false"`, **deleted on uninstall or "Clear data"** with every edit and Copy-imported original) vs app-specific external or `Pictures/` (survives less, visible to others). | internal, with a first-start notice saying uninstall deletes the library and how to back it up | APK-11b |
 | 10 | **SAM on Android.** The SAM worker model holds several GB (engine/src/segment/worker.rs:9). | ship `sam`; the command is enabled only when MemTotal ≥ 8 GB, otherwise disabled with an explanation. *Implemented as 7 GiB MemTotal (the agent's reading of "8 GB": an 8 GB phone reads 7.2 to 7.9 GiB; the text says 8 GB): maintainer to confirm (APK-11b).* | APK-11b |
 | 11 | **craft-fonts in the APK.** CJK faces add tens of MB. | release builds embed them (as desktop) with their licences (APK-38) | APK-40 |
@@ -1759,3 +1782,8 @@ Agents use the default until the maintainer decides (execution-plan §7).
 - 2026-10-31 (maintainer decisions): decision 2, no Java in the first release (photos via the permission's "Select
   photos", everything else via shares and "Open with"; a picker shim may follow after it); decision 12, no all-files
   access, Play compliant.
+- 2026-11-02 (APK-35): text input spike. A focused `TextField` asks for the IME (`focus_requests_ime`, with
+  `HeadlessView::ime` recording the frame's request); the path to the soft keyboard and the limits of NativeActivity
+  are written down with their sources in the card's result; `android-sys` gains the text-input dialog
+  (`show_text_input`, `TextInput::status`, pure `input_status_from`); decision 8 gets the facts; go/no-go pending the
+  maintainer's device check.
