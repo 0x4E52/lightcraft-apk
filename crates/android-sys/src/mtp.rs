@@ -20,6 +20,10 @@ pub const FORMAT_ASSOCIATION: i32 = 0x3001;
 
 /// At most this many objects are read from one camera (a broken device can't grow the list forever).
 pub const MAX_OBJECTS: usize = 100_000;
+
+/// Objects in a row whose info can't be read before the camera counts as gone (unplugged mid-listing).
+#[cfg(target_os = "android")]
+const FAILED_IN_A_ROW: usize = 3;
 /// A file name longer than this (bytes) is left out.
 pub const MAX_NAME_BYTES: usize = 255;
 
@@ -156,7 +160,15 @@ pub fn with_mtp<T>(app: &android_activity::AndroidApp, device: &str, f: impl FnO
                 });
             }
             let mtp = env.new_object(jni_str!("android/mtp/MtpDevice"), jni_sig!("(Landroid/hardware/usb/UsbDevice;)V"), &[JValue::Object(&usb)]);
-            let mtp = caught(env, mtp)?;
+            let mtp = match caught(env, mtp) {
+                Ok(mtp) => mtp,
+                Err(e) => {
+                    // not left claimed until GC: a retry would find the camera busy
+                    let answer = env.call_method(&connection, jni_str!("close"), jni_sig!("()V"), &[]);
+                    let _ = caught(env, answer);
+                    return Err(e);
+                }
+            };
             let answer =
                 env.call_method(&mtp, jni_str!("open"), jni_sig!("(Landroid/hardware/usb/UsbDeviceConnection;)Z"), &[JValue::Object(&connection)]);
             let opened = crate::activity::answer_bool(env, answer);
@@ -203,6 +215,8 @@ impl Mtp<'_, '_> {
         let storages = caught(env, answer)?.l()?;
         let storages = int_array(env, storages, 16)?;
         let mut rows = Vec::new();
+        // objects in a row whose info could not be read, since the last one read
+        let mut in_a_row = 0usize;
         for storage in storages {
             // 0: all objects of the storage, not only its root's
             let handles = env.with_local_frame(4, |env| -> Result<Vec<i32>, crate::Error> {
@@ -240,12 +254,17 @@ impl Mtp<'_, '_> {
                     Ok(Some(ObjectRow { handle, name, format, size, created_ms, modified_ms }))
                 });
                 match row {
-                    Ok(Some(row)) => rows.push(row),
-                    Ok(None) => {}
-                    // one object that can't be read is left out; an unplugged camera fails them all
+                    Ok(Some(row)) => {
+                        in_a_row = 0;
+                        rows.push(row);
+                    }
+                    Ok(None) => in_a_row = 0,
+                    // one object that can't be read is left out; an unplugged camera fails them all:
+                    // the first, or a run of them, fails the listing rather than open a cut-short review
                     Err(e) => {
                         let _ = env.exception_catch();
-                        if rows.is_empty() {
+                        in_a_row = in_a_row.saturating_add(1);
+                        if rows.is_empty() || in_a_row >= FAILED_IN_A_ROW {
                             return Err(e);
                         }
                     }

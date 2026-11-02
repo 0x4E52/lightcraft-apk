@@ -260,7 +260,8 @@ filter, `packaging/android/res/xml/device_filter.xml`).
   later imports skip it). LightCraft reads the answer back when the dialog closes; a refusal says how to ask again.
 - **Reading the camera** (an activity row with ✕) lists its photos into the import review, oldest first. Photos the
   library has already (same file name, size and day) show "In library" and are not checked. Nothing is copied yet,
-  so the review has no thumbnails.
+  so the review has no thumbnails, and its capture times are the camera's file dates in UTC (the library shows each
+  photo's own EXIF time once imported, which can differ by the phone's UTC offset).
 - **Import** copies the checked photos off the camera into `files/incoming/camera` ("Copying from …", ✕ between
   files, each copy's size checked), then the importer moves them into the library, verified by content hash, with the
   review's album, preset, keywords and naming.

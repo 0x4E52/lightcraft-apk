@@ -149,9 +149,12 @@ fn camera_device_import_shows_activity_row() {
         h.step();
     }
     assert!(!row(&h, LISTING), "nothing is read before the permission");
+    let inspect = h.request("ui.inspect", json!({}), T);
+    assert_eq!(inspect["result"]["camera"]["state"], "permission", "the wait shows over the control port: {inspect}");
     assert!(h.app.run("file.addFromDevice", json!({"path": cam.path})).is_err(), "one camera import at a time");
     granted.store(true, Ordering::SeqCst);
     assert!(h.step_until(T, |h| row(h, LISTING)), "read under its row once allowed");
+    assert_eq!(h.request("ui.inspect", json!({}), T)["result"]["camera"]["state"], "listing");
     for _ in 0..3 {
         h.step();
         assert!(row(&h, LISTING), "the row stays while the camera answers");
@@ -180,6 +183,7 @@ fn camera_device_import_shows_activity_row() {
     gate.store(true, Ordering::SeqCst);
     assert!(h.step_until(T, |h| h.app.camera.is_none() && h.app.import.is_none() && h.app.session.catalog.len() == before + 2), "{}", notices(&h));
     assert!(!row(&h, &copying_label(NAME)));
+    assert!(h.request("ui.inspect", json!({}), T)["result"]["camera"].is_null(), "no camera import left");
     let names: Vec<String> = h.app.session.catalog.photos().map(|p| p.file_name.clone()).collect();
     assert!(names.contains(&"IMG_0001.png".to_owned()) && names.contains(&"IMG_0003.png".to_owned()), "{names:?}");
     assert!(!names.contains(&"IMG_0002.png".to_owned()));
@@ -248,5 +252,29 @@ fn camera_copy_names_sizes_and_cancel() {
     let out = crate::camera_import::copy_files(&mut camera, &list, &dir.join("again"), &AtomicBool::new(true), &guard.handle());
     assert!(out.paths.is_empty());
     assert_eq!(out.errors, ["Copying from the camera was cancelled: 3 of 3 photos were not copied."]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A reader's file name is joined onto the staging folder only when it is a plain name: one with
+/// a folder or `..` is an error and nothing is written outside the folder.
+#[test]
+fn camera_copy_refuses_names_that_leave_staging() {
+    let dir = std::env::temp_dir().join(format!("lc-camera-names-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let staging = dir.join("staging");
+    let mut files = photos(4);
+    files[0].0.name = "../escaped.png".into();
+    files[1].0.name = "..".into();
+    files[2].0.name = "sub/inner.png".into();
+    let mut camera = FakeCamera { photos: files.clone(), gate: Arc::new(AtomicBool::new(true)), unplug_after: None, copies: Arc::default() };
+    let activity = lightcraft_engine::activity::Activity::default();
+    let guard = activity.start("import", "test", lightcraft_engine::activity::Cancel::No);
+    let list: Vec<CameraFile> = files.iter().map(|(f, _)| f.clone()).collect();
+    let out = crate::camera_import::copy_files(&mut camera, &list, &staging, &AtomicBool::new(false), &guard.handle());
+    assert_eq!(out.paths.len(), 1, "{:?}", out.errors);
+    assert!(out.paths[0].ends_with("IMG_0004.png"), "{:?}", out.paths);
+    assert_eq!(out.errors.len(), 3, "{:?}", out.errors);
+    assert!(out.errors.iter().all(|e| e.contains("not a plain file name")), "{:?}", out.errors);
+    assert!(!dir.join("escaped.png").exists(), "nothing written outside the staging folder");
     let _ = std::fs::remove_dir_all(&dir);
 }

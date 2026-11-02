@@ -68,15 +68,10 @@ impl CameraReader for MtpReader<'_> {
         let items = review_items(rows, |name| lightcraft_engine::import::is_supported(Path::new(name)));
         let known: Vec<MtpKnown> = known.iter().map(|k| MtpKnown { name: k.name.clone(), size: k.size, day: k.day }).collect();
         let (_, have) = skip_known(items.clone(), &known);
+        let have: std::collections::HashSet<i32> = have.iter().map(|h| h.handle).collect();
         Ok(items
             .into_iter()
-            .map(|o| CameraFile {
-                id: i64::from(o.handle),
-                in_library: have.iter().any(|h| h.handle == o.handle),
-                name: o.name,
-                size: o.size,
-                date: o.date,
-            })
+            .map(|o| CameraFile { id: i64::from(o.handle), in_library: have.contains(&o.handle), name: o.name, size: o.size, date: o.date })
             .collect())
     }
 

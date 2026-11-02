@@ -141,6 +141,8 @@ pub fn inspect(app: &LightcraftApp, ctx: &egui::Context) -> Value {
         "libraryProblem": app.library_problem.as_ref().map(crate::panels::library_problem::LibraryProblem::to_json),
         "lastCrash": app.last_crash.as_ref().map(crate::panels::last_crash::LastCrash::to_json),
         "scan": app.scan.as_ref().map(crate::import::ScanTask::status),
+        // a camera import (USB/MTP) in flight: permission, listing, copying or staged
+        "camera": app.camera.as_ref().map(crate::camera_import::CameraTask::status),
         "export": {"running": app.export.as_ref().map(crate::export_task::ExportTask::status), "last": app.last_export_result},
         "import": app.import.as_ref().map(crate::import::ImportTask::status),
         "tasks": app.tasks.labels(),

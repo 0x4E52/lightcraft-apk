@@ -181,6 +181,11 @@ pub fn candidates(device_path: &str, files: &[CameraFile]) -> Vec<ImportCandidat
 
 /// The copies' names in `dir`: `name`, or `stem-2.ext`, `stem-3.ext`… when it is taken there or
 /// earlier in the same job.
+/// A file name without folders: no separator, not `.`/`..`, no NUL, not empty.
+fn plain_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0']) && !Path::new(name).is_absolute()
+}
+
 fn free_name(dir: &Path, name: &str, given: &[String]) -> String {
     let taken = |n: &str| dir.join(n).exists() || given.iter().any(|g| g.eq_ignore_ascii_case(n));
     if !taken(name) {
@@ -217,6 +222,11 @@ pub fn copy_files(reader: &mut dyn CameraReader, files: &[CameraFile], dir: &Pat
             break;
         }
         row.detail(&f.name);
+        // a reader's name is joined onto the staging folder: never a path that could leave it
+        if !plain_name(&f.name) {
+            out.errors.push(format!("Could not copy {} from the camera: not a plain file name.", f.name));
+            continue;
+        }
         let name = free_name(dir, &f.name, &given);
         let target = dir.join(&name);
         let copied = reader.copy(f, &target).and_then(|()| match std::fs::metadata(&target) {

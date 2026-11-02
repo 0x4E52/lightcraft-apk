@@ -134,6 +134,11 @@ pub fn day_of_date(date: &str) -> Option<i64> {
 
 /// `YYYY-MM-DDTHH:MM:SS` (UTC) of a time in seconds since the epoch, as the import review shows a
 /// capture time; `None` out of the years 1–9999.
+///
+/// UTC on purpose: the engine has no time-zone database, and an MTP date (a camera's clock, which
+/// carries no zone) has no offset to apply. The review's time can therefore differ from the
+/// captured time the library shows after import (the EXIF local time) by the phone's UTC offset;
+/// the day used to mark photos the library has ([`KnownFile`]) allows for a day either way.
 pub fn date_text(secs: i64) -> Option<String> {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
