@@ -1377,6 +1377,8 @@
   "Show overlay (O)": "Показати накладання (O)",
   "Show ratings, flags and edit badges": "Показати оцінки, прапорці й позначки змін",
   "Show the Navigator while zoomed in": "Показувати навігатор під час збільшення",
+  "Slider gestures on the photo (touch)": "Жести повзунків на фото (дотик)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "Коли відкрито панель повзунків, вертикальний рух пальцем по фото вибирає повзунок, а горизонтальний змінює його. Вимкнено: змахування ставлять оцінку, прапорець і змінюють фото, як за закритої панелі.",
   "Show the import review when a camera or card is connected": "Відкривати імпорт під час підключення камери або карти",
   "Show the template tags; click one to insert it": "Показати теги шаблону; клацніть тег, щоб вставити його",
   "Show/Hide Mask": "Показати/приховати маску",

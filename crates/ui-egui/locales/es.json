@@ -1439,6 +1439,8 @@
   "Show overlay (O)": "Mostrar superposición (O)",
   "Show ratings, flags and edit badges": "Mostrar valoraciones, marcas e indicadores de edición",
   "Show the Navigator while zoomed in": "Mostrar el Navegador al ampliar",
+  "Slider gestures on the photo (touch)": "Gestos de controles deslizantes sobre la foto (táctil)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "Con un panel de controles deslizantes abierto, arrastrar el dedo en vertical sobre la foto elige un control y arrastrarlo en horizontal lo cambia. Desactivado: los deslizamientos valoran, marcan y cambian de foto como con el panel cerrado.",
   "Show the import review when a camera or card is connected": "Abrir la importación al conectar una cámara o tarjeta",
   "Show the template tags; click one to insert it": "Mostrar las etiquetas de plantilla; hacer clic en una para insertarla",
   "Show/Hide Mask": "Mostrar/ocultar máscara",

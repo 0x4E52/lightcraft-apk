@@ -1604,6 +1604,8 @@
   "Show overlay (O)": "Zobrazit překrytí (O)",
   "Show ratings, flags and edit badges": "Zobrazit hodnocení, příznaky a odznaky úprav",
   "Show the Navigator while zoomed in": "Zobrazit navigátor při přiblížení",
+  "Slider gestures on the photo (touch)": "Gesta posuvníků na fotografii (dotyk)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "S otevřeným panelem posuvníků vybírá svislý tah prstem po fotografii posuvník a vodorovný tah mění jeho hodnotu. Vypnuto: přejetí hodnotí, označuje a mění fotografii jako se zavřeným panelem.",
   "Show the template tags; click one to insert it": "Zobrazit značky šablony; kliknutím jednu vložíte",
   "Show/Hide Mask": "Zobrazit/Skrýt masku",
   "Show/hide My Photos panel": "Zobrazit/Skrýt panel mých fotografií",

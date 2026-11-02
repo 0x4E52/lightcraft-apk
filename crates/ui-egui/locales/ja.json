@@ -1307,6 +1307,8 @@
   "Show overlay (O)": "重ね表示（O）",
   "Show ratings, flags and edit badges": "評価・フラグ・編集済みマークを表示",
   "Show the Navigator while zoomed in": "拡大時にナビゲーターを表示",
+  "Slider gestures on the photo (touch)": "写真上のスライダージェスチャー（タッチ）",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "スライダーのパネルを開いているとき、写真上で指を縦にドラッグするとスライダーを選び、横にドラッグすると値を変えます。オフ：パネルを閉じているときと同じく、スワイプでレーティング、フラグ、写真の切り替えを行います。",
   "Show the import review when a camera or card is connected": "カメラやメモリーカードを接続したときに読み込み画面を表示",
   "Show the template tags; click one to insert it": "テンプレートのタグを表示（クリックで挿入）",
   "Show/Hide Mask": "マスクの表示／非表示",

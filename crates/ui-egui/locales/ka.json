@@ -1927,6 +1927,8 @@
   "Show overlay (O)": "ზედდების ჩვენება (O)",
   "Show ratings, flags and edit badges": "შეფასებების, დროშებისა და ცვლილების ნიშნების ჩვენება",
   "Show the Navigator while zoomed in": "ნავიგატორის ჩვენება გადიდებისას",
+  "Slider gestures on the photo (touch)": "სლაიდერის ჟესტები ფოტოზე (შეხება)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "სლაიდერების პანელის გახსნისას თითის ვერტიკალური გადატანა ფოტოზე ირჩევს სლაიდერს, ჰორიზონტალური კი ცვლის მას. გამორთული: გადასმა აფასებს, მონიშნავს და ცვლის ფოტოს, როგორც დახურული პანელისას.",
   "Show the template tags; click one to insert it": "შაბლონის ტეგების ჩვენება; ჩასასმელად დაწკაპეთ ერთ-ერთზე",
   "Show this wheel's effect": "ამ ბორბლის ეფექტის ჩვენება",
   "Show/Hide Mask": "ნიღბის ჩვენება/დამალვა",

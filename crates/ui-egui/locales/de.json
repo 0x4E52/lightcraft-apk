@@ -1426,6 +1426,8 @@
   "Show overlay (O)": "Überlagerung anzeigen (O)",
   "Show ratings, flags and edit badges": "Bewertungen, Markierungen und Bearbeitungssymbole anzeigen",
   "Show the Navigator while zoomed in": "Navigator beim Hineinzoomen anzeigen",
+  "Slider gestures on the photo (touch)": "Regler-Gesten auf dem Foto (Touch)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "Bei geöffnetem Reglerbedienfeld wählt ein senkrechtes Ziehen mit dem Finger auf dem Foto einen Regler und ein seitliches Ziehen ändert ihn. Aus: Wischen bewertet, markiert und wechselt das Foto wie bei geschlossenem Bedienfeld.",
   "Show the import review when a camera or card is connected": "Importfenster öffnen, wenn eine Kamera oder Karte angeschlossen wird",
   "Show the template tags; click one to insert it": "Vorlagenplatzhalter anzeigen; zum Einfügen anklicken",
   "Show/Hide Mask": "Maske ein-/ausblenden",

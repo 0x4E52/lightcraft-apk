@@ -1362,6 +1362,8 @@
   "Show overlay (O)": "Afficher l'incrustation (O)",
   "Show ratings, flags and edit badges": "Afficher les notes, les drapeaux et les pastilles de retouche",
   "Show the Navigator while zoomed in": "Afficher le Navigateur lors du zoom",
+  "Slider gestures on the photo (touch)": "Gestes des curseurs sur la photo (tactile)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "Avec un panneau de curseurs ouvert, un glissement vertical du doigt sur la photo choisit un curseur et un glissement latéral le modifie. Désactivé : les balayages notent, marquent et changent de photo comme lorsque le panneau est fermé.",
   "Show the import review when a camera or card is connected": "Ouvrir l'importation lorsqu'un appareil photo ou une carte est connecté",
   "Show the template tags; click one to insert it": "Afficher les balises du modèle ; cliquez sur l'une d'elles pour l'insérer",
   "Show/Hide Mask": "Afficher/masquer le masque",

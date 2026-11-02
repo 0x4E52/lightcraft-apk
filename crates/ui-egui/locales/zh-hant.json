@@ -1370,6 +1370,8 @@
   "Show overlay (O)": "顯示疊加（O）",
   "Show ratings, flags and edit badges": "顯示評分、旗標與編輯標記",
   "Show the Navigator while zoomed in": "放大時顯示導覽器",
+  "Slider gestures on the photo (touch)": "在相片上用手勢調整滑桿（觸控）",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "開啟滑桿面板時，手指在相片上直向拖曳可選擇滑桿，橫向拖曳可調整其值。關閉：滑動會像面板關閉時一樣評等、標記和切換相片。",
   "Show the import review when a camera or card is connected": "連接相機或記憶卡時顯示匯入視窗",
   "Show the template tags; click one to insert it": "顯示範本標籤；點擊即可插入",
   "Show/Hide Mask": "顯示／隱藏遮色片",

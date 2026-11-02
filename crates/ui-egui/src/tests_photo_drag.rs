@@ -235,12 +235,19 @@ fn double_tap_thumb_resets() {
     let mut h = edit_panel();
     run(&mut h, "develop.set", json!({"control": "light.exposure", "value": 1.0}));
     let undo = h.app.session.undo.len();
-    // a fingertip lands a little off the thumb's centre
-    let at = thumb(&h, "light.exposure", 6.0);
+    // a fingertip lands off the thumb's centre: past the mouse's reach (THUMB_RING + 1 = 8 pt),
+    // inside the finger-sized thumb (TOUCH_HIT / 2 = 24 pt)
+    let at = thumb(&h, "light.exposure", 16.0);
     let p = frac(&h, at);
     send(&mut h, vec![touch(1, "start", p, 0.0), touch(1, "end", p, 0.05), touch(1, "start", p, 0.15), touch(1, "end", p, 0.2)]);
     assert_eq!(value(&h, "light.exposure"), 0.0, "a double tap on the thumb resets Exposure");
     assert_eq!(h.app.session.undo.len(), undo + 1, "in one undo step (the first tap on the thumb moved nothing)");
+    // beside the finger-sized thumb (40 pt off), a double tap is two nudges, not a reset
+    run(&mut h, "develop.set", json!({"control": "light.exposure", "value": 1.0}));
+    let at = thumb(&h, "light.exposure", 40.0);
+    let p = frac(&h, at);
+    send(&mut h, vec![touch(1, "start", p, 1.0), touch(1, "end", p, 1.05), touch(1, "start", p, 1.15), touch(1, "end", p, 1.2)]);
+    assert!(value(&h, "light.exposure") > 1.0, "40 pt off the thumb nudges up: {}", value(&h, "light.exposure"));
 }
 
 #[test]

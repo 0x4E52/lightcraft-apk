@@ -1338,6 +1338,8 @@
   "Show overlay (O)": "Mostra sovrapposizione (O)",
   "Show ratings, flags and edit badges": "Mostra valutazioni, contrassegni e indicatori di modifica",
   "Show the Navigator while zoomed in": "Mostra il Navigatore quando lo zoom è attivo",
+  "Slider gestures on the photo (touch)": "Gesti dei cursori sulla foto (tocco)",
+  "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.": "Con un pannello di cursori aperto, un trascinamento verticale del dito sulla foto sceglie un cursore e uno laterale lo modifica. Disattivato: gli scorrimenti valutano, contrassegnano e cambiano foto come a pannello chiuso.",
   "Show the template tags; click one to insert it": "Mostra i tag del modello; fai clic su uno per inserirlo",
   "Show/Hide Mask": "Mostra/nascondi maschera",
   "Show/hide My Photos panel": "Mostra/nascondi il pannello Le mie foto",
