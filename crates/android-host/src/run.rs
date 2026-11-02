@@ -169,6 +169,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         share: Some(share(&app)),
         clipboard: Some(clipboard(&app)),
         volumes: Some(volumes(&app)),
+        cameras: Some(cameras(&app)),
         hidden_types: crate::services::HiddenTypes::new(hidden_types(&app)),
     };
     let loader = crate::loader::open_library(paths.library.clone(), start.hidden_types.clone());
@@ -382,6 +383,25 @@ fn clipboard(app: &android_activity::AndroidApp) -> crate::services::Clip {
 fn volumes(app: &android_activity::AndroidApp) -> crate::services::VolumeQuery {
     let app = app.clone();
     std::sync::Arc::new(move || lightcraft_android_sys::volumes::query_volumes(&app).map_err(|e| e.user_message("list the SD cards and USB drives")))
+}
+
+/// Cameras connected by USB (APK-59): `getDeviceList()` on the device watch's worker, the
+/// permission on this (the UI) thread, and MTP on the import's workers (each attached by
+/// `with_activity`).
+#[cfg(target_os = "android")]
+fn cameras(app: &android_activity::AndroidApp) -> crate::camera::CameraHost {
+    use lightcraft_android_sys::{mtp, usb};
+    let (query_app, has_app, ask_app, open_app) = (app.clone(), app.clone(), app.clone(), app.clone());
+    crate::camera::CameraHost {
+        query: std::sync::Arc::new(move || usb::query_cameras(&query_app).map_err(|e| e.user_message("list the USB cameras"))),
+        access: crate::camera::UsbAccess::new(
+            Box::new(move |id| usb::has_permission(&has_app, id).map_err(|e| e.to_string())),
+            Box::new(move |id| usb::request_permission(&ask_app, id).map_err(|e| e.user_message("ask for access to the camera"))),
+        ),
+        open: std::sync::Arc::new(move |id: &str, f: &mut dyn FnMut(&mut dyn crate::camera::MtpObjects)| {
+            mtp::with_mtp(&open_app, id, |device| f(device)).map_err(|e| e.user_message("open the camera"))
+        }),
+    }
 }
 
 /// The raw types this phone hides: `MimeTypeMap` asked about each raw extension, on the worker

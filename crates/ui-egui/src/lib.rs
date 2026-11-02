@@ -10,6 +10,7 @@ pub mod about;
 pub mod album_picker;
 pub mod brush_live;
 pub mod button;
+pub mod camera_import;
 pub mod canvas_keys;
 pub mod clipboard;
 mod command_error;
@@ -75,6 +76,8 @@ mod tests_before_after;
 mod tests_browse_active;
 #[cfg(test)]
 mod tests_button;
+#[cfg(test)]
+mod tests_camera_import;
 #[cfg(test)]
 mod tests_canvas_keys;
 #[cfg(test)]
@@ -466,6 +469,11 @@ pub struct Services {
     /// and when the window gets the focus back. `None` = the platform's mount folders (the
     /// desktop: `/Volumes`, `/media`, drive letters), not listed in Local.
     pub volumes: Option<VolumesFn>,
+    /// Cameras connected by USB (Android: MTP, APK-59): listed with the cards under File ▸ Import
+    /// from Device; choosing one asks for the permission, lists its photos into the import review
+    /// and copies the chosen ones through the host's reader. `None` = no camera support (the
+    /// desktop reads a camera's card as a mounted volume).
+    pub cameras: Option<camera_import::CameraService>,
     /// The raw types this device hides from apps, upper case ("CR3", "3FR"; Android: extensions
     /// its media database doesn't count as images, which the photo permission leaves out of every
     /// folder listing, APK-52). The import review and the Library sidebar's Local section name
@@ -631,6 +639,8 @@ pub struct LightcraftApp {
     pub scan: Option<import::ScanTask>,
     /// The photo library's folders being read (`file.importMediaLibrary`; feeds the import review).
     pub media_query: Option<media_import::MediaQuery>,
+    /// A camera connected by USB being read or copied from (APK-59; feeds the import review).
+    pub camera: Option<camera_import::CameraTask>,
     /// A Synchronize Folder scan in progress (feeds its dialog).
     pub sync: Option<sync::SyncTask>,
     /// `session.folder_changes` came from the Synchronize Folder dialog (and goes with it).
@@ -699,8 +709,16 @@ impl LightcraftApp {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
         // cameras and cards: the host's own volume list, when it has one
-        if let Some(volumes) = &services.volumes {
-            session.devices = lightcraft_engine::devices::DeviceWatch::over_mounts(volumes.clone(), lightcraft_engine::devices::MAX_AGE);
+        match (&services.volumes, &services.cameras) {
+            // and the cameras connected by USB (APK-59)
+            (volumes, Some(cameras)) => {
+                session.devices =
+                    lightcraft_engine::devices::DeviceWatch::over_host(volumes.clone(), cameras.list.clone(), lightcraft_engine::devices::MAX_AGE);
+            }
+            (Some(volumes), None) => {
+                session.devices = lightcraft_engine::devices::DeviceWatch::over_mounts(volumes.clone(), lightcraft_engine::devices::MAX_AGE);
+            }
+            (None, None) => {}
         }
         // the folders Settings ▸ Storage may measure and empty: the host's, registered once, never a caller's
         session.storage_host = lightcraft_engine::storage_report::HostDirs {
@@ -767,6 +785,7 @@ impl LightcraftApp {
             import: None,
             scan: None,
             media_query: None,
+            camera: None,
             sync: None,
             sync_owns_changes: false,
             sync_run: None,
@@ -1448,6 +1467,7 @@ impl LightcraftApp {
         merge::poll(self, ctx);
         import::poll_scan(self, ctx);
         media_import::poll(self, ctx);
+        camera_import::poll(self, ctx);
         sync::poll(self, ctx);
         sync::poll_run(self, ctx);
         import::tick(self, ctx);

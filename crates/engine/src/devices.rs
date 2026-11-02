@@ -12,6 +12,11 @@
 //! Each session holds its watch ([`crate::Session::devices`]): the desktop's scans the platform's
 //! mount folders ([`shared`]); a host that names its volumes itself (Android's `StorageManager`,
 //! APK-51) gives the session a watch over [`devices_on`] its [`Mount`] list instead.
+//!
+//! Cameras connected by USB (Android's MTP, APK-59) are devices of [`DeviceKind::Camera`]: no
+//! folder to scan, their files come from the host's [`CameraReader`]. Their `path` is
+//! [`CAMERA_PREFIX`] + the host's id for the camera ([`camera_id`]), so the menus that hand a
+//! device's path to `file.addFromDevice` work for both kinds.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,13 +25,146 @@ use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Device {
-    /// The volume's name ("EOS_DIGITAL", "Untitled").
+    /// The volume's name ("EOS_DIGITAL", "Untitled"), or the camera's ("Canon EOS R5").
     pub name: String,
-    /// Its `DCIM` folder (what gets imported).
+    /// Its `DCIM` folder (what gets imported); a camera's [`CAMERA_PREFIX`] + id.
     pub path: String,
-    /// The volume's mount point.
+    /// The volume's mount point; a camera's `path`.
     pub root: String,
+    /// A mounted volume, or a camera read through the host.
+    #[serde(skip_serializing_if = "DeviceKind::is_volume")]
+    pub kind: DeviceKind,
 }
+
+/// Where a device's files come from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeviceKind {
+    /// A mounted volume: its `DCIM` folder is scanned like any folder.
+    #[default]
+    Volume,
+    /// A camera connected by USB: its files come from the host's [`CameraReader`], not a path.
+    Camera,
+}
+
+impl DeviceKind {
+    pub fn is_volume(&self) -> bool {
+        *self == DeviceKind::Volume
+    }
+}
+
+/// What a camera's `path` starts with.
+pub const CAMERA_PREFIX: &str = "usb:";
+
+/// The camera id in a device path (`usb:/dev/bus/usb/001/002` → `/dev/bus/usb/001/002`).
+pub fn camera_id(path: &str) -> Option<&str> {
+    path.strip_prefix(CAMERA_PREFIX).filter(|id| !id.is_empty())
+}
+
+impl Device {
+    /// The camera the host knows by `id`, labelled `name`.
+    pub fn camera(name: &str, id: &str) -> Device {
+        let path = format!("{CAMERA_PREFIX}{id}");
+        Device { name: name.to_owned(), root: path.clone(), path, kind: DeviceKind::Camera }
+    }
+}
+
+/// A camera connected to the host: what the host knows it by and its label.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CameraInfo {
+    pub id: String,
+    pub name: String,
+}
+
+/// The host's connected cameras, asked on the watch's scanning thread (Android: a JNI call).
+pub type CamerasFn = Arc<dyn Fn() -> Vec<CameraInfo> + Send + Sync>;
+
+/// A photo on a camera, as its [`CameraReader`] lists it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraFile {
+    /// What the reader copies it by (MTP: the object handle).
+    pub id: i64,
+    /// A plain file name (no folder).
+    pub name: String,
+    pub size: u64,
+    /// When the camera wrote it, seconds since the epoch.
+    pub date: Option<i64>,
+    /// The library has it already ([`KnownFile`]): shown, but not copied.
+    pub in_library: bool,
+}
+
+/// A photo the library has, as a camera's files are compared with it before anything is copied:
+/// same name (any case) and size, taken within a day when both dates are known.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KnownFile {
+    /// The file name, lower case.
+    pub name: String,
+    pub size: u64,
+    /// The day it was taken (days since the epoch), when known.
+    pub day: Option<i64>,
+}
+
+/// The library's photos (not in Recently Deleted) as [`KnownFile`]s.
+pub fn known_files(catalog: &lightcraft_catalog::Catalog) -> Vec<KnownFile> {
+    catalog
+        .photos()
+        .filter(|p| !p.deleted && matches!(p.source, lightcraft_catalog::Source::File { .. }))
+        .map(|p| KnownFile { name: p.file_name.to_lowercase(), size: p.file_size, day: p.captured.as_deref().and_then(day_of_date) })
+        .collect()
+}
+
+/// Days since the epoch of a date that starts `YYYY-MM-DD` (or `YYYY:MM:DD`, as EXIF writes it).
+pub fn day_of_date(date: &str) -> Option<i64> {
+    let y: i64 = date.get(0..4)?.parse().ok()?;
+    let m: i64 = date.get(5..7)?.parse().ok()?;
+    let d: i64 = date.get(8..10)?.parse().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || !matches!(date.get(4..5), Some("-" | ":")) {
+        return None;
+    }
+    // days from civil (Howard Hinnant's algorithm)
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146_097 + doe - 719_468)
+}
+
+/// `YYYY-MM-DDTHH:MM:SS` (UTC) of a time in seconds since the epoch, as the import review shows a
+/// capture time; `None` out of the years 1–9999.
+pub fn date_text(secs: i64) -> Option<String> {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // civil from days (Howard Hinnant's algorithm)
+    let z = days.checked_add(719_468)?;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    if !(1..=9999).contains(&y) {
+        return None;
+    }
+    Some(format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}", rem / 3600, rem % 3600 / 60, rem % 60))
+}
+
+/// A camera's files, read and copied by the host (Android: MTP over USB). Called on a worker.
+pub trait CameraReader {
+    /// The camera's photos, those the library has (`known`) marked [`CameraFile::in_library`];
+    /// stops early (with what it has) once `cancel` is set. `Err` is a message the user can act on.
+    fn files(&mut self, known: &[KnownFile], cancel: &std::sync::atomic::AtomicBool) -> Result<Vec<CameraFile>, String>;
+    /// Copies `file` to `to` (a new file). `Err` is a message the user can act on.
+    fn copy(&mut self, file: &CameraFile, to: &std::path::Path) -> Result<(), String>;
+}
+
+/// Runs a job with the reader of the camera `id`, on the calling worker; `Err` when the camera
+/// can't be opened (unplugged, not allowed), as a message the user can act on.
+pub type WithCamera = Arc<dyn Fn(&str, &mut dyn FnMut(&mut dyn CameraReader)) -> Result<(), String> + Send + Sync>;
 
 /// A mounted volume as the host names it: its label ("SanDisk SD card", "USB drive") and its
 /// mount point. [`devices_on`] keeps those with a `DCIM` folder.
@@ -182,6 +320,27 @@ impl DeviceWatch {
     pub fn over_mounts(mounts: MountsFn, max_age: Duration) -> Arc<Self> {
         DeviceWatch::new(move || devices_on(mounts()), max_age)
     }
+
+    /// A watch over what the host names: its volumes (when it lists them; else the platform's
+    /// mount folders) and its cameras, those after the volumes, each camera once.
+    pub fn over_host(mounts: Option<MountsFn>, cameras: CamerasFn, max_age: Duration) -> Arc<Self> {
+        DeviceWatch::new(
+            move || {
+                let mut list = match &mounts {
+                    Some(mounts) => devices_on(mounts()),
+                    None => scan(),
+                };
+                for c in cameras() {
+                    let d = Device::camera(&c.name, &c.id);
+                    if !c.id.is_empty() && !list.iter().any(|x| x.path == d.path) {
+                        list.push(d);
+                    }
+                }
+                list
+            },
+            max_age,
+        )
+    }
 }
 
 fn global() -> &'static Arc<DeviceWatch> {
@@ -220,7 +379,7 @@ pub fn devices_in(parents: &[std::path::PathBuf], extra: Vec<std::path::PathBuf>
         let Some(dcim) = dcim_in(&root) else { continue };
         let name = root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| root.to_string_lossy().to_string());
         if !out.iter().any(|d| d.root == root.to_string_lossy()) {
-            out.push(Device { name, path: dcim.to_string_lossy().to_string(), root: root.to_string_lossy().to_string() });
+            out.push(Device { name, path: dcim.to_string_lossy().to_string(), root: root.to_string_lossy().to_string(), kind: DeviceKind::Volume });
         }
     }
     out
@@ -238,7 +397,7 @@ pub fn devices_on(mounts: Vec<Mount>) -> Vec<Device> {
         let Some(dcim) = dcim_in(&m.root) else { continue };
         let name =
             if m.name.trim().is_empty() { m.root.file_name().map_or_else(|| root.clone(), |n| n.to_string_lossy().to_string()) } else { m.name };
-        out.push(Device { name, path: dcim.to_string_lossy().to_string(), root });
+        out.push(Device { name, path: dcim.to_string_lossy().to_string(), root, kind: DeviceKind::Volume });
     }
     out
 }
@@ -331,7 +490,7 @@ mod tests {
     }
 
     fn card(name: &str) -> Device {
-        Device { name: name.into(), path: format!("/v/{name}/DCIM"), root: format!("/v/{name}") }
+        Device { name: name.into(), path: format!("/v/{name}/DCIM"), root: format!("/v/{name}"), kind: DeviceKind::Volume }
     }
 
     /// Wait (bounded) for `f`.
@@ -417,6 +576,55 @@ mod tests {
         assert_eq!(runs.load(Ordering::SeqCst), 2, "the expire during the first scan rescanned");
         let _ = watch.get();
         assert!(!watch.refreshing() && runs.load(Ordering::SeqCst) == 2, "fresh again");
+    }
+
+    /// The host's cameras come after its volumes, each once, as camera devices with a `usb:` path.
+    #[test]
+    fn host_cameras_are_devices() {
+        let base = std::env::temp_dir().join(format!("lc-devices-cameras-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("CARD/DCIM")).unwrap();
+        let root = base.join("CARD");
+        let mounts: MountsFn = Arc::new(move || vec![Mount { name: "SD card".into(), root: root.clone() }]);
+        let cameras: CamerasFn = Arc::new(|| {
+            vec![
+                CameraInfo { id: "/dev/bus/usb/001/002".into(), name: "Canon EOS R5".into() },
+                CameraInfo { id: "/dev/bus/usb/001/002".into(), name: "Canon EOS R5".into() },
+                CameraInfo { id: String::new(), name: "nameless".into() },
+            ]
+        });
+        let watch = DeviceWatch::over_host(Some(mounts), cameras, MAX_AGE);
+        let d = watch.scan_now();
+        assert_eq!(d.len(), 2, "{d:?}");
+        assert_eq!((d[0].name.as_str(), d[0].kind), ("SD card", DeviceKind::Volume));
+        assert_eq!(d[1], Device::camera("Canon EOS R5", "/dev/bus/usb/001/002"));
+        assert_eq!(d[1].kind, DeviceKind::Camera);
+        assert_eq!(camera_id(&d[1].path), Some("/dev/bus/usb/001/002"));
+        assert_eq!(camera_id(&d[0].path), None);
+        assert_eq!(camera_id("usb:"), None);
+        // the kind is in the JSON only for a camera
+        assert!(serde_json::to_value(&d[0]).unwrap().get("kind").is_none());
+        assert_eq!(serde_json::to_value(&d[1]).unwrap()["kind"], "camera");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn capture_dates_become_days() {
+        assert_eq!(day_of_date("1970-01-01T00:00:00"), Some(0));
+        assert_eq!(day_of_date("2000-03-01"), Some(11_017));
+        assert_eq!(day_of_date("2026:10:04 08:16:11"), day_of_date("2026-10-04"));
+        assert_eq!(day_of_date("1969-12-31"), Some(-1));
+        // and back
+        for day in [-1, 0, 11_017, 20_365] {
+            let text = date_text(day * 86_400 + 3_723).unwrap();
+            assert_eq!(day_of_date(&text), Some(day), "{text}");
+        }
+        assert_eq!(date_text(86_400 + 3_723).as_deref(), Some("1970-01-02T01:02:03"));
+        assert_eq!(date_text(i64::MAX), None);
+        assert_eq!(date_text(i64::MIN), None);
+        for bad in ["", "2026", "2026-13-01", "2026-00-10", "2026/10/04", "20261004", "2026-1é-04"] {
+            assert_eq!(day_of_date(bad), None, "{bad}");
+        }
     }
 
     #[test]

@@ -16,6 +16,9 @@
 //! followed by a tick, and while a request is pending asks for the next frame within 500 ms, so
 //! the answer is read back even when nothing else moves on screen.
 //!
+//! The USB permission of a camera being imported from (APK-59) is driven the same way
+//! ([`crate::camera::UsbAccess`]).
+//!
 //! Shares (APK-25): the files LightCraft was sent at this start ([`Shares`]) are ticked in
 //! `logic` once the library is open, and asked for frames until they are received and imported.
 //!
@@ -88,17 +91,27 @@ impl HostApp {
         HostApp { slot, loader, start, reopen, control, last_flush: Instant::now(), insets, focus: Vec::new(), shares, paste_key_seeded: false }
     }
 
-    /// The focus changes since the last frame, then a tick, to the photo access; asks for a frame
-    /// again while its request is pending.
+    /// The focus changes since the last frame, then a tick, to the photo access and the cameras'
+    /// USB permissions; asks for a frame again while a request is pending.
     fn drive_photo_access(&mut self, ctx: &egui::Context) {
         let focus = std::mem::take(&mut self.focus);
-        let Some(photos) = &self.start.photos else { return };
         let now = Instant::now();
-        for focused in focus {
-            photos.on_event(Event::Focused(focused), now);
+        if let Some(photos) = &self.start.photos {
+            for &focused in &focus {
+                photos.on_event(Event::Focused(focused), now);
+            }
+            if let Some(after) = photos.on_event(Event::Tick, now) {
+                ctx.request_repaint_after(after);
+            }
         }
-        if let Some(after) = photos.on_event(Event::Tick, now) {
-            ctx.request_repaint_after(after);
+        // the cameras' USB permissions are read back the same way (APK-59)
+        if let Some(cameras) = &self.start.cameras {
+            for &focused in &focus {
+                cameras.access.on_event(Event::Focused(focused), now);
+            }
+            if let Some(after) = cameras.access.on_event(Event::Tick, now) {
+                ctx.request_repaint_after(after);
+            }
         }
     }
 

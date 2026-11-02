@@ -416,6 +416,28 @@ as stated):
 - **Done when:** tests pass; `docs/android.md` lists cameras tried (maintainer).
 - **Maintainer checks on a device:** a Canon (CR3), a Fujifilm (compressed RAF) and a Sony camera by USB-C: they
   appear, import, and render as their decoders allow (raw-parity gaps 2 and 6 still apply).
+- **As built (2026-11-02):** `android-sys` `usb.rs`: `cameras` (pure) keeps USB devices with a still-image
+  interface (6/1/1) or a vendor interface named MTP (or device class 6), each device name once, labelled by maker and
+  model; `UsbPermission` (pure) is the request / poll state machine (`hasPermission` first, then the dialog: granted on
+  a check, denied when the focus comes back without it or no dialog came within 1 s); JNI `query_cameras`
+  (`getDeviceList().values()`, one local frame per device), `has_permission`, `request_permission` (an
+  `Intent` with the package set, `PendingIntent.getBroadcast(…, FLAG_IMMUTABLE)`, no receiver). `mtp.rs`:
+  `review_items` (pure: no folders, a plain file name, a size, the importer's extensions, each handle once, oldest
+  first, at most 100,000) and `skip_known` (same name in any case and size, within a day when both dates are known);
+  JNI `with_mtp` (`openDevice`, `MtpDevice.open`, closed after the job), `Mtp::objects` (`getStorageIds`,
+  `getObjectHandles(storage, 0, 0)`, one local frame per `getObjectInfo`) and `Mtp::import` (`importFile`). The engine
+  gained `DeviceKind::Camera` (a device whose `path` is `usb:<id>`), `CameraReader`, `KnownFile` / `known_files` and
+  `DeviceWatch::over_host` (volumes, then cameras). The UI side is `crates/ui-egui/src/camera_import.rs`
+  (`Services::cameras`): `file.addFromDevice` on a `usb:` path asks for the permission (waiting is polled every
+  frame within 500 ms), reads the camera under "Reading the camera" into the import review (no thumbnails; the
+  library's photos marked "In library"; Add in place hidden), and the review's Import copies under "Copying from
+  <camera>" into the host's staging folder, then imports with Move (the staged copy goes once verified) rather than
+  Copy, so the staging folder doesn't keep a second copy of every raw. The host side is
+  `crates/android-host/src/camera.rs` (`UsbAccess` per camera, driven by the eframe app's focus events and ticks next
+  to the photo access; `MtpReader`; staging `files/incoming/camera`, which a start without shares empties). The
+  manifest has the `USB_DEVICE_ATTACHED` filter with `res/xml/device_filter.xml` (class 6/1/1). The hidden-types note
+  doesn't name USB cameras yet (its translations). Nothing here has run on a device: the JNI calls are linted for
+  `aarch64-linux-android` only, and the device check is in `docs/android.md`.
 
 ### APK-60 Batch Auto and AI-mask update
 - **Answers:** [C11](android-competitive.md#c11-batch-editing-gaps). `develop.auto` acts on the active photo only, and
@@ -552,4 +574,5 @@ the maintainer asks for a release; step 5 (APK-58, 59, 61, 62, 63, 64) runs firs
 - 2026-11-02 (APK-55): "As built" note on the card.
 - 2026-11-02 (APK-56): "As built" note on the card.
 - 2026-11-02 (APK-58): "As built" note on the card.
+- 2026-11-02 (APK-59): "As built" note on the card.
 - 2026-11-02: maintainer decision: step 5 before Phase 4's release cards (36 … 43), which wait for a release call.

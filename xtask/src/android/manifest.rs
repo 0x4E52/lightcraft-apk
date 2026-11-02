@@ -333,7 +333,36 @@ mod tests {
         // the launcher's filter is unchanged, and nothing else is declared
         let main = find("MAIN");
         assert_eq!(values(&main, "category", "android:name"), ["android.intent.category.LAUNCHER"]);
-        assert_eq!(filters.len(), 4);
+        assert_eq!(filters.len(), 5);
+    }
+
+    /// A camera plugged in by USB offers LightCraft (APK-59): the attach filter, its device filter
+    /// resource, and that resource lists the PTP / MTP still-image interface.
+    #[test]
+    fn manifest_declares_usb_camera_filter() {
+        let xml = fill(&template(), "1.2.3", Build::Release).unwrap();
+        let action = "android.hardware.usb.action.USB_DEVICE_ATTACHED";
+        let start = xml.find(&format!("<action android:name=\"{action}\"")).expect("the USB attach filter");
+        let filter_start = xml[..start].rfind("<intent-filter>").expect("inside a filter");
+        let filter_end = start + xml[start..].find("</intent-filter>").expect("filter is closed");
+        let filter = elements(&xml[filter_start..filter_end]);
+        assert_eq!(filter.iter().filter(|(e, _)| e == "action").count(), 1, "{filter:?}");
+        // the device filter resource sits next to it, in the activity
+        let all = elements(&xml);
+        let meta = all
+            .iter()
+            .find(|(e, attrs)| e == "meta-data" && attrs.iter().any(|(k, v)| k == "android:name" && v == action))
+            .expect("the device filter meta-data");
+        assert!(meta.1.iter().any(|(k, v)| k == "android:resource" && v == "@xml/device_filter"), "{meta:?}");
+        let activity_end = xml.find("</activity>").unwrap();
+        let resource = xml.find("@xml/device_filter").unwrap();
+        assert!(filter_end < activity_end && resource < activity_end, "both belong to the activity");
+        let res = std::fs::read_to_string(crate::root().join("packaging/android/res/xml/device_filter.xml")).unwrap();
+        let devices = elements(&res);
+        let usb: Vec<_> = devices.iter().filter(|(e, _)| e == "usb-device").collect();
+        assert_eq!(usb.len(), 1, "{devices:?}");
+        let get = |k: &str| usb[0].1.iter().find(|(key, _)| key == k).map(|(_, v)| v.as_str());
+        assert_eq!((get("class"), get("subclass"), get("protocol")), (Some("6"), Some("1"), Some("1")));
     }
 
     #[test]

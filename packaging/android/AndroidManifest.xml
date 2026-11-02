@@ -102,6 +102,15 @@
                 <data android:mimeType="application/gpx+xml" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- A camera plugged in by USB (APK-59, crates/android-sys/src/usb.rs): Android offers
+                 LightCraft for the devices res/xml/device_filter.xml lists (PTP / MTP cameras), and
+                 its device scan lists the camera under File > Import from Device. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/device_filter" />
         </activity>
     </application>
 </manifest>

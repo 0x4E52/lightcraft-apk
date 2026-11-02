@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The USB devices whose plugging in offers LightCraft (USB_DEVICE_ATTACHED in AndroidManifest.xml,
+     APK-59): cameras in PTP / MTP mode, which have a still-image interface (class 6, subclass 1,
+     protocol 1). crates/android-sys/src/usb.rs recognises the same devices. -->
+<resources>
+    <usb-device class="6" subclass="1" protocol="1" />
+</resources>

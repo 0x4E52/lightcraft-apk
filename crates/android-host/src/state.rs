@@ -92,6 +92,8 @@ pub struct Start {
     pub clipboard: Option<crate::services::Clip>,
     /// The SD cards and USB drives (`None` in tests: the desktop's mount folders, none on a phone).
     pub volumes: Option<crate::services::VolumeQuery>,
+    /// Cameras connected by USB (`None` in tests: no camera). The eframe app drives its permission.
+    pub cameras: Option<crate::camera::CameraHost>,
     /// The raw types this phone hides from apps, asked on the loader's worker (default in tests:
     /// no query, nothing hidden).
     pub hidden_types: crate::services::HiddenTypes,
@@ -161,6 +163,10 @@ impl HostState {
         services.previous_crash = start.previous_crash.clone();
         services.clipboard = start.clipboard.clone().map(crate::services::clipboard);
         services.volumes = start.volumes.clone().map(crate::services::volumes);
+        // (copies wait in files/incoming/camera, outside the library, until the import moved them)
+        if let (Some(cameras), Some(incoming)) = (&start.cameras, &start.storage.incoming) {
+            services.cameras = Some(crate::camera::camera_service(cameras, incoming.join(crate::camera::STAGING_DIR)));
+        }
         services.hidden_types = start.hidden_types.known();
         let mut app = LightcraftApp::new(session, services);
         if let Some(ui) = start.prefs {

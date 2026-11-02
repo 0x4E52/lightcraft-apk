@@ -108,6 +108,10 @@ pub struct ImportDialog {
     /// The photo library's folders (`file.importMediaLibrary`): the sources to choose from, each
     /// scanned into this review as a picked folder is. Empty for every other import.
     pub buckets: Vec<crate::media_import::MediaBucket>,
+    /// A camera connected by USB (APK-59): the candidates are its files, copied off it only when
+    /// the import starts ([`crate::camera_import`]). `None` for every other import.
+    #[serde(skip)]
+    pub camera: Option<crate::camera_import::CameraSource>,
 }
 
 /// A candidate's file type, as the review groups them: its format, or its extension when the
@@ -216,13 +220,11 @@ impl ImportDialog {
         self.last_clicked = Some(i);
     }
     pub fn selected_paths(&self) -> Vec<String> {
-        self.candidates
-            .iter()
-            .zip(&self.checked)
-            .enumerate()
-            .filter(|(i, (_, on))| **on && self.importable(*i))
-            .map(|(_, (c, _))| c.path.clone())
-            .collect()
+        self.selected().into_iter().filter_map(|i| self.candidates.get(i)).map(|c| c.path.clone()).collect()
+    }
+    /// The indices of the checked candidates that can be imported.
+    pub fn selected(&self) -> Vec<usize> {
+        self.checked.iter().enumerate().filter(|(i, on)| **on && self.importable(*i)).map(|(i, _)| i).collect()
     }
     /// The `organize` param of `library.import` (`None` = the default, by day); an unusable
     /// custom folder template is an error.
@@ -481,7 +483,13 @@ pub(crate) fn cards_seen(app: &mut LightcraftApp, now: Vec<lightcraft_engine::de
     known.retain(|root| now.iter().any(|d| d.root == *root));
     let Some(card) = now.into_iter().find(|d| !known.contains(&d.root)) else { return };
     // busy: ask when the window is free (the card isn't noted until then)
-    if app.import.is_some() || app.scan.is_some() || app.sync_run.is_some() || app.lightroom.is_some() || app.ui.dialog.is_some() {
+    if app.import.is_some()
+        || app.scan.is_some()
+        || app.camera.is_some()
+        || app.sync_run.is_some()
+        || app.lightroom.is_some()
+        || app.ui.dialog.is_some()
+    {
         return;
     }
     known.push(card.root);
@@ -673,6 +681,11 @@ pub fn poll_scan(app: &mut LightcraftApp, ctx: &egui::Context) {
 }
 
 impl ScanTask {
+    /// Browsing a folder (Local), not scanning for the import review.
+    pub(crate) fn browse(&self) -> bool {
+        self.browse
+    }
+
     /// `{done, total}` for `ui.inspect` (total is 0 while the folders are still being listed).
     pub fn status(&self) -> Value {
         json!({"done": self.progress.done.load(Ordering::Relaxed), "total": self.progress.total.load(Ordering::Relaxed)})
@@ -686,7 +699,21 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
     if queue.is_empty() {
         return Err("no photos selected".into());
     }
+    if d.camera.is_some() {
+        // copied off the camera first, then imported (APK-59)
+        return crate::camera_import::start_copy(app, d);
+    }
     let undo0 = app.session.undo.len();
+    let params = review_params(app, d)?;
+    let total = queue.len();
+    app.import = Some(ImportTask::new(queue, params, undo0, false));
+    app.renderer.forget_imports();
+    Ok(json!({"importing": total}))
+}
+
+/// `library.import`'s parameters for the review's choices (without `paths`); a new album named in
+/// the review is created now.
+pub(crate) fn review_params(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String> {
     let mut album = d.album;
     if album.is_none() && !d.new_album.trim().is_empty() {
         let r = app.session.execute("album.create", &json!({"name": d.new_album.trim()})).map_err(|e| e.to_string())?;
@@ -725,10 +752,7 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
             params["dng"] = json!(true);
         }
     }
-    let total = queue.len();
-    app.import = Some(ImportTask::new(queue, params, undo0, false));
-    app.renderer.forget_imports();
-    Ok(json!({"importing": total}))
+    Ok(params)
 }
 
 /// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
@@ -1040,6 +1064,10 @@ fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
 /// The dialog body: options, then the candidate grid.
 pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     let t = Tokens::get(ui.ctx());
+    if d.camera.is_some() {
+        // a camera's photos are always copied off it
+        d.copy = true;
+    }
     let n = d.candidates.len();
     let (dups, in_source, trashed) = dup_counts(d);
     let sel = d.selected_paths().len();
@@ -1141,9 +1169,11 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     }
     field(ui, "Transfer", |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        if crate::widgets::text_button(ui, "importAdd", crate::i18n::tr("Add in place"), !d.copy)
-            .on_hover_text(crate::i18n::tr("Reference the files where they are"))
-            .clicked()
+        // (a camera's photos can't stay where they are)
+        if d.camera.is_none()
+            && crate::widgets::text_button(ui, "importAdd", crate::i18n::tr("Add in place"), !d.copy)
+                .on_hover_text(crate::i18n::tr("Reference the files where they are"))
+                .clicked()
         {
             d.copy = false;
             d.move_files = false;
@@ -1393,7 +1423,9 @@ fn candidate_cell(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDial
     p.rect_filled(img, 3.0, Color32::from_gray(30));
     // thumbnail (background job; the grid only asks for the cells in view)
     let slot = Slot::Import(i as u32);
-    if !app.renderer.textures.contains_key(&slot)
+    // (a camera's files are on the camera: no thumbnail until they are copied)
+    if d.camera.is_none()
+        && !app.renderer.textures.contains_key(&slot)
         && let Some(job) = app.session.candidate_thumb_job(&c, 192, i as u64)
     {
         app.renderer.request_quick(slot, job, 4);

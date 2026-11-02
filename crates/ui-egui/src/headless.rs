@@ -3482,6 +3482,7 @@ mod tests {
             name: "NIKON Z 8".into(),
             path: root.join("DCIM").to_string_lossy().to_string(),
             root: root.to_string_lossy().to_string(),
+            kind: lightcraft_engine::devices::DeviceKind::Volume,
         };
         h.app.ui.dialog = None;
         // first look: the card was already in

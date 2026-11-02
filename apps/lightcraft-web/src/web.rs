@@ -251,6 +251,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         storage_inbox: None,
         // the platform's mount folders; nothing to list in the Local section
         volumes: None,
+        cameras: None,
         // the desktop and the browser hide no raw types from the app
         hidden_types: Vec::new(),
         free_space: None,

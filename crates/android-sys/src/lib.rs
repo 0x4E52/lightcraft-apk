@@ -18,9 +18,11 @@ pub mod intents;
 pub mod jni_env;
 pub mod media_store;
 pub mod mime;
+pub mod mtp;
 pub mod permissions;
 pub mod props;
 pub mod storage;
+pub mod usb;
 pub mod volumes;
 
 pub use jni_env::{Error, user_message};

@@ -848,7 +848,7 @@ fn builtin_places(home: &str, roots: &[(String, std::path::PathBuf)], is_dir: im
 /// otherwise not show a card mounted while the screen isn't touched until the next input. Nothing
 /// on a host without [`crate::Services::volumes`] (the desktop's mounts are not in Local).
 pub(crate) fn keep_devices_fresh(ctx: &egui::Context, services: &crate::Services) {
-    if services.volumes.is_some() {
+    if services.volumes.is_some() || services.cameras.is_some() {
         ctx.request_repaint_after(lightcraft_engine::devices::MAX_AGE);
     }
 }
@@ -856,7 +856,8 @@ pub(crate) fn keep_devices_fresh(ctx: &egui::Context, services: &crate::Services
 /// The cameras and cards after the built-in places, as `(name, volume root)`; a volume already
 /// listed is not listed again.
 fn device_places(places: &mut Vec<(String, String)>, devices: Vec<lightcraft_engine::devices::Device>) {
-    for d in devices {
+    // (a camera connected by USB has no folder to browse: it is imported from)
+    for d in devices.into_iter().filter(|d| d.kind.is_volume()) {
         if !places.iter().any(|(_, p)| same_folder(p, &d.root)) {
             places.push((d.name, d.root));
         }
@@ -1622,7 +1623,7 @@ fn folder_menu(app: &mut LightcraftApp, resp: &egui::Response, a: &Album) {
             }
             // File ▸ Import's ways in; the import review opens with this album chosen
             let watch = app.session.devices.clone();
-            let host_volumes = app.services.volumes.is_some();
+            let host_volumes = app.services.volumes.is_some() || app.services.cameras.is_some();
             let menu = crate::widgets::menu_button(ui, crate::i18n::tr("Import"), |ui| {
                 let mut entry = |ui: &mut egui::Ui, label: String, widget: String, command: &str, params: serde_json::Value| {
                     let r = ui.button(label);

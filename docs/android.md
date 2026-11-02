@@ -249,6 +249,30 @@ classify as media (on many phones `.CR3`, `.ARW`, `.NEF`, and every non-media fi
 they don't appear in the review at all; the app says which types (below). A card that Android has *adopted* as internal
 storage is part of the phone's own storage and not listed as a device.
 
+## Cameras by USB
+
+A camera plugged into the USB-C port in PTP or MTP mode (most cameras' "PC connection" or "PC remote" setting; in
+mass-storage mode it is a USB drive, above) appears under File ▸ Import from Device with its maker and model ("Canon
+EOS R5"). Android also offers LightCraft when such a camera is plugged in (the manifest's `USB_DEVICE_ATTACHED`
+filter, `packaging/android/res/xml/device_filter.xml`).
+
+- **Choosing the camera** asks Android for permission to use it (the system dialog; "always" for this camera makes
+  later imports skip it). LightCraft reads the answer back when the dialog closes; a refusal says how to ask again.
+- **Reading the camera** (an activity row with ✕) lists its photos into the import review, oldest first. Photos the
+  library has already (same file name, size and day) show "In library" and are not checked. Nothing is copied yet,
+  so the review has no thumbnails.
+- **Import** copies the checked photos off the camera into `files/incoming/camera` ("Copying from …", ✕ between
+  files, each copy's size checked), then the importer moves them into the library, verified by content hash, with the
+  review's album, preset, keywords and naming.
+- Unplugging the camera mid-import gives an error per photo it didn't send; the ones copied before are imported.
+
+The camera is read over MTP (`android.mtp.MtpDevice`), not through Android's media database, so **every raw type
+arrives**, including those the phone hides from folders (next section). How a raw renders still depends on its decoder
+(compressed RAF and some CR3 variants: `docs/raw-parity.md`). If the Files app (its MTP provider) holds the camera,
+opening it here fails with a message; close Files and try again. Code: `crates/android-sys/src/{usb,mtp}.rs`,
+`crates/android-host/src/camera.rs`, `crates/ui-egui/src/camera_import.rs`. Cameras tried: none yet (device check
+below).
+
 ## Raws this phone hides
 
 Since Android 11 (scoped storage) the photo permission shows an app only the files of shared storage, and of an SD
@@ -261,8 +285,8 @@ imports (`lightcraft_engine::import::RAW_EXTENSIONS`); each one without an `imag
 "This phone hides CR3, 3FR files from apps, so folders here don't list them. Share them to LightCraft from the Files
 app, or open them with LightCraft." Both ways work for every raw: the Files app reads them through its document
 provider, which lists every file, and LightCraft accepts them as `application/octet-stream` (next section). A
-phone that knows every type shows no note; the desktop never does. A camera connected by USB (MTP, APK-59) is a third
-way once it lands; until then the note doesn't offer it.
+phone that knows every type shows no note; the desktop never does. A camera connected by USB in PTP / MTP mode (above) is
+a third way: its files are read from the camera; the note doesn't name it yet.
 
 "All files access" (`MANAGE_EXTERNAL_STORAGE`, which would make the hidden files visible by path) is never requested
 (decision 12, `docs/android-port.md`).
@@ -548,6 +572,11 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] APK-51: a USB-C card reader with JPEG + raw folders and a phone with a microSD in it: both appear under File ▸
   Import from Device and in Local with their names within two seconds of mounting; Import verifies and copies; Browse
   shows the photos in place; unplugging mid-import gives "not readable" errors and no crash (logcat: no `panicked`).
+- [ ] APK-59: a Canon (CR3), a Fujifilm (compressed RAF) and a Sony camera by USB-C in PTP / MTP mode: each appears
+  under File ▸ Import from Device with its name; the permission dialog appears once (allow, and deny then choose it
+  again); the review lists its photos, those already imported marked "In library"; Import copies and imports them and
+  they render as their decoders allow (raw-parity gaps 2 and 6); unplugging mid-import gives per-photo errors and no
+  crash (logcat: no `panicked`). Record the cameras tried in "Cameras by USB".
 - [ ] APK-53: run `packaging/android/control-check.sh` (or the edit smoke script through `run.py --strict`) on a Pixel
   and on a Samsung phone through the debug control server; force a panic (a debug build with a deliberate one) and
   start again: the window appears, Copy Report pastes the text, Share Report offers the log, Dismiss ends it.

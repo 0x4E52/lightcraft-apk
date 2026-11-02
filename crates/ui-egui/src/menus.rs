@@ -1809,6 +1809,13 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                     None => return Some(Err("no camera or memory card found".into())),
                 },
             };
+            // a camera connected by USB: its files come from the host's reader (APK-59)
+            if app.services.cameras.is_some()
+                && let Some(id) = lightcraft_engine::devices::camera_id(&path)
+            {
+                let id = id.to_owned();
+                return Some(crate::camera_import::open(app, &id, p.get("album").and_then(Value::as_u64)));
+            }
             let r = crate::import::open(app, vec![path]);
             // only the scan just started (an error means another scan is running)
             if r.is_ok()
