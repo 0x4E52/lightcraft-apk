@@ -794,11 +794,27 @@ pub(crate) fn commit_sidecars(
     label: &str,
     read: Vec<(PhotoId, String, std::result::Result<crate::sidecar::SidecarData, String>)>,
 ) -> (usize, Vec<(String, String)>) {
+    commit_sidecars_with(s, label, read, &|_| None)
+}
+
+/// [`commit_sidecars`], a photo whose edit `edited(id)` names a time keeping that time as its last
+/// edit instead of now (a handoff's edit keeps the sending device's time).
+pub(crate) fn commit_sidecars_with(
+    s: &mut Session,
+    label: &str,
+    read: Vec<(PhotoId, String, std::result::Result<crate::sidecar::SidecarData, String>)>,
+    edited: &dyn Fn(PhotoId) -> Option<String>,
+) -> (usize, Vec<(String, String)>) {
     let mut failed = Vec::new();
     let mut ops = Vec::new();
     for (id, path, sc) in read {
         match sc.map_err(EngineError::Other).and_then(|sc| s.sidecar_op(id, sc)) {
-            Ok(op) => ops.push(op),
+            Ok(mut op) => {
+                if let Some(when) = edited(id) {
+                    restamp(&mut op, &when);
+                }
+                ops.push(op)
+            }
             Err(e) => failed.push((path, e.to_string())),
         }
     }
@@ -812,6 +828,15 @@ pub(crate) fn commit_sidecars(
             failed.push((String::new(), e.to_string()));
             (0, failed)
         }
+    }
+}
+
+/// Every develop change in `op` dated `when`.
+fn restamp(op: &mut Op, when: &str) {
+    match op {
+        Op::SetDevelop { edited, .. } => *edited = Some(when.to_string()),
+        Op::Batch { ops } => ops.iter_mut().for_each(|o| restamp(o, when)),
+        _ => {}
     }
 }
 

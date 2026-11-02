@@ -84,12 +84,14 @@ fn handoff_writes_to_documents_and_offers_to_share() {
     let id = h.app.session.catalog.photos().next().unwrap().id;
     h.app.session.selection.ids = vec![id];
     assert!(crate::menus::ui_enabled(&h.app, "file.handoff"));
+    // ids that are not photo ids are refused, never dropped
+    assert!(h.app.run("file.handoff", json!({"ids": [id.0, "x"]})).is_err());
     let r = h.app.run("file.handoff", json!({})).unwrap();
     let out = r["dir"].as_str().unwrap().to_string();
     assert!(out.starts_with(&docs) && out.contains("LightCraft Handoff 2026-10-01 10-00-00"), "{r}");
     assert!(
-        h.app.session.activity.list().iter().any(|t| t.label == crate::handoff::SEND_LABEL && t.kind == "export"),
-        "the hand-off holds an activity row"
+        h.app.session.activity.list().iter().any(|t| t.label == crate::handoff::SEND_LABEL && t.kind == "export" && t.cancellable),
+        "the hand-off holds an activity row with ✕"
     );
     wait_tasks(&mut h);
     let manifest = std::path::Path::new(&out).join(lightcraft_engine::handoff::MANIFEST);
@@ -126,6 +128,10 @@ fn receive_lists_and_reads_only_ticked_photos() {
     let mut h = app(&dir.path("desk"), "2026-10-01T09:00:00", Services::default());
     let r = h.app.run("file.receiveHandoff", json!({"dir": dir.path("h")})).unwrap();
     assert!(r.get("reading").is_some(), "{r}");
+    assert!(
+        h.app.session.activity.list().iter().any(|t| t.label == crate::handoff::READ_LABEL && t.kind == "import" && t.cancellable),
+        "reading holds an activity row with ✕"
+    );
     wait_tasks(&mut h);
     let Some(Dialog::ReceiveHandoff { newer, read, new, .. }) = h.app.ui.dialog.clone() else { panic!("no dialog: {:?}", h.app.ui.dialog) };
     assert_eq!((new, newer.len()), (0, 2), "{newer:?}");

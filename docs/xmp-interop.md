@@ -68,8 +68,10 @@ cloud and no account (`crates/engine/src/handoff.rs`).
 ```
 
 `hash` is the content hash the library's duplicate check uses (over the file's bytes), `id` the photo's id in the
-library it left, `edited` when the photo last changed there (the later of its import and its last develop change, the
-sending device's local clock). `format` grows when a field changes meaning; a reader refuses a newer one. Virtual
+library it left, `edited` when the photo last changed there (its last develop change, else its import, on the
+sending device's local clock). A photo received from a handoff keeps that `edited` as its last develop change, not the
+time it arrived, so the time travels with the edit: a photo handed back without a new edit is never newer than an edit
+made on the sending device since. `format` grows when a field changes meaning; a reader refuses a newer one. Virtual
 copies and generated demo photos are not handed off (listed as skipped), and a folder that already holds a manifest is
 refused.
 

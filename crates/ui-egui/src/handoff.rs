@@ -14,6 +14,9 @@
 //! settings are newer (each read only when ticked: never the default) and photos whose library
 //! settings are as new or newer (listed, never read).
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde_json::{Value, json};
 
 use crate::LightcraftApp;
@@ -33,7 +36,11 @@ pub(crate) fn send(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> 
         return Err(crate::i18n::tr("A handoff is already being written").to_string());
     }
     let ids: Vec<lightcraft_engine::catalog::PhotoId> = match p.get("ids").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(Value::as_u64).map(lightcraft_engine::catalog::PhotoId).collect(),
+        Some(a) => a
+            .iter()
+            .map(|v| v.as_u64().map(lightcraft_engine::catalog::PhotoId))
+            .collect::<Option<_>>()
+            .ok_or_else(|| "`ids` must be photo ids".to_string())?,
         None => app.session.selected(),
     };
     if ids.is_empty() {
@@ -58,18 +65,37 @@ pub(crate) fn send(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> 
     };
     let job = lightcraft_engine::handoff::prepare(&mut app.session, &ids, &dir).map_err(|e| e.to_string())?;
     let n = job.len();
-    crate::tasks::spawn(
+    // the row's ✕ stops the job before its next photo (the manifest lists those written)
+    let (row, cancel, handle) = cancellable_row(app, "export", SEND_LABEL);
+    crate::tasks::spawn_with_row(
         app,
         SEND_LABEL,
-        Some("export"),
+        Some(row),
         move || {
-            let never = std::sync::atomic::AtomicBool::new(false);
-            lightcraft_engine::guard::catch("handoff", || job.run(&never, &mut |_, _| {}).map_err(|e| e.to_string()))
+            let mut progress = |done: usize, of: usize| handle.progress(count(done), count(of));
+            lightcraft_engine::guard::catch("handoff", || job.run(&cancel, &mut progress).map_err(|e| e.to_string()))
                 .unwrap_or_else(|_| Err("the handoff stopped unexpectedly (see the log)".to_string()))
         },
         sent,
     )?;
     Ok(json!({"dir": dir, "photos": n}))
+}
+
+/// An activity row of `kind` the person can stop with ✕: the row, the cancel flag it sets and a
+/// handle the worker reports its progress through.
+fn cancellable_row(
+    app: &LightcraftApp,
+    kind: &'static str,
+    label: &str,
+) -> (lightcraft_engine::activity::TaskGuard, Arc<AtomicBool>, lightcraft_engine::activity::TaskHandle) {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let row = app.session.activity.start(kind, label, lightcraft_engine::activity::Cancel::Flag(cancel.clone()));
+    let handle = row.handle();
+    (row, cancel, handle)
+}
+
+fn count(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
 }
 
 fn folder_in(base: &str, now: &str) -> String {
@@ -86,6 +112,9 @@ fn sent(app: &mut LightcraftApp, ctx: &egui::Context, r: Result<lightcraft_engin
             let mut text = format!("{} {} → {}", crate::i18n::tr("Photos handed off:"), w.photos, w.dir);
             if !w.failed.is_empty() || !w.skipped.is_empty() {
                 text = format!("{text} · {} {}", crate::i18n::tr("Not handed off"), w.failed.len() + w.skipped.len());
+            }
+            if w.cancelled {
+                text = format!("{text} · {}", crate::i18n::tr("Cancelled"));
             }
             app.ui.status = text.clone();
             app.toast(ctx, text);
@@ -126,18 +155,24 @@ pub(crate) fn receive(app: &mut LightcraftApp, p: &Value) -> Result<Value, Strin
         }
     };
     let input = lightcraft_engine::handoff::HandoffInput::new(&app.session, &dir).map_err(|e| e.to_string())?;
-    crate::tasks::spawn(
+    // the row's ✕ stops the reading: nothing is listed then, as nothing was read in full
+    let (row, cancel, handle) = cancellable_row(app, "import", READ_LABEL);
+    let stop = cancel.clone();
+    crate::tasks::spawn_with_row(
         app,
         READ_LABEL,
-        Some("import"),
+        Some(row),
         move || {
-            let never = std::sync::atomic::AtomicBool::new(false);
+            let mut progress = |done: usize, of: usize| handle.progress(count(done), count(of));
             lightcraft_engine::guard::catch("handoff", || {
-                lightcraft_engine::handoff::scan_with(input, &never, &mut |_, _| {}).map_err(|e| e.to_string())
+                lightcraft_engine::handoff::scan_with(input, &cancel, &mut progress).map_err(|e| e.to_string())
             })
             .unwrap_or_else(|_| Err("reading the handoff stopped unexpectedly (see the log)".to_string()))
         },
-        |app, ctx, r| match r {
+        move |app, ctx, r| match r {
+            Ok(_) if stop.load(Ordering::Relaxed) => {
+                app.ui.status = crate::i18n::tr("Reading the handoff was cancelled").to_string();
+            }
             Ok(plan) => open(app, plan),
             Err(e) => {
                 app.ui.status = e.clone();
@@ -239,6 +274,8 @@ pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> Result<Value, String> {
         _ => return Err(crate::i18n::tr("The handoff was not read: receive it again").to_string()),
     };
     let new = if *import_new { lightcraft_engine::handoff::new_paths(&plan) } else { Vec::new() };
+    // each new photo keeps the sending device's time of its last change
+    let received = lightcraft_engine::handoff::import_options(&app.session, &plan).received;
     if !new.is_empty() && app.import.is_some() {
         app.handoff_plan = Some(plan);
         return Err(crate::i18n::tr("Wait for the import to finish").to_string());
@@ -264,7 +301,7 @@ pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> Result<Value, String> {
             lightcraft_engine::import::ImportMode::Add => "add",
             _ => "copy",
         };
-        crate::import::start_paths_with(app, new, json!({"mode": mode}))?;
+        crate::import::start_received(app, new, json!({"mode": mode}), received)?;
     }
     Ok(json!({"read": r.read, "refused": r.refused, "failed": r.failed, "importing": importing}))
 }

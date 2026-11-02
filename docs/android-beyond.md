@@ -516,11 +516,14 @@ as stated):
   re-hashes each original (damaged when missing or changed), matches by content hash (the manifest's id first when
   several photos share it), and sorts matches into newer, older (also an unknown time) and up to date (the sidecar
   would change nothing); `library.receiveHandoff` reads only the ticked newer ones (one undo step "Receive
-  Handoff") and imports the new ones (Copy into the library's folder, Add without one). `sync.rs` lends it its sidecar
+  Handoff") and imports the new ones (Copy into the library's folder, Add without one). A photo's last change is its
+  last edit, else its import, and a received photo keeps the sender's edit time rather than the time it arrived, so a
+  photo handed back unedited never looks newer than a later edit on the sender (review fix,
+  `received_photo_keeps_the_senders_edit_time`). `sync.rs` lends it its sidecar
   reader, its "would this sidecar change the photo" test and its sidecar commit. In the app (`crates/ui-egui/src/handoff.rs`)
   File ▸ Hand Off Photos… writes into a new `LightCraft Handoff <time>` folder in the host's folder for originals
   (Android: `Documents/LightCraft`) or a picked one, on a worker with an activity row, then `share::start` with its
-  files; File ▸ Receive Handoff… reads on a worker and opens a dialog (newer rows ticked one by one, none by default;
+  files; File ▸ Receive Handoff… reads on a worker (both rows have ✕ and progress) and opens a dialog (newer rows ticked one by one, none by default;
   older rows listed; new photos imported in the background). Step 3's "APK-25's sidecar routing receives it" was not
   true: APK-25 imports shared photos and puts `.xmp` and `.json` in the Inbox, so on a phone a handoff is received from
   a folder (USB drive, SD card, a synced folder) until the share routing is built. Virtual copies are not handed off.

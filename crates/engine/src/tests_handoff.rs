@@ -175,6 +175,48 @@ fn older_handoff_never_overwrites() {
 }
 
 #[test]
+fn received_photo_keeps_the_senders_edit_time() {
+    // the phone hands `a` off at 10:00 (exposure 1), then edits it again at 10:30 (exposure 3)
+    let dir = Scratch::new("lineage");
+    let (mut phone, pa, _) = phone(&dir);
+    hand_off(&mut phone, &[pa], &dir.path("h1"));
+    at(&mut phone, "2026-10-01T10:30:00");
+    set_exposure(&mut phone, pa, 3.0);
+    // the computer receives the handoff at 11:00: the photo's last change is the phone's 10:00
+    let mut desk = device("2026-10-01T11:00:00");
+    let r = desk.execute("library.receiveHandoff", &json!({"dir": dir.path("h1")})).unwrap();
+    assert_eq!(r["imported"], 1, "{r}");
+    let da = id_of(&desk, "a.png");
+    assert_eq!(exposure(&desk, da), 1.0);
+    assert_eq!(desk.catalog.photo(da).unwrap().edited.as_deref(), Some("2026-10-01T10:00:00"));
+    // ...and hands it back unedited: the phone's later edit is newer, so the stale one is never
+    // listed as newer
+    at(&mut desk, "2026-10-01T11:05:00");
+    hand_off(&mut desk, &[da], &dir.path("h2"));
+    let plan = phone.execute("library.scanHandoff", &json!({"dir": dir.path("h2")})).unwrap();
+    assert!(plan["newer"].as_array().unwrap().is_empty(), "{plan}");
+    assert_eq!(ids(&plan, "older"), [pa.0], "{plan}");
+    let r = phone.execute("library.receiveHandoff", &json!({"dir": dir.path("h2"), "read": [pa.0]})).unwrap();
+    assert_eq!(r["read"], 0, "{r}");
+    assert_eq!(exposure(&phone, pa), 3.0, "the phone's later edit stays");
+
+    // the other way: the phone's later edit sent to the computer is newer there and can be read,
+    // and keeps the phone's time once read
+    hand_off(&mut phone, &[pa], &dir.path("h3"));
+    let plan = desk.execute("library.scanHandoff", &json!({"dir": dir.path("h3")})).unwrap();
+    assert_eq!(ids(&plan, "newer"), [da.0], "{plan}");
+    at(&mut desk, "2026-10-01T12:00:00");
+    let r = desk.execute("library.receiveHandoff", &json!({"dir": dir.path("h3"), "read": [da.0]})).unwrap();
+    assert_eq!(r["read"], 1, "{r}");
+    assert_eq!(exposure(&desk, da), 3.0);
+    assert_eq!(desk.catalog.photo(da).unwrap().edited.as_deref(), Some("2026-10-01T10:30:00"));
+    // handed back unedited again, it is the same as the phone's, never newer
+    hand_off(&mut desk, &[da], &dir.path("h4"));
+    let plan = phone.execute("library.scanHandoff", &json!({"dir": dir.path("h4")})).unwrap();
+    assert!(plan["newer"].as_array().unwrap().is_empty(), "{plan}");
+}
+
+#[test]
 fn hash_match_finds_moved_photo() {
     let dir = Scratch::new("moved");
     let (mut phone, pa, _) = phone(&dir);

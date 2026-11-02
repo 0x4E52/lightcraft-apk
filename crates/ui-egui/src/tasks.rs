@@ -51,6 +51,20 @@ pub fn spawn<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
     done: impl FnOnce(&mut LightcraftApp, &egui::Context, T) + Send + 'static,
 ) -> Result<(), String> {
+    let guard = kind.map(|k| app.session.activity.start(k, label, lightcraft_engine::activity::Cancel::No));
+    spawn_with_row(app, label, guard, work, done)
+}
+
+/// [`spawn`] holding activity row `row`, started by the caller (e.g. with the job's own cancel
+/// flag, `Cancel::Flag`, and a [`lightcraft_engine::activity::TaskHandle`] the work reports its
+/// progress through).
+pub fn spawn_with_row<T: Send + 'static>(
+    app: &mut LightcraftApp,
+    label: &str,
+    row: Option<lightcraft_engine::activity::TaskGuard>,
+    work: impl FnOnce() -> T + Send + 'static,
+    done: impl FnOnce(&mut LightcraftApp, &egui::Context, T) + Send + 'static,
+) -> Result<(), String> {
     let (tx, rx) = channel::<Finish>();
     let repaint = app.tasks.repaint.clone();
     let job = move || {
@@ -64,8 +78,7 @@ pub fn spawn<T: Send + 'static>(
     std::thread::Builder::new().name(format!("lc-task-{label}")).spawn(job).map_err(|e| format!("{label}: could not start: {e}"))?;
     #[cfg(target_arch = "wasm32")]
     job();
-    let guard = kind.map(|k| app.session.activity.start(k, label, lightcraft_engine::activity::Cancel::No));
-    app.tasks.running.push(Task { label: label.to_string(), rx, _guard: guard });
+    app.tasks.running.push(Task { label: label.to_string(), rx, _guard: row });
     Ok(())
 }
 

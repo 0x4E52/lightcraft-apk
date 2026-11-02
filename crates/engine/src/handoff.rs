@@ -21,6 +21,11 @@
 //! - an original the library doesn't have is **new** and is imported (copied into the library),
 //!   with its sidecar's settings.
 //!
+//! A photo's last change ([`changed_at`]) is its last edit, else its import. A photo received
+//! (imported new, or its newer settings read) keeps the sending device's time as its last edit,
+//! not the time it arrived: the time travels with the edit, so handing a received photo back
+//! unedited never makes a stale edit look newer than one made on the sender since.
+//!
 //! Reading newer settings is never the default (Synchronize Folder's rule): the person picks
 //! them from the list. A photo changed in the library since the scan is refused, so a choice
 //! never lands on something else than what was shown. Reading is one undo step.
@@ -84,14 +89,16 @@ fn invalid(msg: impl Into<String>) -> EngineError {
     EngineError::Other(msg.into())
 }
 
-/// When photo `p` last changed in its library: the later of its import and its last edit.
+/// When photo `p` last changed in its library: its last edit, else its import. A received photo's
+/// last edit is the sending device's (see the module docs), which may be before its import here.
 pub fn changed_at(p: &Photo) -> Option<&str> {
-    [Some(p.imported.as_str()), p.edited.as_deref()]
-        .into_iter()
-        .flatten()
-        .filter_map(|t| lightcraft_catalog::stacks::iso_seconds(t).map(|s| (s, t)))
-        .max_by_key(|(s, _)| *s)
-        .map(|(_, t)| t)
+    let known = |t: &&str| lightcraft_catalog::stacks::iso_seconds(t).is_some();
+    p.edited.as_deref().filter(known).or_else(|| Some(p.imported.as_str()).filter(known))
+}
+
+/// `t` when it is a time a handoff can carry over (an ISO 8601 time; anything else is dropped).
+fn known_time(t: Option<&str>) -> Option<String> {
+    t.filter(|t| lightcraft_catalog::stacks::iso_seconds(t).is_some()).map(str::to_string)
 }
 
 /// The content a hash stands for: a Duplicate's own hash is the original's plus `:dup<id>`.
@@ -289,6 +296,12 @@ impl HandoffInput {
 pub struct HandoffNew {
     pub path: String,
     pub name: String,
+    /// Its content hash (from the manifest, checked by the scan).
+    #[serde(skip)]
+    pub hash: String,
+    /// When it last changed on the device it came from.
+    #[serde(skip)]
+    pub edited: Option<String>,
 }
 
 /// An original of the handoff the library has (by content), and how their settings compare.
@@ -398,7 +411,7 @@ pub fn scan_with(input: HandoffInput, cancel: &AtomicBool, progress: &mut dyn Fn
             ps.iter().find(|p| p.id.0 == e.id && !taken.contains(&p.id)).or_else(|| ps.iter().find(|p| !taken.contains(&p.id))).copied()
         });
         let Some(p) = found else {
-            plan.new.push(HandoffNew { path: shown, name: e.file.clone() });
+            plan.new.push(HandoffNew { path: shown, name: e.file.clone(), hash: e.hash.clone(), edited: known_time(e.edited.as_deref()) });
             continue;
         };
         taken.insert(p.id);
@@ -479,6 +492,13 @@ pub fn new_paths(plan: &HandoffPlan) -> Vec<String> {
     plan.new.iter().map(|n| n.path.clone()).collect()
 }
 
+/// The import options that bring a plan's new originals in ([`import_mode`]), each keeping the
+/// sending device's time of its last change ([`crate::import::ImportOptions::received`]).
+pub fn import_options(s: &Session, plan: &HandoffPlan) -> crate::import::ImportOptions {
+    let received = plan.new.iter().filter_map(|n| Some((n.hash.clone(), n.edited.clone()?))).collect();
+    crate::import::ImportOptions { mode: import_mode(s), received, ..Default::default() }
+}
+
 /// Read the chosen newer settings into the library (one undo step, "Receive Handoff"), then,
 /// with `import_new`, import the new originals ([`import_mode`], their sidecars read).
 /// Settings the library has newer are never read, whatever is asked; nor are those of a photo
@@ -487,6 +507,7 @@ pub fn apply(s: &mut Session, mut plan: HandoffPlan, choice: &HandoffChoice) -> 
     let mut report = HandoffReport::default();
     let undo0 = s.undo.len();
     let mut read = Vec::new();
+    let mut edited_at = HashMap::new();
     let mut asked = HashSet::new();
     for id in &choice.read {
         if !asked.insert(*id) {
@@ -505,17 +526,24 @@ pub fn apply(s: &mut Session, mut plan: HandoffPlan, choice: &HandoffChoice) -> 
             report.refused.push((id.0, why.to_string()));
             continue;
         }
-        let path = plan.newer.iter().find(|m| m.id == id.0).map(|m| m.path.clone()).unwrap_or_default();
+        let Some(m) = plan.newer.iter().find(|m| m.id == id.0) else { continue };
+        let (path, when) = (m.path.clone(), known_time(m.handoff_edited.as_deref()));
         match plan.sidecars.remove(&id.0) {
-            Some(sc) => read.push((*id, path, Ok(sc))),
+            Some(sc) => {
+                if let Some(when) = when {
+                    edited_at.insert(*id, when);
+                }
+                read.push((*id, path, Ok(sc)));
+            }
             None => report.refused.push((id.0, "its settings were already read".into())),
         }
     }
-    let (n, failed) = crate::sync::commit_sidecars(s, "Receive Handoff", read);
+    // the edit keeps the sender's time, not the time it arrived (see the module docs)
+    let (n, failed) = crate::sync::commit_sidecars_with(s, "Receive Handoff", read, &|id| edited_at.get(&id).cloned());
     report.read = n;
     report.failed.extend(failed);
     if choice.import_new && !plan.new.is_empty() {
-        let opts = crate::import::ImportOptions { mode: import_mode(s), ..Default::default() };
+        let opts = import_options(s, &plan);
         match crate::import::import_with(s, &new_paths(&plan), &opts) {
             Ok(r) => {
                 report.imported = r.imported.len();

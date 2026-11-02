@@ -116,6 +116,9 @@ pub struct ImportOptions {
     pub metadata_preset: Option<String>,
     /// Copy: raws are copied as DNG (Copy as DNG).
     pub convert_dng: bool,
+    /// Photos received from another device (a handoff, [`crate::handoff`]): content hash → when
+    /// the photo last changed there. Such a photo keeps that time as its last edit, not now.
+    pub received: std::collections::HashMap<String, String>,
 }
 
 /// How copies are filed in the destination. The date is the capture time, else the time of the
@@ -1450,6 +1453,10 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     p.develop = d.clone();
                     p.edited = Some(now.clone());
                     p.history.push(lightcraft_catalog::HistoryStep { label, settings: d });
+                }
+                // received from another device: its last change is the sender's, not this import
+                if let Some(when) = p.content_hash.as_deref().and_then(|h| opts.received.get(h)) {
+                    p.edited = Some(when.clone());
                 }
                 report.imported.push(id.0);
                 p.local = opts.local;

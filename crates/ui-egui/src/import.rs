@@ -289,6 +289,9 @@ pub struct ImportTask {
     run: Option<ImportRun>,
     /// The import's row in the activity stack (its ✕ and `activity.cancel` set the run's cancel flag).
     guard: Option<lightcraft_engine::activity::TaskGuard>,
+    /// Photos received from another device: content hash → their last change there
+    /// (`ImportOptions::received`).
+    received: std::collections::HashMap<String, String>,
 }
 
 impl ImportTask {
@@ -763,13 +766,26 @@ pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value,
 /// [`start_paths`] with `library.import`'s other parameters (`paths` is filled in), e.g.
 /// `{"mode": "move"}` for files a host received into a folder of its own (Android shares).
 pub fn start_paths_with(app: &mut LightcraftApp, paths: Vec<String>, params: Value) -> Result<Value, String> {
+    start_received(app, paths, params, Default::default())
+}
+
+/// [`start_paths_with`] for photos received from another device (a handoff): `received` maps a
+/// content hash to when that photo last changed there, which it keeps as its last edit.
+pub fn start_received(
+    app: &mut LightcraftApp,
+    paths: Vec<String>,
+    params: Value,
+    received: std::collections::HashMap<String, String>,
+) -> Result<Value, String> {
     busy_synchronizing(app)?;
     if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
         return Err("an import is running".into());
     }
     let undo0 = app.session.undo.len();
     let total = paths.len();
-    app.import = Some(ImportTask::new(paths, params, undo0, false));
+    let mut task = ImportTask::new(paths, params, undo0, false);
+    task.received = received;
+    app.import = Some(task);
     Ok(json!({"importing": total}))
 }
 
@@ -781,7 +797,10 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
         let mut p = task.params.clone();
         p["paths"] = json!(task.queue);
         let started = lightcraft_engine::cmd::library::import_params(&app.session, &p)
-            .and_then(|req| Ok((lightcraft_engine::import::ImportJob::new(&mut app.session, req.opts)?, req.album, req.album_name)))
+            .and_then(|mut req| {
+                req.opts.received = task.received.clone();
+                Ok((lightcraft_engine::import::ImportJob::new(&mut app.session, req.opts)?, req.album, req.album_name))
+            })
             .map_err(|e| e.to_string())
             .and_then(|(job, album, name)| ImportRun::start(job, std::mem::take(&mut task.queue), album, name, ctx));
         if task.auto {
