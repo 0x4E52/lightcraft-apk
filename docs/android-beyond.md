@@ -478,6 +478,18 @@ as stated):
   && cargo xtask ci`
 - **Depends on:** APK-33, APK-55  **Needs:** none  **Model:** opus — gesture arbitration with the tools.
 - **Done when:** tests pass.
+- **As built (2026-11-02):** `crates/ui-egui/src/panels/photo_drag.rs` reads the frame's raw touch events (a mouse
+  never does it) from `cull_touch::loupe`, with the same "started on the photo" test. Each enabled slider drawn by
+  `edit::control` (the Edit panel or sheet, the profile browser's Amount) offers itself with its shown value each
+  pass, so the list is the open panel's; a closed panel stops offering and the gesture disarms. It locks to an
+  axis after 16 pt: vertical moves the choice (`UiState::photo_drag_control`) one slider per 36 pt, horizontal moves
+  the value half the track per photo-area width through `edit::apply_slider_out` (begin, `develop.set`, end). While
+  armed, `cull_touch` drops its swipes (taps, double taps, two-finger taps stay); a second finger, a cancel, a
+  zoom or a tool taking the photo ends the drag where it is. `UiState::photo_drag` (saved, on by default) turns it
+  off. The readout (`loupe:photoDragHud`) names the slider and value, with its neighbours while choosing. On the
+  slider under touch the thumb is a 48 pt target, a tap beside it is one `widgets::nudged` step that way, and a
+  double tap resets only on the thumb (two quick taps beside it are two nudges). The two clipping gestures of
+  `android-touch-ui.md` §2 are not built. Tests: `tests_photo_drag.rs` and the recogniser's unit tests.
 
 ### APK-62 Phone ↔ computer handoff without a cloud
 - **Answers:** [C1](android-competitive.md#c1-sync-is-unreliable) (sync that stalls), the LAN-sync request.
@@ -575,4 +587,5 @@ the maintainer asks for a release; step 5 (APK-58, 59, 61, 62, 63, 64) runs firs
 - 2026-11-02 (APK-56): "As built" note on the card.
 - 2026-11-02 (APK-58): "As built" note on the card.
 - 2026-11-02 (APK-59): "As built" note on the card.
+- 2026-11-02 (APK-61): "As built" note on the card.
 - 2026-11-02: maintainer decision: step 5 before Phase 4's release cards (36 … 43), which wait for a release call.

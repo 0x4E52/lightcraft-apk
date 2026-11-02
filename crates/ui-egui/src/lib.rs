@@ -169,6 +169,8 @@ mod tests_pen_pressure;
 #[cfg(test)]
 mod tests_phone_limits;
 #[cfg(test)]
+mod tests_photo_drag;
+#[cfg(test)]
 mod tests_pick_browser;
 #[cfg(test)]
 mod tests_preset_import;
@@ -571,6 +573,8 @@ pub struct LightcraftApp {
     pub(crate) touch_fingers: Vec<u64>,
     /// The loupe's touch gestures (swipes, taps; `panels::cull_touch`).
     pub(crate) loupe_gestures: panels::cull_touch::Gestures,
+    /// Slider gestures on the photo (`panels::photo_drag`): the open panel's sliders and the drag under way.
+    pub(crate) photo_drag: panels::photo_drag::PhotoDrag,
     /// Synthetic clock: `RawInput.time` when the current `ui.touch` request started releasing.
     touch_origin: Option<f64>,
     /// Seconds the synthetic clock is ahead of the host's, so egui sees the gaps between events.
@@ -751,6 +755,7 @@ impl LightcraftApp {
             touch_queue: Default::default(),
             touch_fingers: vec![],
             loupe_gestures: Default::default(),
+            photo_drag: Default::default(),
             touch_origin: None,
             touch_shift: 0.0,
             copied: None,

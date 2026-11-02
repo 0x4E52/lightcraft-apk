@@ -231,12 +231,15 @@ pub(crate) fn loupe(app: &mut LightcraftApp, ui: &egui::Ui, resp: &egui::Respons
     if clicked.is_some_and(|c| c != resp.id) {
         app.loupe_gestures.disown();
     }
+    // with a panel of sliders open, a one-finger drag on the photo chooses and changes them (APK-61): a flick is
+    // that gesture then, not a swipe
+    let sliders = super::photo_drag::loupe(app, &ctx, &events, on_loupe, canvas, act, zoomed);
     let gestures = app.loupe_gestures.feed(&events, now, on_loupe, zoomed);
     if app.loupe_gestures.waiting() {
         ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(DOUBLE_TAP_SECS));
     }
     if act {
-        for g in gestures {
+        for g in gestures.into_iter().filter(|g| !(sliders && matches!(g, Gesture::Swipe { .. }))) {
             run(app, ui.ctx(), g, canvas, img, zoomed);
         }
     }

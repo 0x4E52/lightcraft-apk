@@ -76,13 +76,25 @@ before, and they act only where no tool owns the photo (Crop, Masking, Remove, R
 | Photo (zoomed in) | one-finger drag | pan | `cmd:view.navigate` (APK-30); never a swipe |
 | Photo | two-finger tap | cycle info overlays (file, rating/flags, EXIF) | `cmd:view.infoOverlay` (APK-55) |
 | Cull Mode filmstrip | press and hold a photo | compare it with the active one | `cmd:view.cullMode`; the two-up Compare of `cmd:view.compare` with the active photo as select and the held one as candidate; Back returns to the select (APK-55) |
-| Slider | double tap the thumb | reset to default | `cmd:develop.resetControl` (a double click on any slider) |
-| Slider | tap left / right of the thumb | nudge in small steps | `cmd:develop.adjust` (by key and sideways scroll; taps: APK-61) |
-| Slider | drag with two fingers | show clipping while adjusting | `cmd:view.clipping` (by key; the gesture: APK-61) |
-| Slider + photo | one finger held on the photo while dragging a slider | the desktop Alt/Option view (clipping/mask) | `cmd:view.clipping` (by key; the gesture: APK-61) |
+| Slider | double tap the thumb | reset to default | `cmd:develop.resetControl` (a double click on any slider); under touch only on the thumb, a finger-sized target (APK-61) |
+| Slider | tap left / right of the thumb | nudge in small steps | one `cmd:develop.adjust` step that way, one undo step (`widgets::slider` under touch, APK-61; a mouse click still jumps there) |
+| Slider | drag with two fingers | show clipping while adjusting | `cmd:view.clipping` (by key; the gesture is not built yet) |
+| Slider + photo | one finger held on the photo while dragging a slider | the desktop Alt/Option view (clipping/mask) | `cmd:view.clipping` (by key; the gesture is not built yet) |
+| Photo, a panel of sliders open | vertical drag | choose one of the panel's sliders, with a readout | the open panel's `develop` sliders, one per 36 pt (`panels/photo_drag.rs`, APK-61) |
+| Photo, a panel of sliders open | horizontal drag | change the chosen slider, with a readout | `cmd:develop.set` between `develop.beginInteraction` / `endInteraction`, as the slider: one undo step, draft renders (APK-61) |
 | Crop frame | double tap | reset the crop | `cmd:crop.reset` in the panel; a double tap inside the frame applies it (`cmd:tool.done`), as a double click does |
 | Grid | pinch or two-finger swipe | thumbnail size | `cmd:view.thumbSizeUp` / `cmd:view.thumbSizeDown` (the bottom bar's slider; pinch not yet mapped) |
 | Grid | tap / long press | open / start multi-select | `cmd:library.select` (APK-30b) |
+
+**Slider gestures on the photo** (APK-61, `crates/ui-egui/src/panels/photo_drag.rs`, Snapseed's swipe editing):
+with the Edit panel (or its sheet, or the profile browser) open, each enabled `develop` slider it shows offers
+itself, so the list is the panel's own: a closed section or a disabled slider is not in it. A one-finger vertical
+drag on the photo moves the choice one slider per 36 pt (the last one chosen stays chosen; at first the panel's
+first slider), and a horizontal drag changes the chosen one: the photo's width moves the thumb half its track.
+While it is armed a one-finger flick is this gesture, not a rating, flag or next-photo swipe; taps, double taps,
+two-finger taps and pinches keep their meaning. It is off zoomed in (a drag pans), while a tool owns the photo
+(Crop, Masking, Remove, Red Eye, a picker), with the panel closed and when `UiState::photo_drag` is off (on by
+default; a mouse never does it).
 
 **Cull Mode** (View ▸ Cull Mode, `cmd:view.cullMode`, APK-55): the loupe full screen with the filmstrip and a bar
 (Done, Next Unflagged `cmd:view.nextUnflagged`, Assisted Culling… on the photos in view `cmd:dialog.cull`); the
@@ -157,3 +169,4 @@ toolbar and sheets of §1, APK-34 the top bar and overflow menu. A card that has
 - 2026-11-01: dialogs fit a phone (APK-33b).
 - 2026-11-01: the menu bar collapses to one overflow button on a phone (APK-34); the top bar's search collapses to a magnifier (APK-34b).
 - 2026-11-02: §2 as built (APK-55): the loupe's swipes, taps and two-finger tap, Cull Mode; every row names its command.
+- 2026-11-02: slider gestures on the photo and touch slider taps as built (APK-61).

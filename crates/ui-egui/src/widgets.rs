@@ -233,6 +233,8 @@ const THUMB_RING: f32 = 7.0;
 
 /// A Lightroom slider row (label + value above a track with a hollow ring thumb).
 /// Double-click the label or thumb to reset (hovering either says so). Shift-drag = fine adjustment.
+/// Under touch (APK-61) a tap beside the thumb nudges the value a step that way instead of jumping there, and a
+/// double tap resets only on the thumb.
 /// Scroll sideways over it to nudge it. Click the value to type one: Return or clicking away applies it,
 /// Esc keeps the old one. Drag the value sideways to scrub it, as if dragging the thumb (Shift: a tenth
 /// as far).
@@ -336,7 +338,11 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let from_x = |x: f32| spec.value_at(f64::from((x - track_rect.left()) / track_rect.width()));
     // the thumb: a click there doesn't move the value, and resting on it says how to reset (the rest
     // of the track, which is clicked and dragged, gets no tooltip)
-    let on_thumb = |p: egui::Pos2| (p.x - to_x(value)).abs() <= THUMB_RING + 1.0;
+    // (a finger is wider than the ring: under touch the thumb is a finger-sized target, APK-61)
+    let thumb_reach = if touch { hit / 2.0 } else { THUMB_RING + 1.0 };
+    let on_thumb = |p: egui::Pos2| (p.x - to_x(value)).abs() <= thumb_reach;
+    // under touch a double tap resets only on the thumb: two quick taps beside it are two nudges (APK-61)
+    let reset_tap = resp.double_clicked() && (!touch || resp.interact_pointer_pos().is_some_and(on_thumb));
     if enabled && !resp.dragged() && resp.hover_pos().is_some_and(on_thumb) {
         resp.clone().on_hover_text(reset_hint.as_str());
     }
@@ -401,7 +407,7 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
             typing = Some((text.clone(), frames, pressed));
             ui.data_mut(|m| m.insert_temp(typing_id, (text, frames, pressed)));
         }
-    } else if resp.double_clicked() || label_resp.double_clicked() {
+    } else if reset_tap || label_resp.double_clicked() {
         out.reset = true;
         out.value = Some(spec.default);
         v = spec.default;
@@ -437,12 +443,21 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
             // history step of its own before the reset
             && !on_thumb(p)
         {
-            let step = spec.step.max(1e-9);
-            let nv = ((from_x(p.x) / step).round() * step).clamp(spec.min, spec.max);
-            out.value = Some(nv);
-            v = nv;
-            out.drag_started = true;
-            out.drag_stopped = true;
+            // a mouse click jumps there, as in Lightroom; a finger's tap beside the thumb nudges it a step that
+            // way (`android-touch-ui.md` §2), as a fingertip can't land on an exact value
+            let nv = if touch {
+                nudged(spec, value, if p.x > to_x(value) { 1.0 } else { -1.0 })
+            } else {
+                let step = spec.step.max(1e-9);
+                ((from_x(p.x) / step).round() * step).clamp(spec.min, spec.max)
+            };
+            // (a nudge at the end of the range changes nothing and is no history step)
+            if !touch || (nv - value).abs() > 1e-12 {
+                out.value = Some(nv);
+                v = nv;
+                out.drag_started = true;
+                out.drag_stopped = true;
+            }
         }
         if resp.drag_stopped() {
             out.drag_stopped = true;

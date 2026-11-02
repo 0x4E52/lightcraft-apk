@@ -790,6 +790,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let map = CanvasMap::new(&frame, img_rect);
     info_overlay(app, &p, canvas, &photo);
     super::cull_touch::hud(app, ui, canvas);
+    super::photo_drag::hud(app, ui, canvas);
     if !fullscreen {
         filter_pill(app, ui, canvas);
     }

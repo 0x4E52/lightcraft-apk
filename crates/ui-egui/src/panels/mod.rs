@@ -26,6 +26,7 @@ pub mod masking;
 pub mod notices;
 pub mod people;
 pub mod person;
+pub mod photo_drag;
 pub mod presets;
 pub mod profiles;
 pub mod right;

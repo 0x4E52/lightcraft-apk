@@ -40,6 +40,10 @@ pub(crate) fn control(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &DevelopSet
     let Some(spec) = controls::find(id) else { return };
     let v = controls::get(d, id).unwrap_or(spec.default);
     let out = slider(ui, spec, v, enabled, None);
+    if enabled {
+        // the photo's slider gestures choose among the sliders the open panel shows (APK-61)
+        super::photo_drag::offer(app, ui.ctx(), id, out.value.unwrap_or(v));
+    }
     apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": id, "value": v})));
 }
 

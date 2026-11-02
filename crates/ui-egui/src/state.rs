@@ -908,6 +908,14 @@ pub struct UiState {
     /// The HUD a rating or flag swipe shows over the photo, and until when (app time).
     #[serde(skip)]
     pub cull_hud: Option<(String, f64)>,
+    /// Slider gestures on the photo (APK-61, `panels::photo_drag`): with a panel of sliders open, a finger's
+    /// vertical drag on the photo chooses one of them and a horizontal drag changes it. On by default; only a
+    /// finger does it (a mouse drag never), so it is on under touch and changes nothing for a mouse.
+    pub photo_drag: bool,
+    /// The control a vertical drag on the photo chose last (a `develop` control id); the panel's first
+    /// slider until one is chosen.
+    #[serde(skip)]
+    pub photo_drag_control: Option<String>,
     /// Window ▸ Second Window.
     pub second_window: bool,
     /// The keyword painter: clicking a photo in the grid toggles this keyword on it.
@@ -1436,6 +1444,8 @@ impl Default for UiState {
             lights_out: LightsOut::On,
             cull_mode: false,
             cull_hud: None,
+            photo_drag: true,
+            photo_drag_control: None,
             slideshow: None,
             second_window: false,
             keyword_painter: None,
