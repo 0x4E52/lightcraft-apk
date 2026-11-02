@@ -327,6 +327,38 @@ fn snapshot_subcommand_renders_the_ui_headlessly() {
     assert_eq!((d.width, d.height), (640, 480));
 }
 
+/// APK-53: the edit smoke script the Android emulator job runs also passes headless: every request
+/// answers ok and two JPEGs are exported (the script's export folder is relative to the working directory).
+#[test]
+fn android_edit_smoke_script_passes_headless() {
+    let dir = tmp("edit-smoke");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/showcase/android-edit-smoke.jsonl");
+    let o = Command::new(BIN)
+        .current_dir(&dir)
+        .args(["snapshot", "--demo", "--script", script.to_str().unwrap(), "-o", "smoke.png", "--size", "640x400"])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    let replies: Vec<Value> = String::from_utf8_lossy(&o.stdout).lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert!(replies.len() > 15 && replies.iter().all(|r| r["ok"] == true), "{replies:?}");
+    // the script ends with develop.get of a photo the edit was pasted onto: the touch stroke, the
+    // mask adjustment and the crop must all have arrived
+    let pasted = replies.iter().rev().find(|r| r["result"].get("masks").is_some()).expect("a develop.get reply");
+    let strokes = &pasted["result"]["masks"][0]["components"][0]["shape"]["strokes"];
+    assert!(strokes.as_array().is_some_and(|s| !s.is_empty()), "the brush stroke was pasted: {pasted}");
+    assert_eq!(pasted["result"]["masks"][0]["adjust"]["exposure"], 0.6, "{pasted}");
+    assert_eq!(pasted["result"]["crop"]["geometry"]["angle"], -2.0, "{pasted}");
+    let jpegs = std::fs::read_dir(dir.join("target/android/smoke-export"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jpg"))
+        .count();
+    assert_eq!(jpegs, 2);
+    assert!(dir.join("smoke.png").is_file());
+}
+
 /// Issue #166: a scripted request that fails makes `snapshot` exit non-zero. The failed reply is
 /// still printed, the later lines still run, and the final `-o` screenshot is still written.
 #[test]

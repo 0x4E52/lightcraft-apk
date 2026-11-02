@@ -15,6 +15,8 @@ on:
       - "assets/**"
       - "locales/**"
       - "docs/whats-new.md"
+      - "docs/showcase/android-edit-smoke.jsonl"
+      - "docs/showcase/run.py"
       - "docs/raf-corpus.sha256"
       - "docs/raw/coverage-sweep.tsv"
       - "LICENSE-*"
@@ -141,7 +143,8 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          # the second line is the debug control server check (APK-21): property, restart, token, ui.inspect
+          # the second line is the debug control server check (APK-21): property, restart, token, ui.inspect,
+          # then the edit smoke session (APK-53: crop, brush mask, copy/paste with masks, exports)
           script: |
             bash packaging/android/smoke.sh apk/lightcraft-debug.apk "$APP_ID" smoke
             bash packaging/android/control-check.sh "$APP_ID" smoke
@@ -153,4 +156,6 @@ jobs:
             smoke/shot.png
             smoke/logcat.txt
             smoke/control.txt
+            smoke/edit-smoke.txt
+            smoke/edit-smoke-logcat.txt
           if-no-files-found: warn

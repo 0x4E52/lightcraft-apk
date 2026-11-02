@@ -16,6 +16,7 @@ pub mod grid;
 pub mod keymap;
 pub mod keyword_list;
 pub mod keywording;
+pub mod last_crash;
 pub mod layout_overlay;
 pub mod left;
 pub mod library_problem;

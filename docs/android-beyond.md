@@ -234,6 +234,16 @@ as stated):
 - **Depends on:** APK-16, APK-21, APK-27  **Needs:** ci (emulator run)  **Model:** sonnet — script plus one window.
 - **Done when:** tests pass; the workflow step is committed (its first run is read through `gh api`).
 - **Maintainer checks on a device:** run the script on a Pixel and a Samsung phone through the debug control server.
+- **As built (2026-11-02):** the script is `docs/showcase/android-edit-smoke.jsonl` (crop and straighten with
+  `crop.set` / `crop.straighten`, a brush mask by `panel.masking`, `maskNew:brush` and one `ui.touch` stroke,
+  `develop.copy` of light, masks and crop pasted on photos 2 to 6, two 640 px JPEGs by `app.export`, `ui.inspect`); the
+  headless `snapshot` already exits non-zero on a failed request. `run.py --strict` does the same over the control
+  port, and `control-check.sh` runs the script after the token check (`ui.settle`, which only a snapshot knows,
+  becomes a pause; `ui.screenshot` is dropped; the export goes to the app's cache) and fails on a failed request, a
+  pid change, a `panicked` line in the log since the script started or fewer than two exported JPEGs. The window is
+  `panels::last_crash` (`Services::previous_crash`, `ui.inspect` → `lastCrash`): the host reads the panic log before
+  installing the hook, which empties it, so "since the last clean exit" is "since the last start". `log_file::
+  last_panic()` keeps this run's latest panic text next to `last_error()`. The workflow's first run has not been seen.
 
 ### APK-54 Storage on a phone
 - **Answers:** [C4](android-competitive.md#c4-storage-bloat) (tens of GB, figures that disagree with Android).
@@ -502,3 +512,4 @@ Phase 3.
 - 2026-11-01 (APK-50): "As built" note on the card.
 - 2026-11-02 (APK-51): "As built" note on the card.
 - 2026-11-02 (APK-52): "As built" note on the card.
+- 2026-11-02 (APK-53): "As built" note on the card.

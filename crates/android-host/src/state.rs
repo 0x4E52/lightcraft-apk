@@ -65,6 +65,8 @@ pub struct Start {
     pub prefs_path: Option<PathBuf>,
     /// The log file being written (Help ▸ Open Log Folder).
     pub log_file: Option<PathBuf>,
+    /// What the previous run's panic log held, offered once in a window (APK-53).
+    pub previous_crash: Option<lightcraft_ui_egui::panels::last_crash::PreviousCrash>,
     /// The library folder the loader opened, for the problem window when it failed.
     pub library: PathBuf,
     /// Where Try Again in the problem window asks to open the library again (`None`: the
@@ -101,7 +103,15 @@ impl Start {
     /// problem window (`LibraryProblem::pending_import`, the desktop's command-line files) are not
     /// carried: the phone has none; once share or inbox imports reach this path they go here.
     pub fn restarted(&self, old: &HostState, library: PathBuf) -> Start {
-        Start { prefs: Some(old.app.ui.clone()), prefs_warning: None, gpu_notice: None, renderer_notice: None, library, ..self.clone() }
+        Start {
+            prefs: Some(old.app.ui.clone()),
+            prefs_warning: None,
+            gpu_notice: None,
+            renderer_notice: None,
+            previous_crash: None,
+            library,
+            ..self.clone()
+        }
     }
 
     /// Prepare for opening `library` again (Try Again): the state over the problem, if there still
@@ -148,6 +158,7 @@ impl HostState {
             crate::services::shared_storage(&mut services, folders);
         }
         services.share = start.share.clone();
+        services.previous_crash = start.previous_crash.clone();
         services.clipboard = start.clipboard.clone().map(crate::services::clipboard);
         services.volumes = start.volumes.clone().map(crate::services::volumes);
         services.hidden_types = start.hidden_types.known();

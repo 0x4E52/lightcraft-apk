@@ -246,6 +246,8 @@ pub struct AppLogger {
     sink: Mutex<Sink>,
     /// The message of the latest error-level record, whatever the filter.
     last_error: Mutex<Option<String>>,
+    /// The report of the latest panic (`panic at file:line: message`), whatever the filter.
+    last_panic: Mutex<Option<String>>,
 }
 
 /// The longest message [`AppLogger::last_error`] keeps (a runaway message can't hold memory).
@@ -253,12 +255,17 @@ pub const MAX_LAST_ERROR_BYTES: usize = 4096;
 
 impl AppLogger {
     pub fn new(filter: Filter, stderr: bool) -> AppLogger {
-        AppLogger { filter, stderr, sink: Mutex::new(Sink::new(MAX_FILE_BYTES)), last_error: Mutex::new(None) }
+        AppLogger { filter, stderr, sink: Mutex::new(Sink::new(MAX_FILE_BYTES)), last_error: Mutex::new(None), last_panic: Mutex::new(None) }
     }
 
     /// The message of the latest error-level record (`target: message`), if any was logged.
     pub fn last_error(&self) -> Option<String> {
         self.last_error.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// The report of the latest panic recorded by [`record_panics`] (`panic at file:line: message`).
+    pub fn last_panic(&self) -> Option<String> {
+        self.last_panic.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     fn note_error(&self, target: &str, message: &str) {
@@ -299,6 +306,14 @@ impl AppLogger {
     /// error), whatever the filter. Skipped when the sink is busy: the panic may have happened on
     /// this very thread while it held the lock, and waiting would hang the app.
     pub fn record_panic(&self, thread: &str, report: &str) {
+        // kept first and without waiting on the sink: the report survives a busy log
+        if let Ok(mut last) = self.last_panic.try_lock() {
+            let mut end = report.len().min(MAX_LAST_ERROR_BYTES);
+            while !report.is_char_boundary(end) {
+                end -= 1;
+            }
+            *last = Some(report.get(..end).unwrap_or_default().to_owned());
+        }
         let line = format_line(&timestamp(SystemTime::now()), log::Level::Error, thread, "lightcraft", report);
         let mut sink = match self.sink.try_lock() {
             Ok(sink) => sink,
@@ -368,6 +383,12 @@ pub fn install_with(spec: &str) -> Option<&'static AppLogger> {
 /// installed; `None` before [`install_with`] or when no error was logged.
 pub fn last_error() -> Option<String> {
     LOGGER.get().and_then(AppLogger::last_error)
+}
+
+/// The report of the latest panic since the logger was installed; `None` before [`install_with`]
+/// or when nothing panicked (the previous run's panics are in `<settings>/panic.log`).
+pub fn last_panic() -> Option<String> {
+    LOGGER.get().and_then(AppLogger::last_panic)
 }
 
 /// Chain a panic hook after the current one (the engine guard's: standard error plus
@@ -765,5 +786,17 @@ mod tests {
         assert!(text.contains(" ERROR [render] lightcraft: panicked at crates/x/src/lib.rs:3:5:\nboom\n"), "{text}");
         assert!(!text.contains("while the sink is held"), "{text}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The latest panic is kept for the host and cut at a character boundary.
+    #[test]
+    fn last_panic_keeps_the_latest_report() {
+        let logger = AppLogger::new(Filter::parse("off"), false);
+        assert_eq!(logger.last_panic(), None);
+        logger.record_panic("render", "panic at a.rs:1: first");
+        logger.record_panic("main", "panic at b.rs:2: second");
+        assert_eq!(logger.last_panic().as_deref(), Some("panic at b.rs:2: second"));
+        logger.record_panic("main", &"é".repeat(MAX_LAST_ERROR_BYTES));
+        assert!(logger.last_panic().unwrap_or_default().len() <= MAX_LAST_ERROR_BYTES);
     }
 }

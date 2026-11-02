@@ -97,6 +97,13 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
             None
         }
     });
+    // a panic the last run recorded is read (and the file emptied) before the hook can add this run's
+    let previous_crash = lightcraft_ui_egui::panels::last_crash::take_previous(&paths.panic_log()).map(|panics| {
+        lightcraft_ui_egui::panels::last_crash::PreviousCrash {
+            panics,
+            log: Some(paths.logs.join("lightcraft.1.log")).filter(|p| p.is_file()).map(|p| p.display().to_string()),
+        }
+    });
     lightcraft_engine::guard::install_hook(paths.panic_log());
     if let Some(logger) = logger {
         log_file::record_panics(logger);
@@ -150,6 +157,7 @@ pub fn run(app: android_activity::AndroidApp) -> Result<Exit, String> {
         keep_prefs_file,
         prefs_path: prefs::prefs_path(Some(&paths.config)),
         log_file: log_path.clone(),
+        previous_crash,
         library: paths.library.clone(),
         reopen: Some(reopen.clone()),
         move_to_back: Some(move_to_back(&app)),

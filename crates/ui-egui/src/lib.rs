@@ -132,6 +132,8 @@ mod tests_keywording;
 #[cfg(test)]
 mod tests_labels;
 #[cfg(test)]
+mod tests_last_crash;
+#[cfg(test)]
 mod tests_layout_image;
 #[cfg(test)]
 mod tests_library_backup;
@@ -394,6 +396,9 @@ pub struct Services {
     /// then the chooser). `None` = no share sheet (the desktop, the web): the command is disabled
     /// and left out of the menus.
     pub share: Option<share::ShareFn>,
+    /// What the previous run's panic log held (`panels::last_crash::take_previous`), shown once in
+    /// the window that offers Copy Report and Share Report. `None` = no panic last time.
+    pub previous_crash: Option<panels::last_crash::PreviousCrash>,
     /// Folders for the Library sidebar's Local section, as `(label, path)`. Empty = Pictures, Desktop,
     /// Downloads and Home under `HOME` (those that exist). Not empty = exactly these (those that exist).
     pub local_roots: Vec<(String, std::path::PathBuf)>,
@@ -675,6 +680,8 @@ pub struct LightcraftApp {
     /// The library failed to open at launch: the blocking window, then the temporary-session
     /// banner (issue #100). Cleared once a library opens.
     pub library_problem: Option<panels::library_problem::LibraryProblem>,
+    /// The window for a panic the previous run recorded (APK-53), until Dismiss.
+    pub last_crash: Option<panels::last_crash::LastCrash>,
     /// The activity stack shows every task, not just the first few ("+N more" was clicked).
     pub activity_expanded: bool,
 }
@@ -778,6 +785,7 @@ impl LightcraftApp {
             screen_profile: None,
             screen_profile_read: None,
             library_problem: None,
+            last_crash: None,
             activity_expanded: false,
             model_setup: Default::default(),
         }
@@ -1370,6 +1378,7 @@ impl LightcraftApp {
         i18n::set_language(self.ui.language);
         let t0 = now_ms();
         panels::library_problem::logic(self);
+        panels::last_crash::logic(self);
         self.logic_inner(ctx);
         self.perf.logic_ms = now_ms() - t0;
     }
@@ -1895,6 +1904,7 @@ impl LightcraftApp {
             panels::notices::show(self, &ctx);
             panels::dialogs::show(self, &ctx);
             panels::library_problem::show(self, &ctx);
+            panels::last_crash::show(self, &ctx);
             pick_browser::show(self, &ctx);
             panels::toast(self, &ctx);
             self.widgets = widgets::take_registry(&ctx);
@@ -1926,6 +1936,7 @@ impl LightcraftApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        panels::last_crash::show(self, &ctx);
         pick_browser::show(self, &ctx);
         export_task::poll(self, &ctx);
         share::poll(self, &ctx);

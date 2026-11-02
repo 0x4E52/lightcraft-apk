@@ -1,0 +1,27 @@
+# Edit smoke session (docs/android-beyond.md APK-53): crop and straighten, a brush mask painted by touch,
+# copy and paste of settings with masks, two JPEG exports, ui.inspect.
+# Runs headless on desktop:  lightcraft-cli snapshot --demo --script docs/showcase/android-edit-smoke.jsonl -o target/android/smoke.png
+# and on the emulator over the debug control port (packaging/android/control-check.sh turns ui.settle into a pause,
+# drops ui.screenshot and points the export at the app's cache). A request that answers ok:false is an error
+# (snapshot exits non-zero, run.py --strict exits 1). The headless run writes under target/android/smoke-export.
+{"method":"engine.execute","params":{"command":"library.select","params":{"ids":[1]}}}
+{"method":"ui.set","params":{"view":"detail"}}
+{"method":"engine.execute","params":{"command":"panel.crop"}}
+{"method":"ui.settle","params":{"timeoutMs":60000}}
+{"method":"engine.execute","params":{"command":"crop.set","params":{"rect":[0.1,0.1,0.9,0.9],"angle":3.5}}}
+{"method":"engine.execute","params":{"command":"crop.straighten","params":{"angle":-2}}}
+{"method":"engine.execute","params":{"command":"panel.masking"}}
+{"method":"ui.clickWidget","params":{"id":"maskNew:brush"}}
+{"method":"ui.set","params":{"brushSize":0.12,"brushFeather":40.0,"brushFlow":100.0}}
+{"method":"ui.touch","params":{"events":[{"id":1,"phase":"start","x":0.3,"y":0.4,"t":0.0},{"id":1,"phase":"move","x":0.4,"y":0.45,"t":0.05},{"id":1,"phase":"move","x":0.5,"y":0.5,"t":0.1},{"id":1,"phase":"move","x":0.6,"y":0.55,"t":0.15},{"id":1,"phase":"end","x":0.6,"y":0.55,"t":0.2}]}}
+{"method":"ui.settle","params":{"timeoutMs":60000}}
+{"method":"engine.execute","params":{"command":"mask.adjust","params":{"values":{"exposure":0.6}}}}
+{"method":"engine.execute","params":{"command":"develop.set","params":{"values":{"light.exposure":0.3,"light.contrast":15}}}}
+{"method":"engine.execute","params":{"command":"develop.copy","params":{"groups":["light","masks","crop"]}}}
+{"method":"engine.execute","params":{"command":"develop.paste","params":{"ids":[2,3,4,5,6]}}}
+{"method":"ui.settle","params":{"timeoutMs":60000}}
+{"method":"engine.execute","params":{"command":"app.export","params":{"format":"jpeg","quality":80,"width":640,"ids":[1,2],"dir":"target/android/smoke-export"}}}
+{"method":"engine.execute","params":{"command":"library.select","params":{"ids":[4]}}}
+{"method":"engine.execute","params":{"command":"develop.get","params":{}}}
+{"method":"ui.inspect","params":{}}
+{"method":"ui.screenshot","params":{}}

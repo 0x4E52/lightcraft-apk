@@ -137,7 +137,13 @@ and a restart turn it off. The server listens on 127.0.0.1 only; it shares its c
 (`crates/ui-egui/src/host/control_server.rs`), which takes no token. The manifest holds `android.permission.INTERNET`
 for this and for model downloads (`crates/fetch`). The `emulator` job runs `packaging/android/control-check.sh` after
 the smoke test: it does exactly this and sends one `ui.inspect`, then one without the token (must be refused);
-`smoke/control.txt` in the `lightcraft-smoke` artifact is its output. To pull a screenshot, write it under `files/` and
+`smoke/control.txt` in the `lightcraft-smoke` artifact is its output. It then runs the **edit smoke session**
+(`docs/showcase/android-edit-smoke.jsonl`, APK-53: crop and straighten, a brush mask painted by `ui.touch`, copy and
+paste of settings with masks onto five photos, two JPEG exports, `ui.inspect`) with `run.py --strict`: a request
+answering `ok: false`, a process that died or changed pid, or a `panicked` line in the log fails the job
+(`smoke/edit-smoke.txt`, `smoke/edit-smoke-logcat.txt`). The same script runs headless on a desktop:
+`cargo run -p lightcraft-cli -- snapshot --demo --script docs/showcase/android-edit-smoke.jsonl -o target/android/smoke.png`
+(the export goes to `target/android/smoke-export`). To pull a screenshot, write it under `files/` and
 `adb exec-out run-as <id> cat files/shot.png > shot.png`.
 
 ## Continuing on a Mac
@@ -380,6 +386,16 @@ uninstalled or its data is cleared (APK-50). Back it up first:
   `files/library.before-restore` that no marker accounts for is never deleted: the next restore keeps it as
   `files/library.before-restore-<time>`.
 
+## After a crash
+
+If the last run recorded a panic, the next start opens a small window "LightCraft closed unexpectedly" with the panic
+text and three buttons: **Copy Report** (the text and the version, to the clipboard), **Share Report** (the previous
+run's log, `lightcraft.1.log`, to the share sheet through `file.share`; off when there is no such log) and
+**Dismiss**. Nothing is sent anywhere. The panics are the lines `engine::guard::install_hook` appends to
+`files/config/panic.log`; the host reads and empties that file at start (`panels::last_crash::take_previous`), so a
+crash is offered once. A panic that a command's guard caught (the session went on) is reported too, at the next start.
+`ui.inspect` → `lastCrash` shows the open window. Not yet seen on a device.
+
 ## Clipboard
 
 Copy and paste reach other apps (APK-28): every copy (a text field's Copy or Cut, a dialog's Copy to Clipboard, Ctrl+C
@@ -496,6 +512,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] APK-51: a USB-C card reader with JPEG + raw folders and a phone with a microSD in it: both appear under File ▸
   Import from Device and in Local with their names within two seconds of mounting; Import verifies and copies; Browse
   shows the photos in place; unplugging mid-import gives "not readable" errors and no crash (logcat: no `panicked`).
+- [ ] APK-53: run `packaging/android/control-check.sh` (or the edit smoke script through `run.py --strict`) on a Pixel
+  and on a Samsung phone through the debug control server; force a panic (a debug build with a deliberate one) and
+  start again: the window appears, Copy Report pastes the text, Share Report offers the log, Dismiss ends it.
 - [ ] APK-52: on an Android 13 and an Android 15 phone, a folder with CR2, CR3, NEF, ARW, RAF and 3FR: record which
   types the note in Import from Photo Library's review and in Local names, and which files appear (write the facts in
   "Raws this phone hides", marked observed); share a hidden CR3 from Files and it imports.
