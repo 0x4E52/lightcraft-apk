@@ -1304,8 +1304,36 @@ pub enum Dialog {
         remove_missing: bool,
         read_metadata: bool,
     },
+    /// Receive Handoff: what a handoff folder holds for the library (APK-62, [`crate::handoff`]).
+    ReceiveHandoff {
+        dir: String,
+        /// Originals the library doesn't have.
+        new: usize,
+        /// Photos whose handed-off settings are newer.
+        newer: Vec<HandoffRow>,
+        /// Photos whose library settings are as new or newer (never read).
+        older: Vec<HandoffRow>,
+        /// Photos the handoff says nothing new about.
+        same: usize,
+        /// Files that are missing, changed or unreadable ("file: why").
+        damaged: Vec<String>,
+        import_new: bool,
+        /// The newer photos ticked to read (none by default).
+        read: Vec<u64>,
+    },
     About,
     Shortcuts,
+}
+
+/// A photo of a handoff the library has, in the Receive Handoff dialog.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffRow {
+    pub id: u64,
+    pub name: String,
+    /// When it last changed on the device it came from, and here (ISO 8601; empty: unknown).
+    pub handoff_edited: String,
+    pub library_edited: String,
 }
 
 fn yes() -> bool {

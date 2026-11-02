@@ -29,6 +29,29 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            query "library.scanHandoff",
+            "Read Handoff Folder",
+            [],
+            None,
+            "{dir} — what a handoff folder (export.handoff on another device) holds for this library; changes nothing → {dir, created, new: [{path, name}] originals the library doesn't have, newer: [{id, name, path, handoffEdited, libraryEdited}] photos whose handed-off settings are newer than the library's, older: [...] photos whose library settings are as new or newer (never read), same: photos it says nothing new about, damaged: [[file, why]] missing or changed originals and unreadable sidecars}. Photos are matched by content hash, whatever their name or folder",
+            always,
+            |s, p| {
+                const C: &str = "library.scanHandoff";
+                let dir = str_param(p, "dir").filter(|d| !d.trim().is_empty()).ok_or_else(|| bad(C, "missing `dir`"))?;
+                let plan = crate::handoff::scan(s, dir).map_err(|e| bad(C, e.to_string()))?;
+                Ok(handoff_plan_json(&plan))
+            }
+        ),
+        cmd!(
+            "library.receiveHandoff",
+            "Receive Handoff",
+            [],
+            None,
+            "{dir, importNew?: true, read?: [photo ids listed as newer by library.scanHandoff] (default none: reading is never the default)} — read the folder again, read the chosen newer settings (the handoff's sidecar wins; a photo whose library settings are as new or newer, or that changed since, is refused) and import the new originals (copied into the library with their settings); one undo step → {imported, read, refused: [[id, why]], failed: [[file, why]]}",
+            always,
+            receive_handoff
+        ),
+        cmd!(
             "folder.synchronize",
             "Synchronize Folder",
             [],
@@ -58,4 +81,38 @@ fn sync(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let r = synchronize(s, changes, choice)?;
     Ok(json!({"imported": r.imported, "relinked": r.relinked, "removed": r.removed, "read": r.read, "failed": r.failed}))
+}
+
+/// A handoff plan as the commands answer it (camelCase keys).
+pub(crate) fn handoff_plan_json(plan: &crate::handoff::HandoffPlan) -> Value {
+    let m = |v: &[crate::handoff::HandoffMatch]| -> Vec<Value> {
+        v.iter()
+            .map(|m| json!({"id": m.id, "name": m.name, "path": m.path, "handoffEdited": m.handoff_edited, "libraryEdited": m.library_edited}))
+            .collect()
+    };
+    json!({
+        "dir": plan.dir,
+        "created": plan.created,
+        "new": plan.new,
+        "newer": m(&plan.newer),
+        "older": m(&plan.older),
+        "same": plan.same,
+        "damaged": plan.damaged,
+    })
+}
+
+fn receive_handoff(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "library.receiveHandoff";
+    let dir = str_param(p, "dir").filter(|d| !d.trim().is_empty()).ok_or_else(|| bad(C, "missing `dir`"))?.to_string();
+    let read = match p.get("read") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(a)) => {
+            a.iter().map(|v| v.as_u64().map(lightcraft_catalog::PhotoId)).collect::<Option<_>>().ok_or_else(|| bad(C, "`read` must be photo ids"))?
+        }
+        Some(_) => return Err(bad(C, "`read` must be an array of photo ids")),
+    };
+    let plan = crate::handoff::scan(s, &dir).map_err(|e| bad(C, e.to_string()))?;
+    let choice = crate::handoff::HandoffChoice { import_new: bool_or(p, "importNew", true), read };
+    let r = crate::handoff::apply(s, plan, &choice)?;
+    Ok(json!({"imported": r.imported, "read": r.read, "refused": r.refused, "failed": r.failed}))
 }

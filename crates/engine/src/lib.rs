@@ -45,6 +45,7 @@ pub mod files;
 mod focus_scan;
 pub mod fonts;
 pub mod guard;
+pub mod handoff;
 pub mod import;
 mod import_move;
 pub mod lens_profiles;
@@ -1300,6 +1301,8 @@ mod tests_focus_scan;
 mod tests_folders;
 #[cfg(test)]
 mod tests_forget_local;
+#[cfg(test)]
+mod tests_handoff;
 #[cfg(test)]
 mod tests_history_cursor;
 #[cfg(test)]

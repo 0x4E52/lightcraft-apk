@@ -271,6 +271,11 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // {paths?, ids?}: export the selection where other apps see it, then the system's share sheet
     // (Android); with paths, share those files
     ("file.share", "Share…", None, "File"),
+    // {ids?, dir?, into?}: originals + XMP sidecars + a manifest for another device (APK-62);
+    // shared afterwards where the host has a share sheet
+    ("file.handoff", "Hand Off Photos…", None, "File"),
+    // {dir?}: read a handoff folder, then the Receive Handoff dialog
+    ("file.receiveHandoff", "Receive Handoff…", None, "File"),
 ];
 
 fn panel(app: &mut LightcraftApp, ctx: &egui::Context, p: RightPanel, name: &str) {
@@ -1827,6 +1832,8 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         }
         "file.importMediaLibrary" => crate::media_import::run(app, p),
         "file.share" => crate::share::run(app, p),
+        "file.handoff" => crate::handoff::send(app, p),
+        "file.receiveHandoff" => crate::handoff::receive(app, p),
         "file.addFolder" => {
             // a folder (searched recursively) into the import review
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2264,6 +2271,13 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
             app.services.share.is_some() && app.share.is_none() && !app.share_after_export && app.export.is_none() && app.session.active().is_some()
         }
         "file.backupLibrary" => app.services.backup_library.is_some(),
+        // (a folder: the host's folder for originals, or one picked)
+        "file.handoff" => {
+            !app.session.selected().is_empty()
+                && (app.services.export_dir_for.is_some() || app.services.pick_folder.is_some() || in_app)
+                && !app.tasks.is_running(crate::handoff::SEND_LABEL)
+        }
+        "file.receiveHandoff" => (app.services.pick_folder.is_some() || in_app) && !app.tasks.is_running(crate::handoff::READ_LABEL),
         "app.quit" => !app.services.quit_disabled,
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),

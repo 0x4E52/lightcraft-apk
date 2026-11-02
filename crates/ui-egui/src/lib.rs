@@ -20,6 +20,7 @@ pub mod date_picker;
 pub mod docking;
 pub mod export_task;
 mod focus_scan;
+pub mod handoff;
 pub mod headless;
 /// Host code shared by the native apps (settings file, session opening, log file, flush, GPU markers).
 #[cfg(not(target_arch = "wasm32"))]
@@ -118,6 +119,8 @@ mod tests_folder_drop;
 mod tests_grading;
 #[cfg(test)]
 mod tests_grid;
+#[cfg(test)]
+mod tests_handoff;
 #[cfg(test)]
 mod tests_hidden_types;
 #[cfg(test)]
@@ -665,6 +668,10 @@ pub struct LightcraftApp {
     pub share_after_export: bool,
     /// File ▸ Share handing files to the host's share sheet (`Services::share`).
     pub share: Option<share::ShareTask>,
+    /// The handoff folder the Receive Handoff dialog shows (APK-62, [`handoff`]).
+    pub handoff_plan: Option<lightcraft_engine::handoff::HandoffPlan>,
+    /// What the last hand-off wrote (`ui.inspect` → `handoff.last`).
+    pub handoff_last: Option<Value>,
     /// A device backup or restore of the library on its worker ([`library_backup`]).
     pub library_backup: Option<library_backup::Task>,
     /// A restore that swapped the library in was looked for since this app opened it.
@@ -801,6 +808,8 @@ impl LightcraftApp {
             export: None,
             share_after_export: false,
             share: None,
+            handoff_plan: None,
+            handoff_last: None,
             library_backup: None,
             restore_checked: false,
             tasks: Default::default(),

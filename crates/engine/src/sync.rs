@@ -587,7 +587,14 @@ fn sidecar_has_news(labels: &Catalog, p: &Photo, naming: SidecarNaming, listing:
     }
     let Ok(text) = std::fs::read_to_string(&file) else { return false };
     let Ok(sc) = crate::sidecar::parse_sidecar(&text, crate::crs::Target::for_photo(p)) else { return false };
-    let sc = sc.resolve_label(labels);
+    sidecar_differs(labels, p, &sc)
+}
+
+/// Whether reading sidecar `sc` would change photo `p` (its rating, flag, label, metadata,
+/// capture time or develop settings). Also how a handoff ([`crate::handoff`]) tells a photo it
+/// says something new about.
+pub(crate) fn sidecar_differs(labels: &Catalog, p: &Photo, sc: &crate::sidecar::SidecarData) -> bool {
+    let sc = sc.clone().resolve_label(labels);
     let mut q = p.clone();
     crate::sidecar::merge_into(&mut q, &sc, "");
     (q.rating, q.flag, q.label, &q.meta, &q.captured, &q.develop) != (p.rating, p.flag, p.label, &p.meta, &p.captured, &p.develop)
@@ -765,12 +772,47 @@ impl SyncWork {
 /// Read and parse photo file `path`'s XMP sidecar file.
 fn read_sidecar(path: &str, naming: SidecarNaming, target: crate::crs::Target) -> std::result::Result<crate::sidecar::SidecarData, String> {
     let file = crate::sidecar::find_sidecar(path, naming).ok_or_else(|| "no XMP sidecar".to_string())?;
-    let len = std::fs::metadata(&file).map_err(|e| format!("{}: {e}", file.display()))?.len();
+    read_sidecar_file(&file, target)
+}
+
+/// Read and parse XMP sidecar file `file` (at most [`MAX_SIDECAR_BYTES`]); also a handoff
+/// folder's sidecars ([`crate::handoff`]).
+pub(crate) fn read_sidecar_file(file: &Path, target: crate::crs::Target) -> std::result::Result<crate::sidecar::SidecarData, String> {
+    let len = std::fs::metadata(file).map_err(|e| format!("{}: {e}", file.display()))?.len();
     if len > MAX_SIDECAR_BYTES {
         return Err(format!("{}: too large for an XMP sidecar", file.display()));
     }
-    let text = std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
     crate::sidecar::parse_sidecar(&text, target).map_err(|e| format!("{}: {e}", file.display()))
+}
+
+/// Put sidecars read elsewhere (photo, the file, what it says or why it couldn't be read) into
+/// the library as one commit labelled `label`, the sidecar winning (Read Metadata from File).
+/// Returns how many photos were read and (file, why) for those that weren't. No file is read.
+pub(crate) fn commit_sidecars(
+    s: &mut Session,
+    label: &str,
+    read: Vec<(PhotoId, String, std::result::Result<crate::sidecar::SidecarData, String>)>,
+) -> (usize, Vec<(String, String)>) {
+    let mut failed = Vec::new();
+    let mut ops = Vec::new();
+    for (id, path, sc) in read {
+        match sc.map_err(EngineError::Other).and_then(|sc| s.sidecar_op(id, sc)) {
+            Ok(op) => ops.push(op),
+            Err(e) => failed.push((path, e.to_string())),
+        }
+    }
+    let n = ops.len();
+    if n == 0 {
+        return (0, failed);
+    }
+    match s.commit(label, Op::Batch { ops }) {
+        Ok(()) => (n, failed),
+        Err(e) => {
+            failed.push((String::new(), e.to_string()));
+            (0, failed)
+        }
+    }
 }
 
 impl SyncCommit {
@@ -828,20 +870,9 @@ impl SyncCommit {
                 }
             }
             SyncStep::Sidecars(read) => {
-                let mut ops = Vec::new();
-                for (id, path, sc) in read {
-                    match sc.map_err(EngineError::Other).and_then(|sc| s.sidecar_op(id, sc)) {
-                        Ok(op) => ops.push(op),
-                        Err(e) => report.failed.push((path, e.to_string())),
-                    }
-                }
-                let n = ops.len();
-                if n > 0 {
-                    match s.commit("Read Metadata from File", Op::Batch { ops }) {
-                        Ok(()) => report.read += n,
-                        Err(e) => report.failed.push((String::new(), e.to_string())),
-                    }
-                }
+                let (n, failed) = commit_sidecars(s, "Read Metadata from File", read);
+                report.read += n;
+                report.failed.extend(failed);
             }
         }
     }

@@ -335,7 +335,7 @@ pub(crate) fn copy_verified(src: &Path, dst: &Path, expect: Option<lightcraft_pr
 }
 
 /// [`lightcraft_preview::hash_bytes`] of a file's content, read in chunks.
-fn hash_file(path: &Path) -> io::Result<lightcraft_preview::Hash128> {
+pub(crate) fn hash_file(path: &Path) -> io::Result<lightcraft_preview::Hash128> {
     let mut f = File::open(path)?;
     let mut h = lightcraft_preview::Hasher128::new();
     let mut buf = vec![0u8; 1 << 20];

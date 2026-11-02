@@ -145,9 +145,33 @@ fn photos_imports(s: &mut Session, p: &Value) -> Result<Value> {
     }
 }
 
+/// `export.handoff {dir, ids?}`: hand photos off to another device ([`crate::handoff`]).
+fn handoff(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "export.handoff";
+    let dir = p.get("dir").and_then(Value::as_str).filter(|d| !d.trim().is_empty()).ok_or_else(|| bad(ID, "missing `dir`"))?;
+    let ids: Vec<lightcraft_catalog::PhotoId> = match p.get("ids") {
+        None | Some(Value::Null) => s.selected(),
+        Some(Value::Array(a)) => {
+            a.iter().map(|v| v.as_u64().map(lightcraft_catalog::PhotoId)).collect::<Option<_>>().ok_or_else(|| bad(ID, "`ids` must be photo ids"))?
+        }
+        Some(_) => return Err(bad(ID, "`ids` must be an array of photo ids")),
+    };
+    let w = crate::handoff::hand_off(s, &ids, dir).map_err(|e| bad(ID, e.to_string()))?;
+    Ok(serde_json::to_value(&w).unwrap_or_default())
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     #[allow(unused_mut)]
     let mut v = vec![
+        cmd!(
+            query "export.handoff",
+            "Hand Off Photos",
+            [],
+            None,
+            "{dir: a new folder (made when missing; one holding a handoff is refused), ids?: photo ids (default selection)} — hand photos off to another device without a cloud: each original untouched with an XMP sidecar of its settings, then lightcraft-handoff.json (content hash, size, catalog id and last change of each); receive it with library.scanHandoff / library.receiveHandoff → {dir, manifest, photos, files: [every file written], skipped: [[photo, why]] (virtual copies, demo photos), failed: [[file, why]], cancelled}",
+            always,
+            handoff
+        ),
         cmd!(query "export.contactSheet", "Export Contact Sheet PDF", [], None,
             "{path, ids?: photo ids (default selection), paper?: a4|letter, landscape?: bool, columns?: 1..8, rows?: 1..10, captions?: bool} → {path, pages, photos, bytes}; replaces an existing output, never an original",
             always, |s, p| {

@@ -41,6 +41,56 @@ When foreign `crs:` settings are only partly transferable, `library.import` incl
 report. Warnings identify unsupported profile names, saved Upright geometry that will be recalculated, and other
 unmapped adjustments; they do not change the source packet or become catalog edits.
 
+## Handoff folders (phone ↔ computer)
+
+A handoff moves photos and their edits from one LightCraft library to another — a phone and a computer, two
+computers — through files the person carries (a share, a USB cable or drive, a folder their own sync tool keeps); no
+cloud and no account (`crates/engine/src/handoff.rs`).
+
+**File ▸ Hand Off Photos…** (`export.handoff {dir, ids?}`; `file.handoff` in the app) writes into a new folder
+`LightCraft Handoff <date time>` (on Android in `Documents/LightCraft`, then offered to share):
+
+- each photo's original, byte for byte (location kept: the other library must find the same content), with an XMP
+  sidecar named like it (`IMG_1.xmp`; the packet of Export ▸ Original + Settings, full LightCraft settings in
+  `lc:settings` beside the `crs:` fields);
+- last, `lightcraft-handoff.json`, the manifest. A folder without it is a handoff that didn't finish:
+
+```json
+{
+  "format": 1,
+  "app": "LightCraft",
+  "created": "2026-10-01T10:05:00",
+  "photos": [
+    {"file": "IMG_1.CR3", "sidecar": "IMG_1.xmp", "hash": "9f2c…", "size": 25123456, "id": 412,
+     "edited": "2026-10-01T10:00:00"}
+  ]
+}
+```
+
+`hash` is the content hash the library's duplicate check uses (over the file's bytes), `id` the photo's id in the
+library it left, `edited` when the photo last changed there (the later of its import and its last develop change, the
+sending device's local clock). `format` grows when a field changes meaning; a reader refuses a newer one. Virtual
+copies and generated demo photos are not handed off (listed as skipped), and a folder that already holds a manifest is
+refused.
+
+**File ▸ Receive Handoff…** (`library.scanHandoff {dir}` lists, `library.receiveHandoff {dir, importNew?, read?}`
+acts) reads a handoff folder as Synchronize Folder reads a library folder:
+
+- every original is hashed again; one that is missing or doesn't match its `hash` is listed as damaged and left alone,
+  as are file names that leave the folder and sidecars that can't be read;
+- an original whose content the library has — under any name, in any folder — is matched to that photo (the one with
+  the manifest's `id` when several have it). Its sidecar is compared with the photo: one that would change nothing is
+  "up to date"; one whose `edited` is later than the photo's last change here is **newer**; anything else, including
+  an unknown time, is **older** and is never read;
+- an original the library doesn't have is **new** and is imported with its sidecar's settings (copied into the
+  library's folder; added in place in a library without one).
+
+Newer settings are read only for the photos ticked (`read: [ids]`), never by default; reading replaces the photo's
+rating, labels, metadata and develop settings with the sidecar's, as Read Metadata from File does, in one undo step
+("Receive Handoff"). A photo changed in the library after the folder was read is refused. Limits: newer vs older is
+decided by the two devices' clocks; the library records when a photo was developed, not when its rating or metadata
+changed.
+
 ## Saving into an existing sidecar
 
 A sidecar may already hold another application's data — e.g. its `crs:` develop settings and `xmpMM:History` — often

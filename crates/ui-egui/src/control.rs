@@ -144,6 +144,7 @@ pub fn inspect(app: &LightcraftApp, ctx: &egui::Context) -> Value {
         // a camera import (USB/MTP) in flight: permission, listing, copying or staged
         "camera": app.camera.as_ref().map(crate::camera_import::CameraTask::status),
         "export": {"running": app.export.as_ref().map(crate::export_task::ExportTask::status), "last": app.last_export_result},
+        "handoff": {"last": app.handoff_last},
         "import": app.import.as_ref().map(crate::import::ImportTask::status),
         "tasks": app.tasks.labels(),
         // every long-running task in flight, as the activity stack shows them (`activity.list`)

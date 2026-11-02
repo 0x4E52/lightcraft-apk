@@ -380,6 +380,17 @@ system's share sheet with them (one file: `ACTION_SEND`, several: `ACTION_SEND_M
 to the app chosen). `{"paths": [...]}` shares files already exported there. A file outside shared storage can't be
 shared and the message says where to export it.
 
+## Handing photos to a computer and back
+
+**File ▸ Hand Off Photos…** (APK-62) writes the selected photos' originals with XMP sidecars and a manifest into a new
+folder `Documents/LightCraft/LightCraft Handoff <date time>` under the activity row "Handing off photos", then opens
+the share sheet with those files. Copied to a computer (USB, a drive, a synced folder), **File ▸ Receive Handoff…**
+there imports the new photos with their edits and lists photos it already has whose edits are newer, to read the
+ticked ones; the way back is the same. Format and rules: [`xmp-interop.md`](xmp-interop.md#handoff-folders-phone--computer).
+A share *into* LightCraft doesn't carry a handoff yet (the photos are imported, the sidecars and the manifest go to
+the Inbox): receive one on the phone from its folder — a USB drive or SD card, or a folder a sync app keeps in shared
+storage — through the in-app chooser.
+
 ## Backing up the library before uninstalling
 
 The library lives in LightCraft's private storage (`files/library`), and Android deletes it when LightCraft is
@@ -547,6 +558,9 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
   that uses a FileProvider; "Open with" a DNG from Files: all are imported into `Originals/`. Share a 1 GB file: the
   UI stays responsive and the activity row "Receiving 1 file" shows it until it is done. Share a `.xmp` preset: a
   notice says it is in the Inbox. Share again while LightCraft runs: it only comes to the front.
+- [ ] Handoff (APK-62): edit 20 raws on the phone, File ▸ Hand Off Photos…, copy the folder to the desktop by USB,
+  Receive Handoff there: 20 new photos with the phone's edits; edit two on the desktop, hand them back on a USB drive,
+  Receive Handoff on the phone: exactly those two are listed as newer, and read when ticked.
 - [ ] Exports and Share (APK-27): export a JPEG and a TIFF with no folder chosen: both are in
   `Pictures/LightCraft` (Gallery shows them) and no `.lightcraft-…-tmp` file is left; a Contact Sheet PDF saved
   from the chooser's Documents place is in `Documents/LightCraft` (Files shows it). File ▸ Share… one photo, then

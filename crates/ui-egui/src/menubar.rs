@@ -90,6 +90,8 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "app.exportPrevious",
             "file.share",
             "@Export with Preset",
+            "file.handoff",
+            "file.receiveHandoff",
             "---",
             "library.toggleAutoWriteXmp",
             "@Previews",

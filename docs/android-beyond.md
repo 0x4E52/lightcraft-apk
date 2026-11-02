@@ -510,6 +510,22 @@ as stated):
 - **Done when:** tests pass; `docs/xmp-interop.md` documents the manifest.
 - **Maintainer checks on a device:** edit 20 raws on the phone, hand them to the desktop by USB, edit two there and
   hand them back.
+- **As built (2026-11-02):** `crates/engine/src/handoff.rs` holds the format and the rules: `export.handoff` writes
+  originals and sidecars through the export's batch (Original, location kept, unique names), then
+  `lightcraft-handoff.json` (format, created, per photo file, sidecar, hash, size, id, edited); `library.scanHandoff`
+  re-hashes each original (damaged when missing or changed), matches by content hash (the manifest's id first when
+  several photos share it), and sorts matches into newer, older (also an unknown time) and up to date (the sidecar
+  would change nothing); `library.receiveHandoff` reads only the ticked newer ones (one undo step "Receive
+  Handoff") and imports the new ones (Copy into the library's folder, Add without one). `sync.rs` lends it its sidecar
+  reader, its "would this sidecar change the photo" test and its sidecar commit. In the app (`crates/ui-egui/src/handoff.rs`)
+  File ▸ Hand Off Photos… writes into a new `LightCraft Handoff <time>` folder in the host's folder for originals
+  (Android: `Documents/LightCraft`) or a picked one, on a worker with an activity row, then `share::start` with its
+  files; File ▸ Receive Handoff… reads on a worker and opens a dialog (newer rows ticked one by one, none by default;
+  older rows listed; new photos imported in the background). Step 3's "APK-25's sidecar routing receives it" was not
+  true: APK-25 imports shared photos and puts `.xmp` and `.json` in the Inbox, so on a phone a handoff is received from
+  a folder (USB drive, SD card, a synced folder) until the share routing is built. Virtual copies are not handed off.
+  Tests: `tests_handoff.rs` in the engine (`handoff_roundtrip_keeps_edits`, `older_handoff_never_overwrites`,
+  `hash_match_finds_moved_photo` and the damaged, refused and skipped cases) and in ui-egui (the share and the dialog).
 
 ### APK-63 Left-handed and remembered layouts
 - **Answers:** [C8](android-competitive.md#c8-ui-regressions-and-layout) (landscape removed, left-handed requests,
@@ -591,3 +607,4 @@ the maintainer asks for a release; step 5 (APK-58, 59, 61, 62, 63, 64) runs firs
 - 2026-11-02 (APK-61): "As built" note on the card.
 - 2026-11-02 (APK-61 review): the Settings switch, the end of a drag with the loupe, the parity row.
 - 2026-11-02: maintainer decision: step 5 before Phase 4's release cards (36 … 43), which wait for a release call.
+- 2026-11-02 (APK-62): "As built" note on the card; step 3's share routing doesn't exist yet (noted).
