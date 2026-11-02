@@ -732,6 +732,14 @@ fn interface_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     );
     heading(ui, t, crate::i18n::tr("Detail"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
+    check(ui, "settings.photoDrag", &mut app.ui.photo_drag, "Slider gestures on the photo (touch)");
+    hint(
+        ui,
+        t,
+        crate::i18n::tr(
+            "With a panel of sliders open, a finger's vertical drag on the photo chooses a slider and a sideways drag changes it. Off: swipes rate, flag and change photo as with the panel closed.",
+        ),
+    );
     row(ui, t, crate::i18n::tr("Info overlay"), |ui| {
         use crate::state::InfoOverlay as I;
         choices(ui, "settingsInfo", &[(I::Off, "Off"), (I::Basic, "File & date"), (I::Exposure, "Exposure")], &mut app.ui.info_overlay);

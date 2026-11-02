@@ -10,7 +10,8 @@
 //!   photo renders as drafts while the finger moves, as with the slider.
 //! - It reads the frame's raw touch events, so a mouse drag never does it. It is off while a tool owns the photo
 //!   (crop, masking and its brush, remove / spot, red eye, a picker), zoomed in (a drag pans), with two fingers
-//!   (a pinch) and when `UiState::photo_drag` is off. While it is armed, a one-finger flick on the photo is this
+//!   (a pinch) and when `UiState::photo_drag` is off (Settings ▸ Interface). A drag the loupe stops seeing (a view
+//!   change mid-drag) ends at the frame's end ([`end_frame`]). While it is armed, a one-finger flick on the photo is this
 //!   gesture, not `cull_touch`'s swipe (rate, flag, next photo); taps keep their meaning.
 
 use egui::{Color32, Pos2, Rect, Vec2, pos2, vec2};
@@ -179,6 +180,10 @@ pub struct PhotoDrag {
     adjusting: Option<(String, f64)>,
     /// Until when (app time) the readout stays after the finger lifted.
     hud_until: f64,
+    /// The pass the loupe last fed the gesture in: a pass without the loupe ends what was under way ([`end_frame`]).
+    loupe_pass: u64,
+    /// Whether the gesture was armed in that pass (a one-finger drag on the photo was this gesture, not a swipe).
+    pub(crate) armed: bool,
 }
 
 impl PhotoDrag {
@@ -230,6 +235,8 @@ pub(crate) fn loupe(
 ) -> bool {
     let pass = ctx.cumulative_pass_nr();
     let armed = app.ui.photo_drag && act && !zoomed && app.session.active().is_some() && !app.photo_drag.sliders(pass).is_empty();
+    app.photo_drag.loupe_pass = pass;
+    app.photo_drag.armed = armed;
     let drags = app.photo_drag.gesture.feed(events, on_photo, armed);
     let now = ctx.input(|i| i.time);
     for drag in drags {
@@ -247,13 +254,7 @@ pub(crate) fn loupe(
                 }
             }
             Drag::Adjust { dx, first } => adjust(app, pass, dx, first, canvas),
-            Drag::End => {
-                if let Some((c, _)) = app.photo_drag.adjusting.take()
-                    && let Some(spec) = controls::find(&c)
-                {
-                    super::edit::apply_slider_out(app, spec, SliderOut { drag_stopped: true, ..Default::default() }, |_, _| Ok(json!(null)));
-                }
-            }
+            Drag::End => end_adjusting(app),
         }
         app.photo_drag.hud_until = now + HUD_SECS;
     }
@@ -261,6 +262,29 @@ pub(crate) fn loupe(
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(HUD_SECS / 3.0));
     }
     armed
+}
+
+/// The horizontal drag under way ends where it is: the slider's interaction closes (one undo step).
+fn end_adjusting(app: &mut LightcraftApp) {
+    if let Some((c, _)) = app.photo_drag.adjusting.take()
+        && let Some(spec) = controls::find(&c)
+    {
+        super::edit::apply_slider_out(app, spec, SliderOut { drag_stopped: true, ..Default::default() }, |_, _| Ok(json!(null)));
+    }
+}
+
+/// Called at the end of every frame: when the loupe wasn't drawn in this pass (a view change by key or Back
+/// mid-drag, a Detail view that returned before its gestures), a drag under way ends where it is, so
+/// `develop.beginInteraction` doesn't stay open, and the recogniser forgets its fingers, so the next finger down
+/// is a first finger again.
+pub(crate) fn end_frame(app: &mut LightcraftApp, ctx: &egui::Context) {
+    if app.photo_drag.loupe_pass == ctx.cumulative_pass_nr() {
+        return;
+    }
+    app.photo_drag.armed = false;
+    end_adjusting(app);
+    app.photo_drag.choose_base = None;
+    app.photo_drag.gesture = Gesture::default();
 }
 
 /// A horizontal drag `dx` points from where it locked: the chosen slider's value, moved as dragging its thumb

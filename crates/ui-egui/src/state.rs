@@ -910,7 +910,8 @@ pub struct UiState {
     pub cull_hud: Option<(String, f64)>,
     /// Slider gestures on the photo (APK-61, `panels::photo_drag`): with a panel of sliders open, a finger's
     /// vertical drag on the photo chooses one of them and a horizontal drag changes it. On by default; only a
-    /// finger does it (a mouse drag never), so it is on under touch and changes nothing for a mouse.
+    /// finger does it (a mouse drag never), so it is on under touch and changes nothing for a mouse. Settings ▸
+    /// Interface ▸ "Slider gestures on the photo (touch)" (`check:settings.photoDrag`) or `ui.set {"photoDrag": false}`.
     pub photo_drag: bool,
     /// The control a vertical drag on the photo chose last (a `develop` control id); the panel's first
     /// slider until one is chosen.

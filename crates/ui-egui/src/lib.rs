@@ -1845,6 +1845,8 @@ impl LightcraftApp {
 
     /// Frame timings once layout is done (`t0`: when layout started).
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
+        // a slider drag on the photo ends when the loupe is gone (APK-61)
+        panels::photo_drag::end_frame(self, ctx);
         let copies: Vec<String> = ctx.output(|o| {
             o.commands
                 .iter()

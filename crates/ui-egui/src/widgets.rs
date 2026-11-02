@@ -233,7 +233,7 @@ const THUMB_RING: f32 = 7.0;
 
 /// A Lightroom slider row (label + value above a track with a hollow ring thumb).
 /// Double-click the label or thumb to reset (hovering either says so). Shift-drag = fine adjustment.
-/// Under touch (APK-61) a tap beside the thumb nudges the value a step that way instead of jumping there, and a
+/// Under the touch layout (APK-61; the layout decides, not the input) a tap or click beside the thumb nudges the value a step that way instead of jumping there, and a
 /// double tap resets only on the thumb.
 /// Scroll sideways over it to nudge it. Click the value to type one: Return or clicking away applies it,
 /// Esc keeps the old one. Drag the value sideways to scrub it, as if dragging the thumb (Shift: a tenth
@@ -443,8 +443,9 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
             // history step of its own before the reset
             && !on_thumb(p)
         {
-            // a mouse click jumps there, as in Lightroom; a finger's tap beside the thumb nudges it a step that
-            // way (`android-touch-ui.md` §2), as a fingertip can't land on an exact value
+            // at desktop density a click jumps there, as in Lightroom; under the touch layout a tap (or click)
+            // beside the thumb nudges it a step that way (`android-touch-ui.md` §2), as a fingertip can't land on
+            // an exact value
             let nv = if touch {
                 nudged(spec, value, if p.x > to_x(value) { 1.0 } else { -1.0 })
             } else {

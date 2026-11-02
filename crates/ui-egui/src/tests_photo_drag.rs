@@ -172,7 +172,19 @@ fn tool_owns_canvas_no_drag_edit() {
     let c = canvas(&h);
     drag(&mut h, c.center(), 200.0, 0.0);
     assert_eq!(value(&h, "light.exposure"), 0.0, "a picker's drag edits nothing");
+    assert!(!h.app.photo_drag.offered_ids().is_empty(), "the Edit panel still offers its sliders");
+    assert!(!h.app.photo_drag.armed, "but the gesture is off while the picker owns the photo");
+    // the White Balance picker, started from the Edit panel whose sliders stay drawn
+    h.app.ui.tool = "wbPicker".into();
+    h.settle(T);
+    assert!(!h.app.photo_drag.offered_ids().is_empty() && !h.app.photo_drag.armed, "the WB picker owns the photo");
+    let c = canvas(&h);
+    drag(&mut h, c.center(), 200.0, 0.0);
+    assert_eq!(value(&h, "light.exposure"), 0.0, "the WB picker's drag edits nothing");
+    assert!(h.app.ui.dragging_control.is_none());
     h.app.ui.tool.clear();
+    h.settle(T);
+    assert!(h.app.photo_drag.armed, "armed again once the tool is put away");
     // Crop, Masking, Remove and Red Eye own it, and their panels offer no develop sliders
     for panel in ["crop", "masking", "remove", "redEye"] {
         let r = h.request("ui.set", json!({"right": panel}), T);
@@ -181,6 +193,7 @@ fn tool_owns_canvas_no_drag_edit() {
         let c = canvas(&h);
         drag(&mut h, c.center() + vec2(-100.0, 0.0), 200.0, 0.0);
         assert_eq!(value(&h, "light.exposure"), 0.0, "{panel}: a drag is the tool's");
+        assert!(!h.app.photo_drag.armed, "{panel}: off while the tool owns the photo");
         assert!(h.app.ui.dragging_control.is_none(), "{panel}");
     }
     // with the panel closed there is nothing to choose from: a flick is a swipe again
@@ -228,4 +241,84 @@ fn double_tap_thumb_resets() {
     send(&mut h, vec![touch(1, "start", p, 0.0), touch(1, "end", p, 0.05), touch(1, "start", p, 0.15), touch(1, "end", p, 0.2)]);
     assert_eq!(value(&h, "light.exposure"), 0.0, "a double tap on the thumb resets Exposure");
     assert_eq!(h.app.session.undo.len(), undo + 1, "in one undo step (the first tap on the thumb moved nothing)");
+}
+
+#[test]
+fn settings_switch_turns_it_off() {
+    let mut h = edit_panel();
+    run(&mut h, "develop.set", json!({"control": "light.exposure", "value": 0.0}));
+    assert!(h.app.ui.photo_drag, "on by default");
+    // Settings ▸ Interface has the switch
+    h.app.ui.dialog = Some(crate::state::Dialog::Settings { tab: "interface".into() });
+    h.settle(T);
+    // (below the Grid and Keywords settings: scroll the tab until it is in the window)
+    for _ in 0..20 {
+        let w = widget(&h, "check:settings.photoDrag");
+        if w.bottom() < 880.0 && w.top() > 0.0 {
+            break;
+        }
+        let r = h.request("ui.hoverWidget", json!({"id": "check:settings.filmNames"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        let r = h.request("ui.scroll", json!({"dy": -300.0}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(T);
+    }
+    let r = h.request("ui.clickWidget", json!({"id": "check:settings.photoDrag"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(T);
+    assert!(!h.app.ui.photo_drag, "the checkbox turns it off");
+    h.app.ui.dialog = None;
+    h.settle(T);
+    assert!(!h.app.photo_drag.armed, "off: not armed with the Edit panel open");
+    // with the Edit panel open, a sideways flick is the swipe to the next photo again and edits nothing
+    let vis = h.app.session.visible_cloned();
+    let at = vis.iter().position(|p| *p == active(&h)).expect("in view");
+    let undo = h.app.session.undo.len();
+    let c = canvas(&h);
+    drag(&mut h, c.center(), -250.0, 0.0);
+    assert_eq!(Some(active(&h)), vis.get(at + 1).copied(), "the swipe shows the next photo");
+    assert_eq!(h.app.session.undo.len(), undo, "no slider edit");
+    // and `ui.set` turns it back on
+    let r = h.request("ui.set", json!({"photoDrag": true}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(T);
+    assert!(h.app.ui.photo_drag && h.app.photo_drag.armed);
+}
+
+#[test]
+fn view_change_mid_drag_ends_interaction() {
+    let mut h = edit_panel();
+    run(&mut h, "develop.set", json!({"control": "light.exposure", "value": 0.0}));
+    h.app.ui.photo_drag_control = Some("light.exposure".into());
+    let undo = h.app.session.undo.len();
+    let c = canvas(&h);
+    let from = c.center();
+    // a finger locks sideways and moves, then stays down
+    let ev = vec![
+        touch(1, "start", frac(&h, from), 0.0),
+        touch(1, "move", frac(&h, from + vec2(20.0, 0.0)), 0.04),
+        touch(1, "move", frac(&h, from + vec2(120.0, 0.0)), 0.08),
+    ];
+    send(&mut h, ev);
+    assert_eq!(h.app.ui.dragging_control.as_deref(), Some("light.exposure"), "the drag is under way");
+    let moved = value(&h, "light.exposure");
+    assert!(moved > 0.0, "{moved}");
+    let lift = frac(&h, from + vec2(120.0, 0.0));
+    // the view changes under the finger (a key, Back): the loupe is gone
+    let r = h.request("ui.set", json!({"view": "photoGrid"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(T);
+    assert!(h.app.ui.dragging_control.is_none(), "the interaction ended with the loupe");
+    assert_eq!(h.app.session.undo.len(), undo + 1, "what was done is one undo step");
+    assert_eq!(value(&h, "light.exposure"), moved, "and stays");
+    // the finger lifts in the grid; back in Detail a new one-finger drag works (not taken for a second finger)
+    send(&mut h, vec![touch(1, "end", lift, 0.5)]);
+    let r = h.request("ui.set", json!({"view": "detail"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(T);
+    let c = canvas(&h);
+    drag(&mut h, c.center(), 200.0, 0.0);
+    assert!(value(&h, "light.exposure") > moved, "a new drag changes it again");
+    assert_eq!(h.app.session.undo.len(), undo + 2);
+    assert!(h.app.ui.dragging_control.is_none());
 }
