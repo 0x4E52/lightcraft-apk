@@ -124,8 +124,9 @@ LC_DENOISE_MODEL=<model.onnx> LC_DENOISE_RAW=<corpus/raw> cargo test --release -
 ## On a phone
 
 AI Denoise runs on Android as on the desktop (the APK builds with the `denoise` feature), on its own background
-thread, never the frame's; the user installs a model as on the desktop (Settings ▸ AI Denoise ▸ Install from file…),
-because no model ships yet ([gaps](gaps.md), gap 11).
+thread, never the frame's. No model ships yet ([gaps](gaps.md), gap 11), so the user installs one from the model list
+in Settings ▸ AI Denoise (**Download**, then accept its terms). **Install from file…** is desktop-only for now: on
+Android it is disabled with the reason (no file picker for models yet).
 
 - **Memory.** The tiles get a quarter of the memory budget (Settings ▸ Performance ▸ Memory; its Automatic is
   `memory::default_budget`, on a phone MemTotal / 8 between 256 and 768 MiB, so 64–192 MiB for the tiles). The model's

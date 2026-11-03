@@ -563,7 +563,7 @@ as stated):
   like `min_ram_for_sam`), `crates/android-host/src/services.rs`, `docs/denoise.md`.
 - **Steps:** 1. Tile size and worker count from `memory::default_budget()`; refuse with a reason below the minimum.
   2. A first-tile timing gives the estimate; the activity row shows it and can cancel. 3. Out-of-the-box weights
-  depend on gap 11 (no shippable model yet): until then the user installs a model as on desktop.
+  depend on gap 11 (no shippable model yet): until then the user installs a model (on a phone from the model list's Download).
 - **Tests:** `tile_size_follows_budget`, `below_minimum_ram_refuses_with_reason`, `estimate_from_first_tile`.
 - **Verify:** `cargo test -p lightcraft-denoise -- tile_size && cargo test -p lightcraft-engine -- below_minimum_ram
   estimate_from && cargo xtask android check && cargo xtask ci`
@@ -580,7 +580,8 @@ as stated):
   5 GiB, "AI Denoise needs a device with 6 GB of memory"), passed to the engine (`Session::set_denoise_min_ram`), which
   refuses the queue, the pump and exports. The estimate comes from the tiles done so far (`denoise::remaining`), shown
   under the Detail slider and on the activity row (`TaskInfo::remaining_ms`), whose ✕ now stops the photo and empties
-  the queue (those photos show Cancelled until asked again). Device times: Device checklist in `android.md`. Tests:
+  the queue (those photos show Cancelled until asked again). A phone gets its model from the model list's Download;
+  Install from file… stays desktop-only (disabled with the reason). Device times: Device checklist in `android.md`. Tests:
   `tile_size_follows_budget` (`crates/denoise/tests/tile_budget.rs`, with the CPU runner's real memory under
   `runtime`), `below_minimum_ram_refuses_with_reason`, `estimate_from_first_tile`,
   `a_tight_budget_loads_the_model_for_a_smaller_tile_and_a_roomy_one_for_the_manifests`,

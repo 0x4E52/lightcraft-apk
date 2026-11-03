@@ -587,7 +587,8 @@ What only a device (or a CI run an agent cannot start) can show. Whoever saw it 
 - [ ] APK-51: a USB-C card reader with JPEG + raw folders and a phone with a microSD in it: both appear under File ▸
   Import from Device and in Local with their names within two seconds of mounting; Import verifies and copies; Browse
   shows the photos in place; unplugging mid-import gives "not readable" errors and no crash (logcat: no `panicked`).
-- [ ] APK-64: install a denoise model (Settings ▸ AI Denoise ▸ Install from file…) and denoise a 24 MP Bayer raw on an
+- [ ] APK-64: install a denoise model from the model list (Settings ▸ AI Denoise ▸ Download; Install from file… is
+  disabled on Android) and denoise a 24 MP Bayer raw on an
   8 GB and on a 6 GB phone: record each time (from the activity row's start to Ready), the tile side the profile line
   prints with `debug.lightcraft.profile=1` (`[denoise] tiles of N cells` when stepped down), and that the "about N min
   left" estimate is within a factor of two after the first tiles; the row's ✕ stops it; no low-memory kill (logcat:

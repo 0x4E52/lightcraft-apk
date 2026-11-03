@@ -925,7 +925,9 @@ pub fn remaining(elapsed: Duration, done: usize, total: usize) -> Option<Duratio
 /// Why AI Denoise is off on a device with `total` bytes of memory when the host asks for at least `min`
 /// (`Services::min_ram_for_denoise`): a phone's low-memory killer ends the process without a word. `None` = on (no
 /// limit asked for, or enough). A device that can't tell its memory is off when a limit is asked for. The size named
-/// is the class of phone that reads `min` or more (a phone sold with 6 GB reads about 5.5 GiB).
+/// is the class of phone that reads `min` or more (a phone sold with 6 GB reads about 5.5 GiB): the formula,
+/// `min` in whole GiB plus one, assumes the host's floor is one GiB below a class (5 GiB → "6 GB"), and the locales
+/// translate only that sentence, so a host asking for another floor changes this text and the locales with it.
 pub fn ram_reason(min: Option<u64>, total: Option<u64>) -> Option<String> {
     let min = min?;
     if total.is_some_and(|total| total >= min) {
@@ -1063,8 +1065,13 @@ pub(crate) fn tile_plan(spec: &JobSpec, model: Arc<dyn Model>, share: usize) -> 
     if plan.tile != loaded_tile && lightcraft_profile::enabled() {
         eprintln!("[denoise] tiles of {} cells (the model's {max_tile} need more than {} MB)", plan.tile, share >> 20);
     }
-    let model = if plan.tile == loaded_tile { model } else { loaded(spec, Some((plan.tile, plan.overlap)))? };
-    Ok((model, plan))
+    if plan.tile == loaded_tile {
+        return Ok((model, plan));
+    }
+    // the old model goes before the new one loads, so the low-memory path never holds two
+    drop(model);
+    spec.model.lock().unwrap_or_else(PoisonError::into_inner).take();
+    Ok((loaded(spec, Some((plan.tile, plan.overlap)))?, plan))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
