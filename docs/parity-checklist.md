@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-02 · **Change:** minor (LR-SYNC-HANDOFF: new row, phone ↔ computer handoff through files, APK-62; LR-EDIT-TOUCH-SLIDERS: new row, slider gestures on the photo and touch slider taps, APK-61; LR-LIB-CULL-TOUCH: swipes give way to them while a panel of sliders is open; LR-IMP-CAMERA-ANDROID: new row, cameras by USB on Android, APK-59; LR-BEHAV-PREVIEW-HOVER: tap preview of presets on touch layouts, APK-58; LR-MASK-BRUSH: Pen Pressure off on touch-first hosts, APK-56; LR-LIB-CULL-TOUCH: new row, culling by finger and Cull Mode, APK-55; LR-IMP-PHOTOLIB, LR-IMP-DEVICE-ANDROID: the note on raw types Android hides, APK-52; LR-IMP-DEVICE-ANDROID: new row, SD cards and USB drives on Android, APK-51; LR-BEHAV-ANDROID-BACKUP: new row, library backup and restore on Android, APK-50; LR-EXP-SHARE-ANDROID: new row, exports to Pictures/Documents and File ▸ Share on Android, APK-27; LR-IMP-SHARE-ANDROID: new row, "Open with" and shares on Android, APK-25; LR-IMP-PICKER-ANDROID: new row, the in-app file chooser and the commands disabled on Android, APK-24; LR-IMP-PHOTOLIB: new row, Android's Import from Photo Library, APK-23; LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-03 · **Change:** minor (LR-PREF-LAYOUT-TOUCH: new row, left-handed and compact layouts, APK-63; LR-SYNC-HANDOFF: new row, phone ↔ computer handoff through files, APK-62; LR-EDIT-TOUCH-SLIDERS: new row, slider gestures on the photo and touch slider taps, APK-61; LR-LIB-CULL-TOUCH: swipes give way to them while a panel of sliders is open; LR-IMP-CAMERA-ANDROID: new row, cameras by USB on Android, APK-59; LR-BEHAV-PREVIEW-HOVER: tap preview of presets on touch layouts, APK-58; LR-MASK-BRUSH: Pen Pressure off on touch-first hosts, APK-56; LR-LIB-CULL-TOUCH: new row, culling by finger and Cull Mode, APK-55; LR-IMP-PHOTOLIB, LR-IMP-DEVICE-ANDROID: the note on raw types Android hides, APK-52; LR-IMP-DEVICE-ANDROID: new row, SD cards and USB drives on Android, APK-51; LR-BEHAV-ANDROID-BACKUP: new row, library backup and restore on Android, APK-50; LR-EXP-SHARE-ANDROID: new row, exports to Pictures/Documents and File ▸ Share on Android, APK-27; LR-IMP-SHARE-ANDROID: new row, "Open with" and shares on Android, APK-25; LR-IMP-PICKER-ANDROID: new row, the in-app file chooser and the commands disabled on Android, APK-24; LR-IMP-PHOTOLIB: new row, Android's Import from Photo Library, APK-23; LR-MASK-UPDATE ⬜ → 🟡 and LR-EDIT-AUTO on a selection, APK-60; LR-PRIVACY-NETWORK: Settings ▸ Network lists every network use and has Never use the network; integration batch 36: slideshow module, print-ready PDF fixes, local adjustment presets, Layout Image loupe overlay, Delete in an album removes from it, new languages Czech, Polish, Italian-ready catalogs; many rows' notes updated by their PRs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -47,15 +47,15 @@ cited here still exists. Formerly docs/parity.md.
 | S. Export (EXP) | 15 | 6 | 0 | 0 | 7/7 (100%) | 7/8 (88%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 1 | 1 | 0 | — | 0/1 (0%) |
-| V. Preferences (PREF) | 7 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
+| V. Preferences (PREF) | 7 | 3 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 7 | 1 | 1 | 8/8 (100%) | 7/11 (64%) |
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 78 | 4 | 2 | 1 | 49/52 (94%) | 24/26 (92%) |
 | Lightroom Classic extras | 40 | 23 | 23 | 8 | — | 24/26 (92%) |
-| **Total** | 420 | 72 | 58 | 35 | 194/201 (97%) | 148/167 (89%) |
+| **Total** | 420 | 73 | 58 | 35 | 194/201 (97%) | 148/167 (89%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **82.9%** of 550 in-scope rows — P0 98.3% of 201 · P1 93.4% of 167 · P2 56.1% of 181.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **82.8%** of 551 in-scope rows — P0 98.3% of 201 · P1 93.4% of 167 · P2 56.0% of 182.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -448,6 +448,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-PREF-WATERMARK | Watermark settings | P1 | ✅ | `cmd:export.savePreset`, `crates/ui-egui/src/panels/dialogs.rs` | set in the Export dialog; kept with Export with Previous and in saved export presets |
 | LR-PREF-SHORTCUTS | Shortcut customisation | — | ✅ | `cmd:app.setShortcut`, `cmd:app.resetShortcuts`, `crates/ui-egui/src/panels/keymap.rs` | an extra (the reference app has no keymap editor): Help ▸ Keyboard Shortcuts (⌘/) lists every command; click a shortcut and press the new keys (Esc cancels), × removes, ↺ restores, Reset All; a key another command had moves over; saved in `ui.json`; native menu accelerators follow. Rating/label digits and secondary keys are listed read-only and yield to a key given to a command |
 | LR-PREF-TECHPREVIEW | Early-access toggles | P2 | ⬜ | | |
+| LR-PREF-LAYOUT-TOUCH | Left-handed and compact layouts | P2 | 🟡 | `cmd:app.settings`, `cmd:ui.dock.reset` | Settings ▸ Interface ▸ Layout: Left-handed phone toolbar (order reversed, flush right, starts scrolled right), Compact phone toolbar (icons only, 48 pt), Left-handed tablet dock (`Workspace::mirror`); kept per screen size (`LayoutPrefs`, `crates/ui-egui/src/state.rs`; `sheet.rs`, `docking.rs`, `panels/settings.rs`, `tests_layout_prefs.rs`; spec in `docs/android-touch-ui.md`). Synthetic touches only, not checked on a device |
 | LR-PREF-NOTIFICATIONS | Notifications | OOS | 🚫 | | |
 | LR-PREF-DEVICE | Device settings | P2 | ⬜ | | |
 | LR-PRIVACY-NETWORK | Every network use listed; Never use the network (beyond Lightroom) | P2 | ✅ | `crates/fetch/src/uses.rs`, `crates/fetch/tests/uses_scan.rs`, `crates/ui-egui/src/panels/settings.rs` (`network_tab`), `crates/ui-egui/src/tests_network.rs`, `docs/android.md` | an extra: Settings ▸ Network lists each use of the network (purpose, hosts, the action that starts it) with a Never use the network switch that makes downloads refuse; the registry is code and a source scan fails the build when a file reaches the network outside it; `docs/android.md` ▸ Privacy has the store's Data safety answers. Not yet on a device |
@@ -912,3 +913,4 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 | 2026-11-02 | minor | LR-IMP-PHOTOLIB, LR-IMP-DEVICE-ANDROID: the import review and Local name the raw types the phone hides from apps (APK-52) |
 | 2026-11-02 | minor | LR-LIB-CULL-TOUCH: new row (🟡), culling by finger in the loupe and Cull Mode (APK-55) |
 | 2026-11-02 | minor | LR-IMP-CAMERA-ANDROID: new row (🟡), cameras by USB (PTP / MTP) under Import from Device on Android (APK-59) |
+| 2026-11-03 | minor | LR-PREF-LAYOUT-TOUCH: new row (🟡), Settings ▸ Interface ▸ Layout: left-handed phone toolbar, compact toolbar, mirrored tablet dock (APK-63) |

@@ -297,6 +297,10 @@ Advanced `ui.dock` operations use the same validated transaction as pointer gest
 `size` (`{"Ratio":0.5}`, `{"FixedFirst":280}`, or `{"FixedSecond":280}`),
 `setStackOpen` takes `open`, and `resizeStack` takes a point `height` or null.
 A center `move` can include `before` (panel ID or null to append) for tab order.
+`docking` is stored as displayed: mirrored when `layout.tablet.leftHanded` is on (`dockingMirrored` says so).
+A layout read back from `ui.get` can be set as it is; one written for right-handed sides needs
+`"dockingMirrored": false` in the same `ui.set` so it is mirrored on the next frame.
+
 The equivalent `{"action": ...}` form accepts a serialized shared docking action;
 this is also the form emitted by the renderer. Protected-canvas and app-specific panel
 rules apply equally to both forms.

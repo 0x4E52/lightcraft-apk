@@ -40,10 +40,14 @@ edit, import or delete in the personal library). Screenshots of Adobe apps never
   LightCraft (APK-33, `crates/ui-egui/src/sheet.rs`): below 600 pt window width (`state::PHONE_WIDTH`, any platform)
   the tool strip becomes this toolbar (Library, Presets, Edit, Crop, Remove, Masking, Red Eye, Versions, History,
   Keywords, Info; 68×56 pt buttons) and a tool opens the desktop's own panel as a full-width sheet above it, with a
-  drag handle for its height. Opening a tool there switches its desktop panel on (as the tool strip does); tapping
+  drag handle for its height. Settings ▸ Interface ▸ Layout (APK-63) changes the strip: *Left-handed* (`layout.phone.leftHanded`)
+  reverses the button order, packs it flush right and starts it scrolled to the right end; *Compact toolbar*
+  (`layout.phone.compactToolbar`) drops the labels (icon-only, 48 pt buttons). Opening a tool there switches its desktop panel on (as the tool strip does); tapping
   the shown tool or Back puts the sheet down and the panel choice stays.
 - **Tablet landscape:** the same panels in a right-hand column (on Android the panel side is fixed; iOS lets it move
-  left) (verify).
+  left) (verify). LightCraft (APK-63): Settings ▸ Interface ▸ Layout ▸ *Left-handed, panels on the other side*
+  (`layout.tablet.leftHanded`) mirrors the dock left to right (`Workspace::mirror`); the three choices are kept per
+  screen size and set through `ui.set` by the keys named here.
 - **Premium badge:** in the free app, premium tools stay visible with a badge and open an upgrade screen. LightCraft
   has no tiers: every tool it has is free.
 - **Dialogs:** LightCraft (APK-33b, `panels::dialogs::width`): every dialog is at most the content width (the window
@@ -172,3 +176,4 @@ toolbar and sheets of §1, APK-34 the top bar and overflow menu. A card that has
 - 2026-11-02: §2 as built (APK-55): the loupe's swipes, taps and two-finger tap, Cull Mode; every row names its command.
 - 2026-11-02: slider gestures on the photo and touch slider taps as built (APK-61).
 - 2026-11-02: APK-61 review: the Settings switch, the layout (not the input) decides slider taps, a drag ends with the loupe.
+- 2026-11-03: left-handed and compact layouts as built (APK-63).

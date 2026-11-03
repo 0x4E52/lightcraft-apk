@@ -135,3 +135,19 @@ fn reset_and_toolbar_stay_mirrored() {
     let lib = rect(&h, "toolbar:library").expect("library tool");
     assert!(lib.right() > 412.0 - 24.0 && lib.right() <= 412.0, "Library at the right edge: {lib:?}");
 }
+
+#[test]
+fn invalid_docking_restores_mirrored() {
+    // the restore fallback rebuilds the layout; with Left-handed on it must still come out mirrored
+    let mut h = at([1280.0, 800.0], 1.0);
+    h.app.ui.layout.tablet.left_handed = true;
+    frames(&mut h);
+    let mut broken = h.app.ui.docking.clone().expect("workspace");
+    broken.layout.root = None; // no document view: fails validation
+    h.app.ui.docking = Some(broken);
+    frames(&mut h);
+    assert!(h.app.ui.docking_mirrored);
+    let tools = rect(&h, "panel:right_panel").expect("tool panel");
+    let canvas = h.app.canvas_rect.expect("canvas");
+    assert!(tools.center().x < canvas.center().x, "mirrored after the fallback: {tools:?} {canvas:?}");
+}
