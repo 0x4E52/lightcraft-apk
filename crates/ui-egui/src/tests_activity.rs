@@ -200,6 +200,18 @@ fn quit_with_a_running_task_asks_and_quit_anyway_cancels() {
 }
 
 #[test]
+fn quit_while_ai_denoise_runs_does_not_ask() {
+    let mut h = demo();
+    // as `Session::denoise_track` starts it: cancellable, but only a cache
+    let g = h.app.session.activity.start("denoise", "AI Denoise", Cancel::Yes);
+    g.set_quit_asks(false);
+    wait_visible(&mut h);
+    assert!(has(&h, &format!("activity:cancel:{}", g.id())), "its ✕ is still there");
+    assert!(crate::panels::notices::may_close(&mut h.app));
+    assert!(h.app.quit_prompt.is_none(), "{:?}", h.app.quit_prompt);
+}
+
+#[test]
 fn quit_cancel_keeps_the_task_running() {
     let mut h = demo();
     let g = h.app.session.activity.start("import", "Importing", Cancel::Yes);

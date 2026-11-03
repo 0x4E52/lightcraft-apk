@@ -104,6 +104,8 @@ struct Entry {
     remaining_ms: AtomicU64,
     cancel: Option<Arc<AtomicBool>>,
     cancellable: AtomicBool,
+    /// Quitting while it runs asks first ([`TaskGuard::set_quit_asks`]); off for work that only fills a cache.
+    quit_asks: AtomicBool,
     /// Held while a cancel is decided ([`Activity::cancel`], [`Activity::cancel_all`]) and while
     /// cancelling is switched ([`TaskGuard::set_cancellable`], [`TaskHandle::set_cancellable`]): a
     /// step that turns it off and then reads the cancel flag either sees a cancel that was
@@ -193,6 +195,7 @@ impl Activity {
             detail: Mutex::new(String::new()),
             remaining_ms: AtomicU64::new(u64::MAX),
             cancellable: AtomicBool::new(cancel.is_some()),
+            quit_asks: AtomicBool::new(true),
             cancel,
             gate: Mutex::new(()),
         });
@@ -219,9 +222,14 @@ impl Activity {
         tasks.iter().filter(|e| e.try_cancel()).count()
     }
 
-    /// Tasks that quitting would cut short: cancellable ones not already stopping.
+    /// Tasks that quitting would cut short and should ask about first: cancellable ones not already stopping, and not
+    /// marked [`TaskGuard::set_quit_asks`]`(false)`.
     pub fn running_cancellable(&self) -> Vec<TaskInfo> {
-        lock(&self.inner.tasks).iter().filter(|e| e.is_cancellable() && !e.is_cancelled()).map(|e| e.info()).collect()
+        lock(&self.inner.tasks)
+            .iter()
+            .filter(|e| e.is_cancellable() && !e.is_cancelled() && e.quit_asks.load(Ordering::Relaxed))
+            .map(|e| e.info())
+            .collect()
     }
 }
 
@@ -259,6 +267,12 @@ impl TaskGuard {
     /// A step that must not be cut short (the Lightroom import's commit) turns cancelling off for its duration.
     pub fn set_cancellable(&self, yes: bool) {
         self.entry.set_cancellable(yes);
+    }
+
+    /// Whether quitting while this task runs asks first ([`Activity::running_cancellable`]; on by default). Work
+    /// that only fills a cache made again later (AI Denoise) turns it off: its ✕ still stops it, quitting just does.
+    pub fn set_quit_asks(&self, yes: bool) {
+        self.entry.quit_asks.store(yes, Ordering::Relaxed);
     }
 
     pub fn cancel_flag(&self) -> Option<Arc<AtomicBool>> {
@@ -370,6 +384,17 @@ mod tests {
         let (_x, _y, _z) = (a.start("export", "E", Cancel::Yes), a.start("import", "I", Cancel::Yes), a.start("faces", "F", Cancel::No));
         assert_eq!(a.cancel_all(), 2);
         assert!(a.running_cancellable().is_empty());
+    }
+
+    #[test]
+    fn a_task_that_does_not_ask_on_quit_is_not_listed_but_still_cancels() {
+        let a = Activity::default();
+        let g = a.start("denoise", "AI Denoise", Cancel::Yes);
+        g.set_quit_asks(false);
+        assert!(a.running_cancellable().is_empty());
+        assert!(a.list()[0].cancellable);
+        a.cancel(g.id()).unwrap();
+        assert!(g.is_cancelled());
     }
 
     #[test]

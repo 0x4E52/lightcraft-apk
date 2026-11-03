@@ -1060,6 +1060,8 @@ fn estimate_from_first_tile() {
     }
     let row = x.s.activity.list().into_iter().find(|t| t.kind == "denoise").expect("the row");
     assert!(row.remaining_ms.is_some_and(|ms| ms > 0) && row.cancellable, "{row:?}");
+    // a cache being filled: quitting doesn't ask about it
+    assert!(x.s.activity.running_cancellable().is_empty(), "{:?}", x.s.activity.running_cancellable());
     assert_eq!(serde_json::to_value(x.s.denoise_photo_state(id)).unwrap()["state"], "running");
     release.store(true, Ordering::Relaxed);
     pump_until_ready(&mut x.s, 1);

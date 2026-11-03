@@ -3,7 +3,7 @@
 Everything that takes a while runs off the UI thread and shows up in **one** place: the activity stack in the
 top-left corner under the top bar (issue #345). Each task has a row with its name, a progress bar (a sweep while
 the amount of work isn't known), the count and what it's working on, and ✕ if it can stop. Quitting asks first while
-a task that can stop is running. Agents see the same list through `activity.list` / `activity.cancel`, and
+a task that can stop is running (not one that only fills a cache, such as AI Denoise). Agents see the same list through `activity.list` / `activity.cancel`, and
 `ui.inspect` reports it as `activity`.
 
 The registry is `lightcraft_engine::activity` (`crates/engine/src/activity.rs`, `Session::activity`). The stack is
@@ -46,6 +46,8 @@ guard.detail(&file_name);
   - `Cancel::Yes`: the job polls `guard.is_cancelled()` itself.
   - `Cancel::No`: the job can't stop; it gets no ✕ and doesn't make Quit ask.
   - `set_cancellable(false)` for a phase that has to finish once started (a Lightroom import adding its photos).
+  - `set_quit_asks(false)` for work that only fills a cache made again later (AI Denoise): its ✕ still stops it,
+    but quitting while it runs doesn't ask (`Activity::running_cancellable` leaves it out).
 - **Quiet periodic work** shows no row: the auto-import folder listing runs every few seconds through
   `tasks::spawn(.., None, ..)`.
 
@@ -59,7 +61,7 @@ guard.detail(&file_name);
 | Model downloads | `crates/engine/src/face_download.rs` | report progress through a `TaskHandle` in shared state |
 | Lightroom catalog import | `crates/ui-egui/src/lightroom_import.rs` | stop being cancellable for a phase that must finish |
 | Face scan | `crates/engine/src/cmd/face_recognize.rs` | a continuous job with no ✕, kept in session state |
-| AI Denoise | `crates/engine/src/denoise.rs` | a continuous job kept in session state; `Cancel::Yes`, whose ✕ the pump takes (stops the photo, empties the queue, marks those photos Cancelled until asked again); the time left (`TaskInfo::remaining_ms`) from the first tiles |
+| AI Denoise | `crates/engine/src/denoise.rs` | a continuous job kept in session state; `Cancel::Yes`, whose ✕ the pump takes (stops the photo, empties the queue, marks those photos Cancelled until asked again); the time left (`TaskInfo::remaining_ms`) from the first tiles; `set_quit_asks(false)`, so quitting doesn't ask about it |
 | Find Missing Photos | `crates/ui-egui/src/tasks.rs` | a generic background task with a row (`kind: Some(..)`) |
 | Reading focus points | `crates/engine/src/focus_scan.rs` | a worker paced by the UI's per-frame pump (`focus.pump {pace}`); `Cancel::Flag`; commits in batches without undo steps |
 

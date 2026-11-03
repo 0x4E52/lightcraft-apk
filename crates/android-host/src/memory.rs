@@ -114,6 +114,17 @@ mod tests {
     }
 
     #[test]
+    fn denoise_reason_for_the_floor_is_translated() {
+        // `ram_reason` words the class from the floor; the locales translate only the sentence this floor gives, so a
+        // new floor must come with its translations (the UI shows it as a sentence, with a full stop)
+        let why = lightcraft_engine::denoise::ram_reason(Some(DENOISE_MIN_RAM), Some(0)).unwrap();
+        let shown = format!("{why}.");
+        for locale in lightcraft_ui_egui::i18n::Locale::ALL.iter().filter(|l| **l != lightcraft_ui_egui::i18n::Locale::En) {
+            assert_ne!(locale.tr(&shown), shown, "{} has no entry for {shown:?}", locale.code());
+        }
+    }
+
+    #[test]
     fn mem_total_reads_bytes() {
         assert_eq!(mem_total(&meminfo(3_785_940)), Some(3_785_940 * 1024));
         // the unit may be absent on odd kernels

@@ -927,7 +927,8 @@ pub fn remaining(elapsed: Duration, done: usize, total: usize) -> Option<Duratio
 /// limit asked for, or enough). A device that can't tell its memory is off when a limit is asked for. The size named
 /// is the class of phone that reads `min` or more (a phone sold with 6 GB reads about 5.5 GiB): the formula,
 /// `min` in whole GiB plus one, assumes the host's floor is one GiB below a class (5 GiB → "6 GB"), and the locales
-/// translate only that sentence, so a host asking for another floor changes this text and the locales with it.
+/// translate only that sentence, so a host asking for another floor changes this text and the locales with it
+/// (`lightcraft-android-host`'s `denoise_reason_for_the_floor_is_translated` fails until they do).
 pub fn ram_reason(min: Option<u64>, total: Option<u64>) -> Option<String> {
     let min = min?;
     if total.is_some_and(|total| total >= min) {
@@ -1705,7 +1706,8 @@ impl Session {
 
     /// Keep AI Denoise's row in the activity stack up to date (each `denoise.pump`): there while a photo is being made or
     /// waits its turn, with the running photo's tiles, how long the rest will take and its file name; gone when the
-    /// queue is idle. Its ✕ ([`Self::denoise_take_cancel`]) stops the photo being made and empties the queue.
+    /// queue is idle. Its ✕ ([`Self::denoise_take_cancel`]) stops the photo being made and empties the queue; quitting
+    /// while it runs doesn't ask (the picture is a cache, made again later).
     pub(crate) fn denoise_track(&mut self) {
         self.denoise_take_cancel();
         if !self.denoise_busy() {
@@ -1715,6 +1717,8 @@ impl Session {
         let task = self.denoise.task.get_or_insert_with(|| {
             let t = self.activity.start("denoise", "AI Denoise", crate::activity::Cancel::Yes);
             t.set_unit(crate::activity::Unit::Percent);
+            // only a cache, made again when the photo is next looked at: quitting doesn't ask about it
+            t.set_quit_asks(false);
             t
         });
         match &self.denoise.running {

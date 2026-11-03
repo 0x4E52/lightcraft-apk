@@ -550,6 +550,20 @@ mod tests {
     }
 
     #[test]
+    fn a_stepped_down_tile_is_refused_cleanly() {
+        // a phone's memory plan (APK-64) can reload the model at a smaller side than the server was started with: the
+        // greeting refuses it, so the engine never shares tiles with that server, and a tile sent anyway is refused too
+        let addr = start("aa11", model(2.0));
+        let small = Remote::new(&addr, TOKEN, "aa11", T / 2);
+        let e = small.hello().unwrap_err().to_string();
+        assert!(e.contains(&format!("it runs {T}-cell tiles, this model {}", T / 2)), "{e}");
+        let half: Vec<f32> = (0..4 * (T / 2) * (T / 2)).map(|i| (i as f32 * 0.37).sin() * 0.5 + 0.5).collect();
+        assert!(small.try_run(&half).unwrap().is_err());
+        // the server keeps serving its own side
+        assert!(Remote::new(&addr, TOKEN, "aa11", T).hello().is_ok());
+    }
+
+    #[test]
     fn hostile_requests_are_refused_and_the_server_keeps_working() {
         let addr = start("aa11", model(1.0));
         let talk = |bytes: &[u8]| -> String {
