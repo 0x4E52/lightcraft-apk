@@ -88,7 +88,45 @@ impl Default for Workspace {
     }
 }
 
+fn mirror_size(size: SplitSize) -> SplitSize {
+    match size {
+        SplitSize::Ratio(r) => SplitSize::Ratio(1.0 - r),
+        SplitSize::FixedFirst(v) => SplitSize::FixedSecond(v),
+        SplitSize::FixedSecond(v) => SplitSize::FixedFirst(v),
+    }
+}
+
+fn mirror_node(node: &mut Node<Panel>) {
+    if let Node::Split { axis, size, first, second } = node {
+        mirror_node(first);
+        mirror_node(second);
+        if *axis == SplitAxis::Horizontal {
+            std::mem::swap(first, second);
+            *size = mirror_size(*size);
+        }
+    }
+}
+
 impl Workspace {
+    /// Swap left and right: side-by-side splits trade their children (and which one is fixed), and
+    /// the places closed panels return to follow. Doing it twice gives the layout back.
+    pub fn mirror(&mut self) {
+        if let Some(root) = self.layout.root.as_mut() {
+            mirror_node(root);
+        }
+        for (_, location) in &mut self.hidden {
+            let flipped = match location.placement {
+                Placement::Split(Zone::Left) => Some(Zone::Right),
+                Placement::Split(Zone::Right) => Some(Zone::Left),
+                _ => None,
+            };
+            if let Some(zone) = flipped {
+                location.placement = Placement::Split(zone);
+                location.size = location.size.map(mirror_size);
+            }
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         self.layout.validate().map_err(|error| error.to_string())?;
         if !self.layout.contains(&Panel::Canvas) || self.hidden.len() > Panel::ALL.len() {
@@ -396,11 +434,24 @@ fn command_impl(app: &mut crate::LightcraftApp, reset: bool, params: &Value, ren
 
 pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
     let t = crate::theme::Tokens::get(ui.ctx());
-    let mut workspace = app.ui.docking.clone().unwrap_or_else(|| from_ui(app));
+    let mut workspace = match app.ui.docking.clone() {
+        Some(w) => w,
+        None => {
+            app.ui.docking_mirrored = false;
+            from_ui(app)
+        }
+    };
     if let Err(error) = workspace.validate().and_then(|()| sync(&mut workspace, app)) {
         app.ui.toast = Some((format!("Panel layout could not be restored: {error}"), ui.input(|input| input.time) + 8.0, None));
         workspace = from_ui(app);
         let _ = sync(&mut workspace, app);
+    }
+    // Left-handed (tablet): the stored layout follows the choice, however it came to differ
+    // (the setting changed, or a layout was loaded or rebuilt).
+    let want = app.ui.layout.tablet.left_handed;
+    if app.ui.docking_mirrored != want {
+        workspace.mirror();
+        app.ui.docking_mirrored = want;
     }
     // Legacy visibility commands may replace the layout before this render starts.
     cancel_replaced_gesture(app, Some(&workspace));

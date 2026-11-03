@@ -545,6 +545,12 @@ as stated):
   ci`
 - **Depends on:** APK-32c, APK-33  **Needs:** none  **Model:** sonnet — layout parameters with structural tests.
 - **Done when:** tests pass.
+- **Result:** `UiState::layout` (`LayoutPrefs`: a version, `phone` = left-handed + compact toolbar, `tablet` =
+  left-handed) under Settings ▸ Interface ▸ Layout. On the phone, left-handed reverses the edit toolbar and sets it
+  flush right (`sheet.rs`); compact drops the labels (48 pt buttons). On wider windows, left-handed mirrors the
+  dock (`Workspace::mirror`: horizontal splits swap, fixed sizes and closed panels' places follow); `UiState::
+  docking_mirrored` records which way the stored layout is, so a rebuilt or loaded layout is brought in line. A save
+  with no `version` (flat fields) migrates into both breakpoints. Tests: `tests_layout_prefs.rs`.
 
 ### APK-64 AI denoise on a phone
 - **Answers:** [C10](android-competitive.md#c10-ai-features-online-only-or-missing) (denoise missing on mobile,

@@ -744,6 +744,11 @@ fn interface_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         use crate::state::InfoOverlay as I;
         choices(ui, "settingsInfo", &[(I::Off, "Off"), (I::Basic, "File & date"), (I::Exposure, "Exposure")], &mut app.ui.info_overlay);
     });
+    heading(ui, t, crate::i18n::tr("Layout"));
+    check(ui, "settings.leftHandedPhone", &mut app.ui.layout.phone.left_handed, "Left-handed: phone toolbar starts at the right");
+    check(ui, "settings.compactToolbar", &mut app.ui.layout.phone.compact_toolbar, "Compact phone toolbar (icons only)");
+    check(ui, "settings.leftHandedTablet", &mut app.ui.layout.tablet.left_handed, "Left-handed: panels on the other side (tablet)");
+    hint(ui, t, crate::i18n::tr("Each choice is kept for its screen size: the phone toolbar and the panels beside the photo."));
 }
 
 // ----------------------------------------------------------------------------------- Slideshow

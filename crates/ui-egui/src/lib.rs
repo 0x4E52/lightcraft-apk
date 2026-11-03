@@ -144,6 +144,8 @@ mod tests_last_crash;
 #[cfg(test)]
 mod tests_layout_image;
 #[cfg(test)]
+mod tests_layout_prefs;
+#[cfg(test)]
 mod tests_library_backup;
 #[cfg(test)]
 mod tests_library_problem;

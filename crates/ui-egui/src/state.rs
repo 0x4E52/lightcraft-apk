@@ -607,6 +607,73 @@ pub const SHORT_WINDOW_HEIGHT: f32 = 500.0;
 /// edit toolbar (`crate::sheet`). Follows the width on every platform, never the platform.
 pub const PHONE_WIDTH: f32 = 600.0;
 
+/// The layout choices a person makes for the phone and for wider (tablet) windows, one set per
+/// breakpoint (APK-63). They are saved with the settings and no update resets them: a saved set
+/// older than [`LAYOUT_PREFS_VERSION`] is migrated when read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "RawLayoutPrefs", rename_all = "camelCase")]
+pub struct LayoutPrefs {
+    pub version: u32,
+    pub phone: PhoneLayout,
+    pub tablet: TabletLayout,
+}
+
+/// The layout version this build writes. Bump it when a layout change needs the saved choice
+/// carried over, and add the step to `RawLayoutPrefs::from`.
+pub const LAYOUT_PREFS_VERSION: u32 = 1;
+
+/// Phone (narrower than [`PHONE_WIDTH`]): the edit toolbar along the bottom.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PhoneLayout {
+    /// The toolbar's order mirrors: the first tool sits at the right edge, under the right thumb.
+    pub left_handed: bool,
+    /// Icons without labels (narrower buttons, more tools in view). Off: icon over label.
+    pub compact_toolbar: bool,
+}
+
+/// Wider windows: the dock beside the photo.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TabletLayout {
+    /// The panels' sides swap: the tool panel on the left, the library and presets on the right.
+    pub left_handed: bool,
+}
+
+impl Default for LayoutPrefs {
+    fn default() -> Self {
+        Self { version: LAYOUT_PREFS_VERSION, phone: PhoneLayout::default(), tablet: TabletLayout::default() }
+    }
+}
+
+/// What is on disk: the current shape, plus the flat fields version 0 (no `version`) used.
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct RawLayoutPrefs {
+    version: u32,
+    phone: PhoneLayout,
+    tablet: TabletLayout,
+    left_handed: Option<bool>,
+    compact_toolbar: Option<bool>,
+}
+
+impl From<RawLayoutPrefs> for LayoutPrefs {
+    fn from(raw: RawLayoutPrefs) -> Self {
+        let mut out = LayoutPrefs { version: LAYOUT_PREFS_VERSION, phone: raw.phone, tablet: raw.tablet };
+        if raw.version < 1 {
+            // version 0 kept one flat choice for every window; it applies to both breakpoints
+            if let Some(v) = raw.left_handed {
+                out.phone.left_handed = v;
+                out.tablet.left_handed = v;
+            }
+            if let Some(v) = raw.compact_toolbar {
+                out.phone.compact_toolbar = v;
+            }
+        }
+        out
+    }
+}
+
 /// What the Keywording box shows: the keywords (chips to edit), them with the keywords containing
 /// them, or what exported files will carry (read only).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -640,6 +707,10 @@ pub struct UiState {
     pub window: Option<crate::window_place::WindowPlace>,
     /// Shared panel arrangement; absent in legacy settings until their first layout.
     pub docking: Option<crate::docking::Workspace>,
+    /// Whether `docking` is stored with the panel sides swapped (Left-handed on a tablet).
+    pub docking_mirrored: bool,
+    /// Left-handed, panel side and toolbar choices, per breakpoint.
+    pub layout: LayoutPrefs,
     #[serde(default = "crate::i18n::default_language")]
     pub language: crate::i18n::Locale,
     /// The Build Previews run last announced (its identity, finished?).
@@ -1361,6 +1432,8 @@ impl Default for UiState {
         UiState {
             window: None,
             docking: None,
+            docking_mirrored: false,
+            layout: LayoutPrefs::default(),
             language: crate::i18n::default_language(),
             preview_build_seen: None,
             unsaved_seen: false,

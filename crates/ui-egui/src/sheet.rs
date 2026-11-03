@@ -88,6 +88,8 @@ const HANDLE_TOUCH_H: f32 = 48.0;
 /// One toolbar button (icon over label): finger-sized in both directions.
 const TOOL_W: f32 = 68.0;
 const TOOL_H: f32 = 56.0;
+/// The compact toolbar's button: the icon alone, still a finger wide.
+const COMPACT_W: f32 = 48.0;
 
 /// The toolbar's tools, in the order of the desktop's tool strip, the Library first.
 const TOOLS: [(&str, Icon, &str); 11] = [
@@ -247,12 +249,21 @@ pub fn toolbar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(4, 4)).stroke(egui::Stroke::new(1.0, t.divider)))
         .show(ui, |ui| {
             egui::ScrollArea::horizontal().id_salt("edit-toolbar").auto_shrink([false, true]).show(ui, |ui| {
+                let prefs = app.ui.layout.phone;
+                let w = if prefs.compact_toolbar { COMPACT_W } else { TOOL_W };
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
-                    for (id, icon, label) in TOOLS {
+                    let mut tools = TOOLS.to_vec();
+                    if prefs.left_handed {
+                        // mirrored: the first tool at the right edge (flush right when they all fit)
+                        tools.reverse();
+                        let used = tools.len() as f32 * (w + 2.0);
+                        ui.add_space((ui.available_width() - used).max(0.0));
+                    }
+                    for (id, icon, label) in tools {
                         // as the desktop's tool strip: everything but the Library and History needs a photo
                         let enabled = has_photo || matches!(id, "library" | "activity");
-                        if tool_button(ui, &t, id, icon, label, active(app, id), enabled) {
+                        if tool_button(ui, &t, id, icon, label, active(app, id), enabled, prefs.compact_toolbar) {
                             tap(app, id);
                         }
                     }
@@ -263,9 +274,11 @@ pub fn toolbar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 }
 
 /// One toolbar button: the icon over its label. Says whether it was tapped.
-fn tool_button(ui: &mut egui::Ui, t: &Tokens, id: &str, icon: Icon, label: &str, on: bool, enabled: bool) -> bool {
+#[allow(clippy::too_many_arguments)]
+fn tool_button(ui: &mut egui::Ui, t: &Tokens, id: &str, icon: Icon, label: &str, on: bool, enabled: bool, compact: bool) -> bool {
     let label = crate::i18n::tr(label);
-    let (r, resp) = ui.allocate_exact_size(vec2(TOOL_W, TOOL_H), if enabled { Sense::click() } else { Sense::hover() });
+    let (r, resp) =
+        ui.allocate_exact_size(vec2(if compact { COMPACT_W } else { TOOL_W }, TOOL_H), if enabled { Sense::click() } else { Sense::hover() });
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, label));
     register(ui.ctx(), format!("toolbar:{id}"), r);
     let p = ui.painter();
@@ -281,6 +294,10 @@ fn tool_button(ui: &mut egui::Ui, t: &Tokens, id: &str, icon: Icon, label: &str,
     } else {
         t.icon
     };
+    if compact {
+        paint(p, Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, c);
+        return enabled && resp.clicked();
+    }
     paint(p, Rect::from_center_size(pos2(r.center().x, r.top() + 19.0), vec2(22.0, 22.0)), icon, c);
     // the label elided to the button's width, so a long translation never spills into its neighbour
     let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), t.font(11.0), if enabled { t.text_label } else { t.text_disabled });
