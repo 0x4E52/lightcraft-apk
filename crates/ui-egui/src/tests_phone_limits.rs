@@ -171,3 +171,14 @@ fn sam_disabled_below_min_ram() {
     let desktop = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services::default());
     assert_eq!(desktop.sam_unavailable_reason(), None);
 }
+
+/// APK-64: the host's denoise memory floor reaches the engine at start, which then refuses AI Denoise with the reason
+/// (the switch under Detail is off with it); no floor (the desktop) changes nothing.
+#[test]
+fn denoise_off_below_the_hosts_memory_floor() {
+    let phone = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { min_ram_for_denoise: Some(u64::MAX), ..Default::default() });
+    let why = phone.session.denoise_ram_refusal().expect("refused");
+    assert!(why.starts_with("AI Denoise needs a device with"), "{why}");
+    let desktop = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services::default());
+    assert_eq!(desktop.session.denoise_ram_refusal(), None);
+}

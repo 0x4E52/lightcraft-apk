@@ -40,17 +40,26 @@ fn megabytes(bytes: u64) -> String {
     if mb < 10.0 { format!("{mb:.1}") } else { format!("{:.0}", mb.floor()) }
 }
 
-/// The row's second line: "Stopping…" once cancelled, else the count and what is being worked on.
-fn detail_line(t: &TaskInfo) -> String {
+/// "less than a minute left", "about 4 min left", "about 1 h 20 min left": how long a job says the rest will take
+/// (rounded up to the minute: an estimate that runs out early reads worse than one that ends sooner).
+pub fn remaining_text(ms: u64) -> String {
+    let minutes = ms.div_ceil(60_000);
+    if minutes <= 1 && ms < 60_000 {
+        return tr("less than a minute left").to_string();
+    }
+    if minutes < 60 {
+        return tr_format!("about {n} min left", n = minutes);
+    }
+    tr_format!("about {h} h {m} min left", h = minutes / 60, m = minutes % 60)
+}
+
+/// The row's second line: "Stopping…" once cancelled, else the count, the time left and what is being worked on.
+pub fn detail_line(t: &TaskInfo) -> String {
     if t.cancelling {
         return tr("Stopping…").to_string();
     }
-    let count = count_text(t);
-    match (count.is_empty(), t.detail.is_empty()) {
-        (false, false) => format!("{count} · {}", t.detail),
-        (false, true) => count,
-        (true, _) => t.detail.clone(),
-    }
+    let parts = [count_text(t), t.remaining_ms.map(remaining_text).unwrap_or_default(), t.detail.clone()];
+    parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" · ")
 }
 
 /// Draw the stack (called every frame, after the panels and dialogs).

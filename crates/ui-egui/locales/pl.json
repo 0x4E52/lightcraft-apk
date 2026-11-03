@@ -2160,5 +2160,8 @@
   "not added to Apple Photos (cancelled)": "nie dodano do aplikacji Zdjęcia (anulowano)",
   "Auto Settings on Selected Photos": "Ustawienia automatyczne dla zaznaczonych zdjęć",
   "Update AI Masks": "Aktualizuj maski AI",
-  "Recompute subject and sky on each photo": "Przelicz obiekt i niebo na każdym zdjęciu"
+  "Recompute subject and sky on each photo": "Przelicz obiekt i niebo na każdym zdjęciu",
+  "less than a minute left": "zostało mniej niż minutę",
+  "AI Denoise needs a device with 6 GB of memory.": "Odszumianie AI wymaga urządzenia z 6 GB pamięci.",
+  "Cancelled.": "Anulowano."
 }

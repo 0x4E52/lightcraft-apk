@@ -471,6 +471,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         local_roots: Vec::new(),
         library_notice: None,
         min_ram_for_sam: None,
+        min_ram_for_denoise: None,
         reopen_library: None,
         move_to_back: None,
         quit_disabled: false,

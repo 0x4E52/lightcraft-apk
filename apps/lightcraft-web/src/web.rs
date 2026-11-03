@@ -257,6 +257,7 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         free_space: None,
         library_notice: None,
         min_ram_for_sam: None,
+        min_ram_for_denoise: None,
         reopen_library: None,
         move_to_back: None,
         quit_disabled: false,

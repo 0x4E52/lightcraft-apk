@@ -304,5 +304,7 @@
   "{n} kept their AI selections ({reason})": "{n} mantêm as seleções de IA ({reason})",
   "{n} live masks need no update": "{n} máscaras dinâmicas não precisam de atualização",
   "Pasted. {label} did not start: {reason}": "Colado. {label} não foi iniciado: {reason}",
-  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Este telefone oculta dos apps os arquivos {types}, então as pastas aqui não os listam. Compartilhe-os com o LightCraft pelo app Arquivos ou abra-os com o LightCraft."
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Este telefone oculta dos apps os arquivos {types}, então as pastas aqui não os listam. Compartilhe-os com o LightCraft pelo app Arquivos ou abra-os com o LightCraft.",
+  "about {n} min left": "faltam cerca de {n} min",
+  "about {h} h {m} min left": "faltam cerca de {h} h {m} min"
 }

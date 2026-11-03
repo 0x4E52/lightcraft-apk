@@ -842,7 +842,7 @@ fn denoise_row_while_queue_is_busy() {
         // (what the pump left running or queued is what the row reflects until the next pump)
         if x.s.denoise_busy() {
             assert_eq!(rows.len(), 1, "{r}");
-            assert_eq!((rows[0].label.as_str(), rows[0].cancellable, rows[0].unit), ("AI Denoise", false, crate::activity::Unit::Percent), "{r}");
+            assert_eq!((rows[0].label.as_str(), rows[0].cancellable, rows[0].unit), ("AI Denoise", true, crate::activity::Unit::Percent), "{r}");
             if !r["running"].is_null() {
                 assert_eq!(rows[0].detail, "ramp.dng", "{r}");
             }
@@ -857,5 +857,246 @@ fn denoise_row_while_queue_is_busy() {
     }
     assert!(shown, "the photo never showed a row");
     assert!(rows(&x.s).is_empty(), "the row goes once the photo is made");
+    let _ = std::fs::remove_dir_all(&x.dir);
+}
+
+/// A model whose memory follows its tile (1000 bytes a cell) and that can be loaded for any side: the planner's view
+/// of the real runner ([`sized_loader`] records the side of each load).
+struct Scaled {
+    tile: usize,
+    per_cell: usize,
+}
+
+impl TileRunner for Scaled {
+    fn run(&self, input: &[f32]) -> Result<Vec<f32>, lightcraft_denoise::Error> {
+        Dim { runs: Arc::new(AtomicUsize::new(0)) }.run(input)
+    }
+}
+
+impl Model for Scaled {
+    fn runner(&self, _: RunOn, threads: usize) -> (&dyn TileRunner, usize) {
+        (self, threads)
+    }
+    fn self_test(&self, _: RunOn) -> Result<Value, String> {
+        Ok(json!({"ok": true}))
+    }
+    fn bytes_per_tile(&self) -> usize {
+        self.per_cell.saturating_mul(self.tile).saturating_mul(self.tile)
+    }
+    fn tile(&self) -> Option<usize> {
+        Some(self.tile)
+    }
+}
+
+fn sized_loader(per_cell: usize, loads: &Arc<std::sync::Mutex<Vec<(u32, u32)>>>) -> Loader {
+    let loads = loads.clone();
+    Arc::new(move |_, m| {
+        loads.lock().unwrap().push((m.tile, m.overlap));
+        Ok(Arc::new(Scaled { tile: m.tile as usize, per_cell }) as Arc<dyn Model>)
+    })
+}
+
+fn job(dir: &Path, manifest: DenoiserManifest, loader: Loader) -> crate::denoise::JobSpec {
+    crate::denoise::JobSpec {
+        path: dir.join("a.dng").to_string_lossy().into_owned(),
+        read: None,
+        product: dir.join("p.lcdn"),
+        key: "k".into(),
+        manifest,
+        onnx: dir.join("model.onnx"),
+        model: Default::default(),
+        loader,
+        parallel: 4,
+        run_on: RunOn::Auto,
+    }
+}
+
+#[test]
+fn a_tight_budget_loads_the_model_for_a_smaller_tile_and_a_roomy_one_for_the_manifests() {
+    let dir = temp_dir("tile-plan");
+    let loads = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let spec = job(&dir, DenoiserManifest { tile: 128, overlap: 32, ..manifest("sized") }, sized_loader(1000, &loads));
+    let cell = 1000 + lightcraft_denoise::budget::LOOP_BYTES_PER_CELL;
+    // room for one 96-cell tile but not a 112-cell one
+    let share = cell * 100 * 100;
+    let (model, plan) = crate::denoise::tile_plan(&spec, (spec.loader)(&spec.onnx, &spec.manifest).unwrap(), share).unwrap();
+    assert_eq!((plan.tile, plan.overlap, plan.parallel), (96, 24, 1), "{plan:?}");
+    assert_eq!(model.tile(), Some(96));
+    assert_eq!(*loads.lock().unwrap(), vec![(128, 32), (96, 24)], "loaded for the smaller side");
+    // kept for the next photo, and loaded again for the manifest's tile when there is room for it
+    *spec.model.lock().unwrap() = Some(model.clone());
+    let (model, plan) = crate::denoise::tile_plan(&spec, model, cell * 128 * 128 * 3).unwrap();
+    assert_eq!((plan.tile, plan.overlap, plan.parallel, model.tile()), (128, 32, 3, Some(128)), "{plan:?}");
+    // a model whose memory is not known runs the manifest's tile, one at a time when its bound is large
+    let (_, plan) = crate::denoise::tile_plan(&spec, Arc::new(Dim { runs: Arc::new(AtomicUsize::new(0)) }), share).unwrap();
+    assert_eq!((plan.tile, plan.parallel), (128, 1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn below_minimum_ram_refuses_with_reason() {
+    // the host's limit (Android: 5 GiB) above what the device has: nothing is made, everything says why
+    let mut x = setup("min-ram", true);
+    let id = photo(&x.s);
+    set_amount(&mut x.s, 100.0);
+    x.s.set_denoise_min_ram(Some(u64::MAX));
+    let why = x.s.denoise_ram_refusal().expect("a reason");
+    assert!(why.contains("needs a device with") && why.contains("GB of memory"), "{why}");
+    assert_eq!(x.s.denoise_photo_state(id), PhotoState::Failed { why: why.clone(), unsupported: true });
+    let r = x.s.execute("denoise.queue", &json!({"ids": [id.0], "retry": true})).unwrap();
+    assert_eq!(r["added"], 0, "{r}");
+    let r = x.s.execute("denoise.pump", &json!({"pace": "full"})).unwrap();
+    assert_eq!((r["queued"].clone(), r["running"].clone()), (json!(0), Value::Null), "{r}");
+    let o = ExportOptions::from_json(&json!({"format": "png", "width": 100, "height": 100}));
+    let e = export_photo(&mut x.s, id, &o, 1).err().unwrap();
+    assert!(e.contains("ramp.dng") && e.contains(&why), "{e}");
+    assert_eq!(x.runs.load(Ordering::Relaxed), 0, "the model never ran");
+    // the pure check: no limit, enough, too little, unknown
+    assert_eq!(crate::denoise::ram_reason(None, None), None);
+    assert_eq!(crate::denoise::ram_reason(Some(5 << 30), Some(6 << 30)), None);
+    assert_eq!(crate::denoise::ram_reason(Some(5 << 30), Some(4 << 30)).as_deref(), Some("AI Denoise needs a device with 6 GB of memory"));
+    assert!(crate::denoise::ram_reason(Some(5 << 30), None).is_some());
+
+    // with the memory but a budget below the smallest tile's need: the job is refused with the numbers, not run
+    x.s.set_denoise_min_ram(None);
+    let loads = Arc::new(std::sync::Mutex::new(Vec::new()));
+    x.s.denoise.loader = sized_loader(usize::MAX / 4, &loads);
+    *x.s.denoise.active.as_ref().unwrap().model.lock().unwrap() = None;
+    x.s.execute("denoise.queue", &json!({"ids": [id.0], "retry": true})).unwrap();
+    for _ in 0..200 {
+        x.s.execute("denoise.pump", &json!({"pace": "full"})).unwrap();
+        if matches!(x.s.denoise_photo_state(id), PhotoState::Failed { .. }) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    match x.s.denoise_photo_state(id) {
+        PhotoState::Failed { why, unsupported } => {
+            assert!(why.contains("MB of working memory for its smallest tile") && why.contains(crate::memory::this_device()) && !unsupported, "{why}")
+        }
+        other => panic!("{other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&x.dir);
+}
+
+/// A stand-in whose third tile on waits until `release` is set (at most 10 s): a photo stays half made while the test
+/// looks at it.
+struct Gate {
+    runs: Arc<AtomicUsize>,
+    release: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl TileRunner for Gate {
+    fn run(&self, input: &[f32]) -> Result<Vec<f32>, lightcraft_denoise::Error> {
+        if self.runs.fetch_add(1, Ordering::Relaxed) >= 2 {
+            let began = std::time::Instant::now();
+            while !self.release.load(Ordering::Relaxed) && began.elapsed() < std::time::Duration::from_secs(10) {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        Dim { runs: Arc::new(AtomicUsize::new(0)) }.run(input)
+    }
+}
+
+impl Model for Gate {
+    fn runner(&self, _: RunOn, threads: usize) -> (&dyn TileRunner, usize) {
+        (self, threads)
+    }
+    fn self_test(&self, _: RunOn) -> Result<Value, String> {
+        Ok(json!({"ok": true}))
+    }
+    fn bytes_per_tile(&self) -> usize {
+        1 << 20
+    }
+}
+
+/// [`setup`] with the [`Gate`] model, and the photo's Amount up so the queue takes it (two tiles at once: `light`).
+fn gated(tag: &str) -> (Setup, Arc<AtomicUsize>, Arc<std::sync::atomic::AtomicBool>) {
+    let mut x = setup(tag, true);
+    let (runs, release) = (Arc::new(AtomicUsize::new(0)), Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    let (r, g) = (runs.clone(), release.clone());
+    x.s.denoise.loader = Arc::new(move |_, _| Ok(Arc::new(Gate { runs: r.clone(), release: g.clone() }) as Arc<dyn Model>));
+    *x.s.denoise.active.as_ref().unwrap().model.lock().unwrap() = None;
+    set_amount(&mut x.s, 100.0);
+    (x, runs, release)
+}
+
+/// Pump (two tiles at once) until the running photo reports tiles done.
+fn pump_until_running(s: &mut Session) -> Value {
+    for _ in 0..1000 {
+        let r = s.execute("denoise.pump", &json!({"pace": "light"})).unwrap();
+        if r["running"]["done"].as_u64().is_some_and(|d| d > 0) {
+            return r;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    panic!("never ran: {}", s.execute("denoise.status", &json!({})).unwrap());
+}
+
+#[test]
+fn estimate_from_first_tile() {
+    use crate::denoise::remaining;
+    use std::time::Duration;
+    // nothing done: no estimate; a quarter done in 10 s: 30 s to go; all done: none to go
+    assert_eq!(remaining(Duration::from_secs(3), 0, 4), None);
+    assert_eq!(remaining(Duration::from_secs(3), 0, 0), None);
+    assert_eq!(remaining(Duration::from_secs(10), 1, 4), Some(Duration::from_secs(30)));
+    assert_eq!(remaining(Duration::from_secs(10), 4, 4), Some(Duration::ZERO));
+    // hostile counts neither panic nor go negative
+    assert_eq!(remaining(Duration::MAX, 1, usize::MAX), None);
+    assert_eq!(remaining(Duration::from_secs(1), 9, 4), Some(Duration::ZERO));
+
+    // a photo half made: its state, the pump's report and the activity row all carry the estimate
+    let (mut x, _, release) = gated("estimate");
+    let id = photo(&x.s);
+    let r = pump_until_running(&mut x.s);
+    assert_eq!((r["running"]["done"].as_u64(), r["running"]["total"].as_u64()), (Some(2), Some(4)), "{r}");
+    let ms = r["running"]["remainingMs"].as_u64().expect("an estimate");
+    assert!(ms > 0 && ms < 60_000, "{r}");
+    match x.s.denoise_photo_state(id) {
+        PhotoState::Running { done: 2, total: 4, remaining_ms: Some(left) } => assert!(left > 0, "{left}"),
+        other => panic!("{other:?}"),
+    }
+    let row = x.s.activity.list().into_iter().find(|t| t.kind == "denoise").expect("the row");
+    assert!(row.remaining_ms.is_some_and(|ms| ms > 0) && row.cancellable, "{row:?}");
+    assert_eq!(serde_json::to_value(x.s.denoise_photo_state(id)).unwrap()["state"], "running");
+    release.store(true, Ordering::Relaxed);
+    pump_until_ready(&mut x.s, 1);
+    assert!(x.s.activity.list().iter().all(|t| t.kind != "denoise"), "the row goes with the work");
+    let _ = std::fs::remove_dir_all(&x.dir);
+}
+
+#[test]
+fn cancelling_the_row_stops_the_photo_until_asked_again() {
+    let (mut x, runs, release) = gated("cancel-row");
+    let id = photo(&x.s);
+    pump_until_running(&mut x.s);
+    let row = x.s.activity.list().into_iter().find(|t| t.kind == "denoise").expect("the row");
+    x.s.execute("activity.cancel", &json!({"id": row.id})).unwrap();
+    release.store(true, Ordering::Relaxed);
+    let mut stopped = false;
+    for _ in 0..400 {
+        let r = x.s.execute("denoise.pump", &json!({"pace": "full"})).unwrap();
+        if r["running"].is_null() && r["queued"] == 0 {
+            stopped = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(stopped, "the job stops");
+    assert_eq!(x.s.denoise_photo_state(id), PhotoState::Failed { why: crate::denoise::CANCELLED.into(), unsupported: false });
+    // the automatic queue leaves it alone, the row is gone
+    let before = runs.load(Ordering::Relaxed);
+    for _ in 0..10 {
+        let r = x.s.execute("denoise.pump", &json!({"pace": "full"})).unwrap();
+        assert_eq!((r["queued"].clone(), r["running"].clone()), (json!(0), Value::Null), "{r}");
+    }
+    assert_eq!(runs.load(Ordering::Relaxed), before);
+    assert!(x.s.activity.list().iter().all(|t| t.kind != "denoise"));
+    // asking again makes it
+    assert_eq!(x.s.execute("denoise.queue", &json!({"ids": [id.0], "retry": true})).unwrap()["added"], 1);
+    pump_until_ready(&mut x.s, 1);
+    assert_eq!(x.s.denoise_photo_state(id), PhotoState::Ready);
     let _ = std::fs::remove_dir_all(&x.dir);
 }

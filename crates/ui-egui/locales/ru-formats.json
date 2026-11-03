@@ -304,5 +304,7 @@
   "{n} kept their AI selections ({reason})": "Фото с сохранённым выделением ИИ: {n} ({reason})",
   "{n} live masks need no update": "Динамические маски без обновления: {n}",
   "Pasted. {label} did not start: {reason}": "Вставлено. Не удалось запустить «{label}»: {reason}",
-  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Этот телефон скрывает от приложений файлы {types}, поэтому папки здесь их не показывают. Поделитесь ими с LightCraft из приложения «Файлы» или откройте их в LightCraft."
+  "This phone hides {types} files from apps, so folders here don't list them. Share them to LightCraft from the Files app, or open them with LightCraft.": "Этот телефон скрывает от приложений файлы {types}, поэтому папки здесь их не показывают. Поделитесь ими с LightCraft из приложения «Файлы» или откройте их в LightCraft.",
+  "about {n} min left": "осталось около {n} мин",
+  "about {h} h {m} min left": "осталось около {h} ч {m} мин"
 }

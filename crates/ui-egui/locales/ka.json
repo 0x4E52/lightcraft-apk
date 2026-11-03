@@ -2721,5 +2721,8 @@
   "≥  at least": "≥  არანაკლებ",
   "⌘-drag to straighten, ⇧G Guided Upright, a grid while transforming.": "⌘-გადათრევა გასასწორებლად, ⇧G მართვადი Upright, ბადე გარდაქმნისას.",
   "日本語": "日本語",
-  "繁體中文（台灣）": "繁體中文（台灣）"
+  "繁體中文（台灣）": "繁體中文（台灣）",
+  "less than a minute left": "დარჩა ერთ წუთზე ნაკლები",
+  "AI Denoise needs a device with 6 GB of memory.": "AI ხმაურის მოცილებას სჭირდება მოწყობილობა 6 GB მეხსიერებით.",
+  "Cancelled.": "გაუქმდა."
 }

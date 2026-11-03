@@ -17,12 +17,13 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use lightcraft_catalog::{Photo, PhotoId, Source};
 use lightcraft_denoise::bayer::Layout;
+use lightcraft_denoise::budget;
 use lightcraft_denoise::manifest::DenoiserManifest;
 use lightcraft_denoise::run::{Control, Params, TileRunner, denoise_bayer};
 use lightcraft_denoise::{Error as RunError, product};
@@ -107,6 +108,16 @@ pub(crate) trait Model: Send + Sync {
     /// timed. Never starts anything.
     fn device(&self, _run_on: RunOn) -> Value {
         json!({"kind": "cpu"})
+    }
+    /// The tile side (cells) it was loaded for, when it can be loaded for another one (a fully convolutional network
+    /// on our runner) and [`Self::bytes_per_tile`] is what that side needs. `None`: it runs the manifest's tile only
+    /// and its memory is not known (the tiles at once are then all the budget decides).
+    fn tile(&self) -> Option<usize> {
+        None
+    }
+    /// Tile sides it can run are multiples of this (its poolings); at least 16.
+    fn tile_multiple(&self) -> usize {
+        16
     }
 }
 
@@ -457,6 +468,12 @@ impl TileRunner for Network {
 impl Model for Network {
     fn bytes_per_tile(&self) -> usize {
         self.cpu.bytes_per_tile()
+    }
+    fn tile(&self) -> Option<usize> {
+        Some(self.tile)
+    }
+    fn tile_multiple(&self) -> usize {
+        1usize.checked_shl(self.cpu.net().depth()).unwrap_or(usize::MAX).max(16)
     }
     fn runner(&self, run_on: RunOn, threads: usize) -> (&dyn TileRunner, usize) {
         let threads = threads.max(1);
@@ -869,6 +886,8 @@ pub(crate) struct Progress {
     done: AtomicUsize,
     total: AtomicUsize,
     cancel: AtomicBool,
+    /// Milliseconds the tiles had taken when `done` was last reported (0 before the first report).
+    tiles_ms: AtomicU64,
 }
 
 impl Progress {
@@ -876,14 +895,62 @@ impl Progress {
     pub(crate) fn cancel_now(&self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
+
+    /// `done` of `total` tiles, `elapsed` after the first tile started.
+    pub(crate) fn report(&self, done: usize, total: usize, elapsed: Duration) {
+        self.total.store(total, Ordering::Relaxed);
+        self.tiles_ms.store(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX), Ordering::Relaxed);
+        self.done.store(done, Ordering::Relaxed);
+    }
+
+    /// How long the rest of the photo's tiles will take ([`remaining`]); `None` before the first tile is done.
+    pub(crate) fn remaining(&self) -> Option<Duration> {
+        let elapsed = Duration::from_millis(self.tiles_ms.load(Ordering::Relaxed));
+        remaining(elapsed, self.done.load(Ordering::Relaxed), self.total.load(Ordering::Relaxed))
+    }
 }
 
-/// The loaded model, loading it first when it is not (kept for the next photo).
-fn loaded(spec: &JobSpec) -> Result<Arc<dyn Model>, MakeError> {
-    if let Some(m) = spec.model.lock().unwrap_or_else(PoisonError::into_inner).clone() {
+/// How long the rest of a photo's tiles will take, when `done` of `total` took `elapsed`: the first tiles done give the
+/// estimate (every tile is the same size, so they take about as long), and each later report refines it. `None` before
+/// a tile is done.
+pub fn remaining(elapsed: Duration, done: usize, total: usize) -> Option<Duration> {
+    if done == 0 || total == 0 {
+        return None;
+    }
+    let left = total.saturating_sub(done) as f64;
+    let per_tile = elapsed.as_secs_f64() / done as f64;
+    Duration::try_from_secs_f64(per_tile * left).ok()
+}
+
+/// Why AI Denoise is off on a device with `total` bytes of memory when the host asks for at least `min`
+/// (`Services::min_ram_for_denoise`): a phone's low-memory killer ends the process without a word. `None` = on (no
+/// limit asked for, or enough). A device that can't tell its memory is off when a limit is asked for. The size named
+/// is the class of phone that reads `min` or more (a phone sold with 6 GB reads about 5.5 GiB).
+pub fn ram_reason(min: Option<u64>, total: Option<u64>) -> Option<String> {
+    let min = min?;
+    if total.is_some_and(|total| total >= min) {
+        return None;
+    }
+    Some(format!("AI Denoise needs a device with {} GB of memory", (min >> 30).saturating_add(1)))
+}
+
+/// The loaded model, loading it first when it is not (kept for the next photo). With `tile` (side and overlap, cells)
+/// it is the model loaded for that side: one loaded for another side is loaded again.
+fn loaded(spec: &JobSpec, tile: Option<(usize, usize)>) -> Result<Arc<dyn Model>, MakeError> {
+    if let Some(m) = spec.model.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        && tile.is_none_or(|(side, _)| m.tile().is_none_or(|have| have == side))
+    {
         return Ok(m);
     }
-    let m = (spec.loader)(&spec.onnx, &spec.manifest).map_err(|e| MakeError::Failed(format!("the denoise model could not be loaded: {e}")))?;
+    let manifest = match tile {
+        Some((side, overlap)) if side != spec.manifest.tile as usize => DenoiserManifest {
+            tile: u32::try_from(side).map_err(|_| MakeError::Failed("the denoise tile is too large".into()))?,
+            overlap: u32::try_from(overlap).map_err(|_| MakeError::Failed("the denoise overlap is too large".into()))?,
+            ..spec.manifest.clone()
+        },
+        _ => spec.manifest.clone(),
+    };
+    let m = (spec.loader)(&spec.onnx, &manifest).map_err(|e| MakeError::Failed(format!("the denoise model could not be loaded: {e}")))?;
     *spec.model.lock().unwrap_or_else(PoisonError::into_inner) = Some(m.clone());
     Ok(m)
 }
@@ -936,25 +1003,19 @@ pub(crate) fn make_product(spec: &JobSpec, progress: Option<&Progress>) -> Resul
         return Err(MakeError::Cancelled);
     }
     let decoded = began.elapsed();
-    let model = loaded(spec)?;
-    // Packed input, returned RGB and the preceding group's RGB overlap while tiles run.
-    let scratch =
-        model.bytes_per_tile().saturating_add(128usize.saturating_mul(spec.manifest.tile as usize).saturating_mul(spec.manifest.tile as usize));
-    let (_, budget) = crate::memory::work_gate().usage();
-    let parallel = spec.parallel.clamp(1, 4).min((budget / scratch.max(1)).max(1));
-    let _held = crate::memory::work_gate().acquire(mosaic.data.len().saturating_mul(20).saturating_add(scratch.saturating_mul(parallel)));
-    let (runner, parallel) = model.runner(spec.run_on, parallel);
-    let params = Params {
-        tile: spec.manifest.tile as usize,
-        overlap: spec.manifest.overlap as usize,
-        gain: spec.manifest.gain,
-        clip: Some(CLIP),
-        parallel: parallel.max(1),
-    };
+    let model = loaded(spec, None)?;
+    // the tiles get the decode gate's share of the memory budget (a quarter of it; Settings ▸ Performance ▸ Memory,
+    // whose Automatic is `memory::default_budget`: on a phone, the host's phone-sized one)
+    let (_, share) = crate::memory::work_gate().usage();
+    let (model, plan) = tile_plan(spec, model, share)?;
+    let _held =
+        crate::memory::work_gate().acquire(mosaic.data.len().saturating_mul(20).saturating_add(plan.bytes_per_tile.saturating_mul(plan.parallel)));
+    let (runner, parallel) = model.runner(spec.run_on, plan.parallel);
+    let params = Params { tile: plan.tile, overlap: plan.overlap, gain: spec.manifest.gain, clip: Some(CLIP), parallel: parallel.max(1) };
+    let tiles_began = web_time::Instant::now();
     let report = |done: usize, total: usize| {
         if let Some(p) = progress {
-            p.total.store(total, Ordering::Relaxed);
-            p.done.store(done, Ordering::Relaxed);
+            p.report(done, total, tiles_began.elapsed());
         }
     };
     let ctl = Control { cancel: progress.map(|p| &p.cancel), progress: Some(&report) };
@@ -981,6 +1042,29 @@ pub(crate) fn make_product(spec: &JobSpec, progress: Option<&Progress>) -> Resul
         );
     }
     Ok(true)
+}
+
+/// The tiles of a job within `share` bytes ([`lightcraft_denoise::budget::plan`]), and the model loaded for them: the
+/// manifest's side when one tile of it fits, else the largest side that does (the model is loaded again for it);
+/// refused with the numbers when even the smallest does not. A model whose memory is not known
+/// ([`Model::tile`] `None`) runs the manifest's tile with as many at once as the share holds of its bound.
+pub(crate) fn tile_plan(spec: &JobSpec, model: Arc<dyn Model>, share: usize) -> Result<(Arc<dyn Model>, budget::Plan), MakeError> {
+    let (max_tile, overlap) = (spec.manifest.tile as usize, spec.manifest.overlap as usize);
+    let Some(loaded_tile) = model.tile() else {
+        let bytes = budget::bytes_at(
+            &budget::Need { max_tile, overlap, loaded_tile: max_tile, loaded_bytes: model.bytes_per_tile(), multiple: 16 },
+            max_tile,
+        );
+        let parallel = spec.parallel.clamp(1, budget::MAX_PARALLEL).min((share / bytes.max(1)).max(1));
+        return Ok((model, budget::Plan { tile: max_tile, overlap, parallel, bytes_per_tile: bytes }));
+    };
+    let need = budget::Need { max_tile, overlap, loaded_tile, loaded_bytes: model.bytes_per_tile(), multiple: model.tile_multiple() };
+    let plan = budget::plan(&need, share, spec.parallel).map_err(|e| MakeError::Failed(format!("{e} on {}", crate::memory::this_device())))?;
+    if plan.tile != loaded_tile && lightcraft_profile::enabled() {
+        eprintln!("[denoise] tiles of {} cells (the model's {max_tile} need more than {} MB)", plan.tile, share >> 20);
+    }
+    let model = if plan.tile == loaded_tile { model } else { loaded(spec, Some((plan.tile, plan.overlap)))? };
+    Ok((model, plan))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1039,12 +1123,12 @@ pub enum PhotoState {
     Running {
         done: usize,
         total: usize,
+        /// How long the rest will take, from the tiles done so far ([`remaining`]); `None` before the first.
+        #[serde(rename = "remainingMs")]
+        remaining_ms: Option<u64>,
     },
     /// Making it failed (`why`), or denoise does not apply to this file (`unsupported`).
-    Failed {
-        why: String,
-        unsupported: bool,
-    },
+    Failed { why: String, unsupported: bool },
     /// Nothing has asked for it yet.
     Idle,
 }
@@ -1096,6 +1180,8 @@ pub(crate) struct State {
     made: u64,
     /// AI Denoise's row in the activity stack, while a photo is being made or waits its turn.
     task: Option<crate::activity::TaskGuard>,
+    /// The device memory below which nothing is made ([`ram_reason`]; the host's `Services::min_ram_for_denoise`).
+    min_ram: Option<u64>,
 }
 
 impl Default for State {
@@ -1116,6 +1202,7 @@ impl Default for State {
             generation: 0,
             made: 0,
             task: None,
+            min_ram: None,
         }
     }
 }
@@ -1152,7 +1239,26 @@ impl State {
     }
 }
 
+/// Milliseconds of `d`, saturating.
+fn duration_ms(d: Duration) -> u64 {
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
+/// Why a cancelled photo has no picture (until it is asked for again).
+pub const CANCELLED: &str = "Cancelled";
+
 impl Session {
+    /// The device memory (bytes) below which AI Denoise makes nothing and says why ([`ram_reason`] against
+    /// [`crate::memory::total_ram`]); `None` = no limit (the desktop). The Android host sets it.
+    pub fn set_denoise_min_ram(&mut self, min: Option<u64>) {
+        self.denoise.min_ram = min;
+    }
+
+    /// Why AI Denoise is off on this device (too little memory), if it is.
+    pub fn denoise_ram_refusal(&self) -> Option<String> {
+        ram_reason(self.denoise.min_ram, crate::memory::total_ram().map(|b| b as u64))
+    }
+
     /// Where the active model's tiles run (see [`Model::device`]); `{kind: "none"}` while no model is loaded.
     pub(crate) fn denoise_device(&self) -> Value {
         let loaded = self.denoise.active.as_ref().and_then(|a| a.model.lock().unwrap_or_else(PoisonError::into_inner).clone());
@@ -1284,6 +1390,9 @@ impl Session {
         if !eligible(p) {
             return PhotoState::NotApplicable;
         }
+        if let Some(why) = self.denoise_ram_refusal() {
+            return PhotoState::Failed { why, unsupported: true };
+        }
         if self.denoise.active.is_none() {
             // the model folder has not been looked at yet (just started): not "no model" until it has been
             return if self.denoise.active_seen.is_none() { PhotoState::Idle } else { PhotoState::NoModel };
@@ -1298,7 +1407,11 @@ impl Session {
             return PhotoState::Ready;
         }
         if let Some(r) = self.denoise.running.as_ref().filter(|r| r.photo == id) {
-            return PhotoState::Running { done: r.progress.done.load(Ordering::Relaxed), total: r.progress.total.load(Ordering::Relaxed) };
+            return PhotoState::Running {
+                done: r.progress.done.load(Ordering::Relaxed),
+                total: r.progress.total.load(Ordering::Relaxed),
+                remaining_ms: r.progress.remaining().map(duration_ms),
+            };
         }
         if let Some(ahead) = self.denoise.queue.iter().position(|q| *q == id) {
             return PhotoState::Queued { ahead: ahead + usize::from(self.denoise.running.is_some()) };
@@ -1314,7 +1427,7 @@ impl Session {
     /// a photo that failed before is tried again. A photo that is not raw is skipped. Returns how many were queued.
     pub(crate) fn denoise_enqueue(&mut self, ids: &[PhotoId], front: bool, retry: bool) -> usize {
         self.denoise_refresh_active(false);
-        if self.denoise.active.is_none() || self.denoise_products_dir().is_none() {
+        if self.denoise.active.is_none() || self.denoise_products_dir().is_none() || self.denoise_ram_refusal().is_some() {
             return 0;
         }
         let mut added = 0;
@@ -1532,6 +1645,7 @@ impl Session {
     /// Per frame: take in what finished, look at what the user is looking at, and keep one job going. Cheap when
     /// nothing is happening (no file is opened unless a photo with a Denoise amount lacks its picture).
     pub(crate) fn denoise_pump(&mut self, pace: Pace) {
+        self.denoise_take_cancel();
         crate::cmd::denoise::finish_downloads(self);
         self.denoise_refresh_active(false);
         // photos that changed (a replaced file has another key) must not keep the picture of what they were
@@ -1555,7 +1669,7 @@ impl Session {
             self.denoise_enqueue(&others, false, false);
             self.denoise_enqueue(&open, true, false);
         }
-        if self.denoise.running.is_none() && pace != Pace::Pause {
+        if self.denoise.running.is_none() && pace != Pace::Pause && self.denoise_ram_refusal().is_none() {
             let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
             self.denoise_start_next(pace.parallel(cores, cap));
         }
@@ -1583,28 +1697,52 @@ impl Session {
     }
 
     /// Keep AI Denoise's row in the activity stack up to date (each `denoise.pump`): there while a photo is being made or
-    /// waits its turn, with the running photo's tiles and its file name; gone when the queue is idle. It has no ✕: what is
-    /// made follows the photos' Denoise amounts and Settings ▸ AI Denoise.
+    /// waits its turn, with the running photo's tiles, how long the rest will take and its file name; gone when the
+    /// queue is idle. Its ✕ ([`Self::denoise_take_cancel`]) stops the photo being made and empties the queue.
     pub(crate) fn denoise_track(&mut self) {
+        self.denoise_take_cancel();
         if !self.denoise_busy() {
             self.denoise.task = None;
             return;
         }
         let task = self.denoise.task.get_or_insert_with(|| {
-            let t = self.activity.start("denoise", "AI Denoise", crate::activity::Cancel::No);
+            let t = self.activity.start("denoise", "AI Denoise", crate::activity::Cancel::Yes);
             t.set_unit(crate::activity::Unit::Percent);
             t
         });
         match &self.denoise.running {
             Some(r) => {
                 task.progress(r.progress.done.load(Ordering::Relaxed) as u64, r.progress.total.load(Ordering::Relaxed) as u64);
+                task.remaining(r.progress.remaining());
                 task.detail(self.catalog.photo(r.photo).map_or("", |p| p.file_name.as_str()));
             }
             None => {
                 task.progress(0, 0);
+                task.remaining(None);
                 task.detail("");
             }
         }
+    }
+
+    /// The row's ✕ was pressed (`activity.cancel`): stop the photo being made, empty the queue, and mark those photos
+    /// [`CANCELLED`] so the automatic queue does not start them again at once (Try again, `denoise.queue {retry}` or
+    /// another model does). The row goes; new work makes a new one.
+    fn denoise_take_cancel(&mut self) {
+        if !self.denoise.task.as_ref().is_some_and(crate::activity::TaskGuard::is_cancelled) {
+            return;
+        }
+        self.denoise.task = None;
+        let mut stopped: Vec<(PhotoId, String)> = self.denoise.running.as_ref().map(|r| (r.photo, r.key.clone())).into_iter().collect();
+        for id in self.denoise.queue.clone() {
+            if let Some(key) = self.catalog.photo(id).and_then(|p| self.denoise_spec(p)).map(|s| s.1) {
+                stopped.push((id, key));
+            }
+        }
+        self.denoise_cancel(None, true);
+        for (id, key) in stopped {
+            self.denoise.failed.insert(id, Failure { key, why: CANCELLED.into(), unsupported: false });
+        }
+        self.denoise.generation += 1;
     }
 
     /// Seconds the running job has been going, and its progress.
@@ -1614,6 +1752,7 @@ impl Session {
                 "photo": r.photo.0,
                 "done": r.progress.done.load(Ordering::Relaxed),
                 "total": r.progress.total.load(Ordering::Relaxed),
+                "remainingMs": r.progress.remaining().map(duration_ms),
                 "seconds": r.started.elapsed().as_secs_f64(),
             }),
             None => Value::Null,
@@ -1644,6 +1783,9 @@ impl Session {
         }
         self.denoise_refresh_active(false);
         let name = &p.file_name;
+        if let Some(why) = self.denoise_ram_refusal() {
+            return Err(format!("{name}: Denoise is on for this photo, but {why}; set Denoise to 0 to export it"));
+        }
         if self.denoise.active.is_none() {
             return Err(format!("{name}: Denoise is on for this photo but no denoise model is chosen; choose one in Settings, or set Denoise to 0"));
         }

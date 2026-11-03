@@ -1993,5 +1993,8 @@
   "Unnamed Faces": "Volti senza nome",
   "Auto Settings on Selected Photos": "Impostazioni automatiche sulle foto selezionate",
   "Update AI Masks": "Aggiorna maschere IA",
-  "Recompute subject and sky on each photo": "Ricalcola soggetto e cielo su ogni foto"
+  "Recompute subject and sky on each photo": "Ricalcola soggetto e cielo su ogni foto",
+  "less than a minute left": "meno di un minuto rimanente",
+  "AI Denoise needs a device with 6 GB of memory.": "La riduzione disturbo IA richiede un dispositivo con 6 GB di memoria.",
+  "Cancelled.": "Annullato."
 }

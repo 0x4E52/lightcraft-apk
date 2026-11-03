@@ -437,6 +437,12 @@ pub struct Services {
     /// memory", `masking::sam_ram_reason`) names the 8 GB class: a host asking for another size
     /// changes that text with it.
     pub min_ram_for_sam: Option<u64>,
+    /// The device memory (bytes) below which AI Denoise makes nothing (the switch under Detail is off, with the
+    /// reason, and every way in is refused by the engine: `Session::set_denoise_min_ram`, set from this at start).
+    /// `None` = no limit (the desktop). Like [`Self::min_ram_for_sam`], the memory is
+    /// [`lightcraft_engine::memory::total_ram`] and an unknown one counts as below; the reason names the class of
+    /// device that reads the limit ("AI Denoise needs a device with 6 GB of memory" for 5 GiB).
+    pub min_ram_for_denoise: Option<u64>,
     /// The library problem window's Try Again goes through this instead of `app.openLibrary` on the
     /// UI thread. `None` = the command (the desktop).
     pub reopen_library: Option<ReopenLibrary>,
@@ -721,6 +727,8 @@ impl LightcraftApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
+        // AI Denoise on a device with too little memory: off, with the reason (the engine refuses every way in)
+        session.set_denoise_min_ram(services.min_ram_for_denoise);
         // cameras and cards: the host's own volume list, when it has one
         match (&services.volumes, &services.cameras) {
             // and the cameras connected by USB (APK-59)

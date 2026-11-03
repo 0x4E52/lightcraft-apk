@@ -2336,5 +2336,8 @@
   "Checking the GPU for faces": "Проверка ГП для лиц",
   "Auto Settings on Selected Photos": "Автонастройки для выбранных фото",
   "Update AI Masks": "Обновить маски ИИ",
-  "Recompute subject and sky on each photo": "Пересчитать объект и небо на каждом фото"
+  "Recompute subject and sky on each photo": "Пересчитать объект и небо на каждом фото",
+  "less than a minute left": "осталось меньше минуты",
+  "AI Denoise needs a device with 6 GB of memory.": "Для ИИ-шумоподавления нужно устройство с 6 ГБ памяти.",
+  "Cancelled.": "Отменено."
 }

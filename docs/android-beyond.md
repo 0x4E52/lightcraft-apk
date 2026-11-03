@@ -1,6 +1,6 @@
 # Android: beyond Lightroom (task cards APK-50 …)
 
-*Last updated: 2026-11-02.* Revision history at the end.
+*Last updated: 2026-11-03.* Revision history at the end.
 
 Task cards that answer what people criticise in Lightroom mobile and its rivals
 ([`android-competitive.md`](android-competitive.md)). They follow the port plan's rules and card format
@@ -571,6 +571,20 @@ as stated):
   the denoise path.
 - **Done when:** tests pass; `docs/denoise.md` has the phone section.
 - **Maintainer checks on a device:** denoise a 24 MP Bayer raw on an 8 GB and a 6 GB phone; record times.
+- **Result:** `lightcraft_denoise::budget` (in `denoise-core`, so featureless builds share it): `plan` keeps the
+  manifest's tile when one fits the tiles' share of the budget (a quarter: the decode gate's, which follows
+  `memory::budget()`, Automatic = `default_budget`), else the largest side that does (multiples of the network's
+  poolings, at least 64 cells, overlap at most a quarter of the side), then as many at once as fit; nothing fits →
+  refused with the numbers. The engine reloads the model for a stepped-down side (`Model::tile`, `tile_multiple`;
+  a model of unknown memory keeps the old behaviour). The minimum device is `Services::min_ram_for_denoise` (Android:
+  5 GiB, "AI Denoise needs a device with 6 GB of memory"), passed to the engine (`Session::set_denoise_min_ram`), which
+  refuses the queue, the pump and exports. The estimate comes from the tiles done so far (`denoise::remaining`), shown
+  under the Detail slider and on the activity row (`TaskInfo::remaining_ms`), whose ✕ now stops the photo and empties
+  the queue (those photos show Cancelled until asked again). Device times: Device checklist in `android.md`. Tests:
+  `tile_size_follows_budget` (`crates/denoise/tests/tile_budget.rs`, with the CPU runner's real memory under
+  `runtime`), `below_minimum_ram_refuses_with_reason`, `estimate_from_first_tile`,
+  `a_tight_budget_loads_the_model_for_a_smaller_tile_and_a_roomy_one_for_the_manifests`,
+  `cancelling_the_row_stops_the_photo_until_asked_again` (`tests_denoise.rs`).
 
 ## Proposed decisions
 
@@ -618,3 +632,4 @@ the maintainer asks for a release; step 5 (APK-58, 59, 61, 62, 63, 64) runs firs
 - 2026-11-02 (APK-61 review): the Settings switch, the end of a drag with the loupe, the parity row.
 - 2026-11-02: maintainer decision: step 5 before Phase 4's release cards (36 … 43), which wait for a release call.
 - 2026-11-02 (APK-62): "As built" note on the card; step 3's share routing doesn't exist yet (noted).
+- 2026-11-03 (APK-64): "As built" note on the card.

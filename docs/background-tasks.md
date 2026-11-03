@@ -58,7 +58,8 @@ guard.detail(&file_name);
 | Slideshow export | `crates/engine/src/cmd/slideshow.rs`, `crates/engine/src/slideshow_export.rs` | an engine command that owns its worker and row; progress from the worker through a `TaskHandle`; results read back by command |
 | Model downloads | `crates/engine/src/face_download.rs` | report progress through a `TaskHandle` in shared state |
 | Lightroom catalog import | `crates/ui-egui/src/lightroom_import.rs` | stop being cancellable for a phase that must finish |
-| Face scan, AI Denoise | `crates/engine/src/cmd/face_recognize.rs`, `crates/engine/src/denoise.rs` | a continuous job with no ✕, kept in session state |
+| Face scan | `crates/engine/src/cmd/face_recognize.rs` | a continuous job with no ✕, kept in session state |
+| AI Denoise | `crates/engine/src/denoise.rs` | a continuous job kept in session state; `Cancel::Yes`, whose ✕ the pump takes (stops the photo, empties the queue, marks those photos Cancelled until asked again); the time left (`TaskInfo::remaining_ms`) from the first tiles |
 | Find Missing Photos | `crates/ui-egui/src/tasks.rs` | a generic background task with a row (`kind: Some(..)`) |
 | Reading focus points | `crates/engine/src/focus_scan.rs` | a worker paced by the UI's per-frame pump (`focus.pump {pace}`); `Cancel::Flag`; commits in batches without undo steps |
 

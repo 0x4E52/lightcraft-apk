@@ -2144,5 +2144,8 @@
   "Checking the GPU for faces": "正在檢查用於臉孔的 GPU",
   "Auto Settings on Selected Photos": "對所選照片套用自動設定",
   "Update AI Masks": "更新 AI 遮色片",
-  "Recompute subject and sky on each photo": "在每張照片上重新計算主體和天空"
+  "Recompute subject and sky on each photo": "在每張照片上重新計算主體和天空",
+  "less than a minute left": "剩餘不到 1 分鐘",
+  "AI Denoise needs a device with 6 GB of memory.": "AI 降噪需要記憶體為 6 GB 的裝置。",
+  "Cancelled.": "已取消。"
 }

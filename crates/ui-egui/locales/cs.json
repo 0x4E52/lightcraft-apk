@@ -2066,5 +2066,8 @@
   "Visualize HDR": "Zobrazit rozsah HDR",
   "Auto Settings on Selected Photos": "Automatická nastavení pro vybrané fotografie",
   "Update AI Masks": "Aktualizovat AI masky",
-  "Recompute subject and sky on each photo": "Znovu vypočítat objekt a oblohu na každé fotografii"
+  "Recompute subject and sky on each photo": "Znovu vypočítat objekt a oblohu na každé fotografii",
+  "less than a minute left": "méně než minuta zbývá",
+  "AI Denoise needs a device with 6 GB of memory.": "Redukce šumu pomocí AI potřebuje zařízení s 6 GB paměti.",
+  "Cancelled.": "Zrušeno."
 }

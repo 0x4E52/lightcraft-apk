@@ -2353,5 +2353,8 @@
   "The original LightCraft": "Das ursprüngliche LightCraft",
   "Auto Settings on Selected Photos": "Automatische Einstellungen für ausgewählte Fotos",
   "Update AI Masks": "KI-Masken aktualisieren",
-  "Recompute subject and sky on each photo": "Motiv und Himmel auf jedem Foto neu berechnen"
+  "Recompute subject and sky on each photo": "Motiv und Himmel auf jedem Foto neu berechnen",
+  "less than a minute left": "weniger als eine Minute übrig",
+  "AI Denoise needs a device with 6 GB of memory.": "KI-Entrauschen braucht ein Gerät mit 6 GB Arbeitsspeicher.",
+  "Cancelled.": "Abgebrochen."
 }

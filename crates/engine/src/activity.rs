@@ -31,7 +31,7 @@ struct Inner {
 
 /// How a task can be cancelled.
 pub enum Cancel {
-    /// Not at all (no ✕): the face scan, AI Denoise.
+    /// Not at all (no ✕): the face scan.
     No,
     /// With a flag of its own ([`TaskGuard::cancel_flag`]).
     Yes,
@@ -83,6 +83,8 @@ pub struct TaskInfo {
     pub unit: Unit,
     /// The file, photo or model being worked on, if any.
     pub detail: String,
+    /// How long the job thinks the rest will take (ms), when it can tell (AI Denoise, from its first tiles).
+    pub remaining_ms: Option<u64>,
     pub cancellable: bool,
     /// Cancel was asked for; the job stops at its next check.
     pub cancelling: bool,
@@ -98,6 +100,8 @@ struct Entry {
     total: AtomicU64,
     unit: AtomicU8,
     detail: Mutex<String>,
+    /// [`TaskInfo::remaining_ms`]; `u64::MAX` = not known.
+    remaining_ms: AtomicU64,
     cancel: Option<Arc<AtomicBool>>,
     cancellable: AtomicBool,
     /// Held while a cancel is decided ([`Activity::cancel`], [`Activity::cancel_all`]) and while
@@ -160,6 +164,7 @@ impl Entry {
             total: self.total.load(Ordering::Relaxed),
             unit: Unit::from_u8(self.unit.load(Ordering::Relaxed)),
             detail: lock(&self.detail).clone(),
+            remaining_ms: Some(self.remaining_ms.load(Ordering::Relaxed)).filter(|ms| *ms != u64::MAX),
             cancellable: self.is_cancellable(),
             cancelling: self.is_cancelled(),
             age_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -186,6 +191,7 @@ impl Activity {
             total: AtomicU64::new(0),
             unit: AtomicU8::new(Unit::Count.to_u8()),
             detail: Mutex::new(String::new()),
+            remaining_ms: AtomicU64::new(u64::MAX),
             cancellable: AtomicBool::new(cancel.is_some()),
             cancel,
             gate: Mutex::new(()),
@@ -238,6 +244,12 @@ impl TaskGuard {
     /// The file, photo or model being worked on (a name, not a sentence).
     pub fn detail(&self, text: &str) {
         self.entry.detail(text);
+    }
+
+    /// How long the rest will take, when the job can tell (`None`: not known).
+    pub fn remaining(&self, left: Option<std::time::Duration>) {
+        let ms = left.map_or(u64::MAX, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX - 1).min(u64::MAX - 1));
+        self.entry.remaining_ms.store(ms, Ordering::Relaxed);
     }
 
     pub fn set_unit(&self, unit: Unit) {

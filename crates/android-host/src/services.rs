@@ -437,6 +437,7 @@ pub fn base_services(log_file: Option<&Path>, reopen: Option<&Reopen>, move_to_b
         log_file: log_file.map(|p| p.display().to_string()),
         library_notice: Some(LIBRARY_NOTICE.to_owned()),
         min_ram_for_sam: Some(crate::memory::SAM_MIN_RAM),
+        min_ram_for_denoise: Some(crate::memory::DENOISE_MIN_RAM),
         reopen_library: reopen.cloned().map(|reopen| Box::new(move |path: &str| reopen.request(path)) as lightcraft_ui_egui::ReopenLibrary),
         move_to_back: move_to_back
             .cloned()
@@ -496,6 +497,7 @@ mod tests {
         // the phone's limits are in place; without a host to reopen for, Try Again is the command
         assert_eq!(s.library_notice.as_deref(), Some(LIBRARY_NOTICE));
         assert_eq!(s.min_ram_for_sam, Some(crate::memory::SAM_MIN_RAM));
+        assert_eq!(s.min_ram_for_denoise, Some(crate::memory::DENOISE_MIN_RAM));
         assert!(s.reopen_library.is_none());
         assert!(s.backup_library.is_some() && s.restore_library.is_some(), "the library can be backed up and restored");
         // nothing a desktop-only picker would need

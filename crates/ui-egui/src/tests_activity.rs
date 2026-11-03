@@ -107,6 +107,7 @@ fn count_text_by_unit() {
         total: 25,
         unit: Unit::Count,
         detail: String::new(),
+        remaining_ms: None,
         cancellable: true,
         cancelling: false,
         age_ms: 600,
@@ -118,6 +119,32 @@ fn count_text_by_unit() {
     assert_eq!(count_text(&t), "40 %");
     t.total = 0;
     assert_eq!(count_text(&t), "");
+}
+
+#[test]
+fn remaining_time_in_the_detail_line() {
+    use crate::panels::activity::{detail_line, remaining_text};
+    assert_eq!(remaining_text(20_000), "less than a minute left");
+    assert_eq!(remaining_text(90_000), "about 2 min left");
+    assert_eq!(remaining_text(3 * 3_600_000 + 20 * 60_000), "about 3 h 20 min left");
+    let mut t = TaskInfo {
+        id: 1,
+        kind: "denoise",
+        label: "AI Denoise".into(),
+        done: 40,
+        total: 100,
+        unit: Unit::Percent,
+        detail: "ramp.dng".into(),
+        remaining_ms: Some(150_000),
+        cancellable: true,
+        cancelling: false,
+        age_ms: 600,
+    };
+    assert_eq!(detail_line(&t), "40 % · about 3 min left · ramp.dng");
+    t.remaining_ms = None;
+    assert_eq!(detail_line(&t), "40 % · ramp.dng");
+    t.cancelling = true;
+    assert_eq!(detail_line(&t), "Stopping…");
 }
 
 #[test]

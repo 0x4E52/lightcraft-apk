@@ -20,6 +20,13 @@ pub const MAX_BUDGET: usize = 768 << 20;
 /// which still keeps out the 6 GB phones (about 5.5 GiB).
 pub const SAM_MIN_RAM: u64 = 7 << 30;
 
+/// The least `MemTotal` that gets AI Denoise (a 24 MP photo holds its mosaic, the denoised picture and the tiles,
+/// over half a GB besides the app, and the low-memory killer ends the process without a word). The UI says "6 GB": a
+/// phone sold with 6 GB reads about 5.5 GiB here, so the line is 5 GiB, which keeps out the 4 GB phones (about
+/// 3.6 GiB). The tiles themselves follow the budget (`lightcraft_denoise::budget`), so 6 and 8 GB phones differ in
+/// speed, not in whether it runs.
+pub const DENOISE_MIN_RAM: u64 = 5 << 30;
+
 /// Whether a device with this `MemTotal` (bytes; `None` = unreadable) gets SAM-based masks. A
 /// device that can't tell its memory does not.
 pub fn sam_allowed(mem_total: Option<u64>) -> bool {
@@ -90,6 +97,20 @@ mod tests {
         let reason = |kb: u64| lightcraft_ui_egui::panels::masking::sam_ram_reason(Some(SAM_MIN_RAM), mem_total(&meminfo(kb)));
         assert!(reason(12 << 20).is_none() && reason(4 << 20).is_some());
         assert!(lightcraft_ui_egui::panels::masking::sam_ram_reason(Some(SAM_MIN_RAM), None).is_some());
+    }
+
+    #[test]
+    fn denoise_allowed_for_phone_meminfo() {
+        let reason = |kb: u64| lightcraft_engine::denoise::ram_reason(Some(DENOISE_MIN_RAM), mem_total(&meminfo(kb)));
+        // 6 GB (about 5.5 GiB), 8 GB and 12 GB phones: allowed
+        for kb in [5_800_000u64, 7_700_000, 12 << 20] {
+            assert!(reason(kb).is_none(), "{kb} kB");
+        }
+        // 4 GB (about 3.6 GiB) and 2 GB phones, and an unreadable meminfo: not, saying the class it needs
+        for kb in [3_800_000u64, 2 << 20] {
+            assert_eq!(reason(kb).as_deref(), Some("AI Denoise needs a device with 6 GB of memory"), "{kb} kB");
+        }
+        assert!(lightcraft_engine::denoise::ram_reason(Some(DENOISE_MIN_RAM), mem_total("garbage")).is_some());
     }
 
     #[test]

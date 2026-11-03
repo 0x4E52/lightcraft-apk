@@ -121,6 +121,30 @@ LC_DENOISE_MODEL=<model.onnx> LC_DENOISE_RAW=<corpus/raw> cargo test --release -
 LC_DENOISE_MODEL=<model.onnx> LC_DENOISE_RAW=<corpus/raw> cargo test --release -p lightcraft-engine --features rawnind-model --test denoise_real -- --ignored --nocapture
 ```
 
+## On a phone
+
+AI Denoise runs on Android as on the desktop (the APK builds with the `denoise` feature), on its own background
+thread, never the frame's; the user installs a model as on the desktop (Settings ▸ AI Denoise ▸ Install from file…),
+because no model ships yet ([gaps](gaps.md), gap 11).
+
+- **Memory.** The tiles get a quarter of the memory budget (Settings ▸ Performance ▸ Memory; its Automatic is
+  `memory::default_budget`, on a phone MemTotal / 8 between 256 and 768 MiB, so 64–192 MiB for the tiles). The model's
+  working memory grows with its tile's area, so `lightcraft_denoise::budget::plan` keeps the manifest's tile when one
+  fits that share, else steps the side down (a multiple of the network's poolings, at least 64 cells) to the largest
+  that fits and loads the model again for it; the overlap stays the manifest's, at most a quarter of the side. As many
+  tiles run at once as fit beside each other (at most four). When even the smallest tile does not fit, the photo
+  fails with the numbers ("needs N MB of working memory for its smallest tile, and the memory budget gives it M MB on
+  this device") instead of being run into the low-memory killer. The desktop's budget keeps the manifest's tile.
+- **Minimum device.** Below `Services::min_ram_for_denoise` (Android: 5 GiB MemTotal, what a 6 GB phone reads more of)
+  nothing is made: the switch under Detail is off with "AI Denoise needs a device with 6 GB of memory", Settings says
+  so, and the engine refuses the queue, the pump and an export with that reason (`Session::set_denoise_min_ram`).
+- **How long.** The first tiles' time gives the estimate (every tile is the same size), refined as more finish: the
+  line under the Denoise slider and the activity row say "about 4 min left" (`PhotoState::Running.remainingMs`,
+  `denoise.pump` → `running.remainingMs`, `activity.list` → `remainingMs`). The row's ✕ stops the photo being made and
+  empties the queue; those photos show Cancelled with Try again, and the automatic queue leaves them until asked.
+- **Times on phones** (24 MP Bayer raw, a real model): not measured yet; the Device checklist in
+  [`android.md`](android.md) asks for an 8 GB and a 6 GB phone.
+
 ## Another computer's graphics card
 
 A laptop can hand tiles to a desktop with a bigger graphics card over a LAN or a VPN. The server runs the installed,

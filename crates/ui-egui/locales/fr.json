@@ -2341,5 +2341,8 @@
   "Checking the GPU for faces": "Vérification du GPU pour les visages",
   "Auto Settings on Selected Photos": "Réglages automatiques des photos sélectionnées",
   "Update AI Masks": "Mettre à jour les masques IA",
-  "Recompute subject and sky on each photo": "Recalculer le sujet et le ciel sur chaque photo"
+  "Recompute subject and sky on each photo": "Recalculer le sujet et le ciel sur chaque photo",
+  "less than a minute left": "moins d’une minute restante",
+  "AI Denoise needs a device with 6 GB of memory.": "Le débruitage IA nécessite un appareil doté de 6 Go de mémoire.",
+  "Cancelled.": "Annulé."
 }

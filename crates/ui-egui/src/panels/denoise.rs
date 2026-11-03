@@ -132,8 +132,14 @@ fn watch_downloads(app: &mut LightcraftApp, ctx: &egui::Context) {
 /// Per-photo AI Denoise switch, including a request waiting for model installation.
 pub fn detail_toggle(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, on: bool, applicable: bool) {
     let mut enabled = on || crate::model_setup::denoise_requested(app, id);
+    // a device without the memory for it (`Services::min_ram_for_denoise`): off, with the reason
+    let refused = app.session.denoise_ram_refusal();
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 2 }).show(ui, |ui| {
-        let r = ui.add_enabled(applicable, egui::Checkbox::new(&mut enabled, crate::i18n::tr("AI Denoise")));
+        let r = ui.add_enabled(applicable && (refused.is_none() || on), egui::Checkbox::new(&mut enabled, crate::i18n::tr("AI Denoise")));
+        let r = match &refused {
+            Some(why) => r.on_disabled_hover_text(tr(&sentence(why))),
+            None => r,
+        };
         register(ui.ctx(), "denoise:enabled", r.rect);
         if r.changed() {
             let _ = app.run("denoise.toggle", json!({"id": id.0, "enabled": enabled}));
@@ -191,13 +197,18 @@ pub fn detail_status(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, am
                 note(ui, &text, t.text_dim);
             });
         }
-        PhotoState::Running { done, total } => {
+        PhotoState::Running { done, total, remaining_ms } => {
             egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
                 let frac = if total > 0 { (done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
                 let text = if total > 0 {
                     tr_format!("Making the denoised picture… {}%", (frac * 100.0).round() as u32)
                 } else {
                     tr("Starting…").to_string()
+                };
+                // the estimate line: from the first tiles' time, refined as more are done
+                let text = match remaining_ms {
+                    Some(ms) => format!("{text} · {}", super::activity::remaining_text(ms)),
+                    None => text,
                 };
                 let bar = ui.add(egui::ProgressBar::new(frac).desired_width(ui.available_width().min(240.0)).text(RichText::new(text).size(11.0)));
                 register(ui.ctx(), "denoise:progress", bar.rect);
@@ -237,6 +248,9 @@ pub fn settings_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     let runtime = list["runtime"].as_bool() == Some(true);
     if !runtime {
         hint(ui, t, "This build cannot run denoise models.");
+    }
+    if let Some(why) = app.session.denoise_ram_refusal() {
+        hint(ui, t, &sentence(&why));
     }
     let all: Vec<Value> = list["models"].as_array().cloned().unwrap_or_default();
     let downloads = app
