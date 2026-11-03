@@ -420,6 +420,8 @@ fn command_impl(app: &mut crate::LightcraftApp, reset: bool, params: &Value, ren
         // The usual LightCraft starting workspace shows its current tool beside the photo.
         workspace.set_visible(Panel::Library, false)?;
         workspace.set_visible(Panel::Presets, false)?;
+        // a fresh layout is unmirrored; the next frame mirrors it when Left-handed is on
+        app.ui.docking_mirrored = false;
     } else {
         sync(&mut workspace, app)?;
         workspace.command(params)?;
@@ -445,6 +447,7 @@ pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
         app.ui.toast = Some((format!("Panel layout could not be restored: {error}"), ui.input(|input| input.time) + 8.0, None));
         workspace = from_ui(app);
         let _ = sync(&mut workspace, app);
+        app.ui.docking_mirrored = false;
     }
     // Left-handed (tablet): the stored layout follows the choice, however it came to differ
     // (the setting changed, or a layout was loaded or rebuilt).

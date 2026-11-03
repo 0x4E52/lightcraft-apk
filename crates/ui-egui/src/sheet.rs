@@ -248,8 +248,17 @@ pub fn toolbar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         .resizable(false)
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(4, 4)).stroke(egui::Stroke::new(1.0, t.divider)))
         .show(ui, |ui| {
-            egui::ScrollArea::horizontal().id_salt("edit-toolbar").auto_shrink([false, true]).show(ui, |ui| {
-                let prefs = app.ui.layout.phone;
+            let prefs = app.ui.layout.phone;
+            // left-handed: start at the right end, where the first tool sits under the thumb; the
+            // offset is set when the side changes (and on the first frame), then the user scrolls
+            let side_id = egui::Id::new("edit-toolbar-side");
+            let changed = ui.data(|d| d.get_temp::<bool>(side_id)) != Some(prefs.left_handed);
+            ui.data_mut(|d| d.insert_temp(side_id, prefs.left_handed));
+            let mut area = egui::ScrollArea::horizontal().id_salt("edit-toolbar").auto_shrink([false, true]);
+            if changed {
+                area = area.horizontal_scroll_offset(if prefs.left_handed { 1.0e6 } else { 0.0 });
+            }
+            area.show(ui, |ui| {
                 let w = if prefs.compact_toolbar { COMPACT_W } else { TOOL_W };
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
@@ -257,7 +266,7 @@ pub fn toolbar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     if prefs.left_handed {
                         // mirrored: the first tool at the right edge (flush right when they all fit)
                         tools.reverse();
-                        let used = tools.len() as f32 * (w + 2.0);
+                        let used = (tools.len() as f32 * w + tools.len().saturating_sub(1) as f32 * ui.spacing().item_spacing.x).max(0.0);
                         ui.add_space((ui.available_width() - used).max(0.0));
                     }
                     for (id, icon, label) in tools {

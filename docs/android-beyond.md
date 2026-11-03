@@ -549,7 +549,8 @@ as stated):
   left-handed) under Settings ▸ Interface ▸ Layout. On the phone, left-handed reverses the edit toolbar and sets it
   flush right (`sheet.rs`); compact drops the labels (48 pt buttons). On wider windows, left-handed mirrors the
   dock (`Workspace::mirror`: horizontal splits swap, fixed sizes and closed panels' places follow); `UiState::
-  docking_mirrored` records which way the stored layout is, so a rebuilt or loaded layout is brought in line. A save
+  docking_mirrored` records which way the stored layout is, so a rebuilt, reset or loaded layout is brought in line.
+  Panel side is the tablet Left-handed choice and applies to every non-phone width. A save
   with no `version` (flat fields) migrates into both breakpoints. Tests: `tests_layout_prefs.rs`.
 
 ### APK-64 AI denoise on a phone

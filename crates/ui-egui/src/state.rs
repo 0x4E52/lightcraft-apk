@@ -646,7 +646,8 @@ impl Default for LayoutPrefs {
     }
 }
 
-/// What is on disk: the current shape, plus the flat fields version 0 (no `version`) used.
+/// What is on disk: the current shape, plus the flat fields of "version 0" (no `version`). Version 0
+/// is a hypothetical shape no build wrote; it only shows how a migration step is added.
 #[derive(Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct RawLayoutPrefs {
@@ -659,7 +660,7 @@ struct RawLayoutPrefs {
 
 impl From<RawLayoutPrefs> for LayoutPrefs {
     fn from(raw: RawLayoutPrefs) -> Self {
-        let mut out = LayoutPrefs { version: LAYOUT_PREFS_VERSION, phone: raw.phone, tablet: raw.tablet };
+        let mut out = LayoutPrefs { version: raw.version.max(LAYOUT_PREFS_VERSION), phone: raw.phone, tablet: raw.tablet };
         if raw.version < 1 {
             // version 0 kept one flat choice for every window; it applies to both breakpoints
             if let Some(v) = raw.left_handed {

@@ -113,4 +113,25 @@ fn layout_pref_migrates_on_version_bump() {
     // a save from a newer build keeps the fields this one knows
     let newer: UiState = serde_json::from_value(json!({"layout": {"version": 9, "tablet": {"leftHanded": true}, "extra": 1}})).unwrap();
     assert!(newer.layout.tablet.left_handed);
+    assert_eq!(newer.layout.version, 9, "a newer save keeps its version");
+}
+
+#[test]
+fn reset_and_toolbar_stay_mirrored() {
+    // tablet: Reset Panel Layout while Left-handed keeps the mirror
+    let mut h = at([1280.0, 800.0], 1.0);
+    h.app.ui.layout.tablet.left_handed = true;
+    frames(&mut h);
+    h.app.run("ui.dock.reset", json!({})).unwrap();
+    frames(&mut h);
+    let tools = rect(&h, "panel:right_panel").expect("tool panel");
+    let canvas = h.app.canvas_rect.expect("canvas");
+    assert!(tools.center().x < canvas.center().x, "reset keeps the tool panel on the left: {tools:?} {canvas:?}");
+
+    // phone: mirrored, the Library tool is visible at the right edge
+    let mut h = at([412.0, 915.0], 2.625);
+    h.app.ui.layout.phone.left_handed = true;
+    frames(&mut h);
+    let lib = rect(&h, "toolbar:library").expect("library tool");
+    assert!(lib.right() > 412.0 - 24.0 && lib.right() <= 412.0, "Library at the right edge: {lib:?}");
 }
